@@ -69,7 +69,7 @@ const KEEP_AWAKE_TAG = 'kitchen-screen';
 const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 
 export default function Kitchen() {
-  const { t, lang, subscription, dataVersion } = useStore();
+  const { t, lang, subscription, dataVersion, refreshSubscription } = useStore();
   // The food library covers en/es/fr/de; anything else falls back to English.
   // How many people the amounts are scaled for. Defaults to the household and
   // is adjustable, because who is actually eating changes night to night.
@@ -113,6 +113,17 @@ export default function Kitchen() {
   );
   const { isLocked, promptUpgrade } = usePremiumGate();
   const mealLocked = isLocked('meal_planner');
+  // Free still plans a few meals every month (FREE_TASTES on the server, 7
+  // meals, back on the 1st). While this month's taste lasts, the planner opens
+  // for ADDING meals and sending them to the list; the AI parts stay paid.
+  const mealTaste = mealLocked ? subscription?.tastes?.meal_planner : undefined;
+  const mealTasteLeft = mealTaste ? mealTaste.left : 0;
+  const canPlanMeal = !mealLocked || mealTasteLeft > 0;
+  // After a meal spends a taste, ask the server what is left, so the count
+  // shown and the gate agree.
+  const afterTasteUse = useCallback(() => {
+    if (mealLocked) refreshSubscription().catch(() => undefined);
+  }, [mealLocked, refreshSubscription]);
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
@@ -692,12 +703,14 @@ export default function Kitchen() {
       setMealIngredients('');
       setShowMealAdd(false);
       showToast(t('vault_meal_added'), 'success');
-    } catch {
-      showToast(t('vault_could_not_add_meal'), 'error');
+      afterTasteUse();
+    } catch (e: any) {
+      if (e?.status === 402) { setShowMealAdd(false); afterTasteUse(); promptUpgrade('meal_planner'); }
+      else showToast(t('vault_could_not_add_meal'), 'error');
     } finally {
       mealSavingRef.current = false;
     }
-  }, [mealDay, mealTitle, mealIngredients, showToast]);
+  }, [mealDay, mealTitle, mealIngredients, showToast, afterTasteUse, promptUpgrade]);
 
   const deleteMeal = useCallback(async (id: string) => {
     setMeals((prev) => prev.filter((m) => m.meal_id !== id));
@@ -810,7 +823,7 @@ export default function Kitchen() {
   const acceptSuggestion = useCallback(async (sug: MealSuggestion) => {
     // Close the sheet first: on web the root upgrade dialog stacks BELOW an
     // open sheet, so prompting under it looked like nothing happened.
-    if (mealLocked) { setShowSuggest(false); promptUpgrade('meal_planner'); return; }
+    if (!canPlanMeal) { setShowSuggest(false); promptUpgrade('meal_planner'); return; }
     const key = sugKey(sug);
     if (addedSuggest.has(key)) return;
     setAddedSuggest((prev) => new Set(prev).add(key));
@@ -822,17 +835,23 @@ export default function Kitchen() {
         recipe_id: sug.recipeId || undefined,
       });
       setMeals((prev) => [...prev, created]);
-    } catch {
+      afterTasteUse();
+    } catch (e: any) {
       setAddedSuggest((prev) => { const n = new Set(prev); n.delete(key); return n; });
-      showToast(t('vault_could_not_add_meal'), 'error');
+      if (e?.status === 402) { setShowSuggest(false); afterTasteUse(); promptUpgrade('meal_planner'); }
+      else showToast(t('vault_could_not_add_meal'), 'error');
     }
-  }, [addedSuggest, mealLocked, promptUpgrade, showToast, t, sugKey]);
+  }, [addedSuggest, canPlanMeal, promptUpgrade, showToast, t, sugKey, afterTasteUse]);
 
   const acceptAllSuggestions = useCallback(async () => {
-    if (mealLocked) { setShowSuggest(false); promptUpgrade('meal_planner'); return; }
+    if (!canPlanMeal) { setShowSuggest(false); promptUpgrade('meal_planner'); return; }
     // Only fill days that don't already have a meal, so we never clobber a plan.
     const busyDays = new Set(meals.map((m) => m.day));
-    const toAdd = suggestions.filter((s) => !addedSuggest.has(sugKey(s)) && !busyDays.has(s.day));
+    // On Free, no more than this month's taste has left: the rest would only
+    // come back refused.
+    const toAdd = suggestions
+      .filter((s) => !addedSuggest.has(sugKey(s)) && !busyDays.has(s.day))
+      .slice(0, mealLocked ? mealTasteLeft : undefined);
     if (toAdd.length === 0) { setShowSuggest(false); return; }
     setAddedSuggest((prev) => { const n = new Set(prev); toAdd.forEach((s) => n.add(sugKey(s))); return n; });
     try {
@@ -847,6 +866,7 @@ export default function Kitchen() {
       setMeals((prev) => [...prev, ...created]);
       setShowSuggest(false);
       showToast(`${created.length} ${t('kitchen_meals_added')}`, 'success');
+      afterTasteUse();
     } catch {
       // The batch failed as a whole — un-mark the rows so they read as
       // addable again rather than a lying green check.
@@ -856,9 +876,10 @@ export default function Kitchen() {
         return n;
       });
       setMeals(await api.listMeals().catch(() => []));
+      afterTasteUse();
       showToast(t('vault_could_not_add_meal'), 'error');
     }
-  }, [suggestions, addedSuggest, meals, mealLocked, promptUpgrade, showToast, t, sugKey]);
+  }, [suggestions, addedSuggest, meals, mealLocked, mealTasteLeft, canPlanMeal, promptUpgrade, showToast, t, sugKey, afterTasteUse]);
 
   // "Ask the chef" on the recipe page: one bounded question, one short
   // validated answer. State lives here so it clears with the page.
@@ -928,7 +949,7 @@ export default function Kitchen() {
   }, [shopItems, servings, suggestLang, showToast, t]);
 
   const addRecipeToDay = useCallback(async (recipeId: string, title: string, day: string) => {
-    if (mealLocked) { setShowBrowse(false); promptUpgrade('meal_planner'); return; }
+    if (!canPlanMeal) { setShowBrowse(false); promptUpgrade('meal_planner'); return; }
     try {
       const created = await api.createMeal({
         day,
@@ -940,10 +961,12 @@ export default function Kitchen() {
       setShowBrowse(false);
       setBrowseQuery('');
       showToast(`1 ${t('kitchen_meals_added')}`, 'success');
-    } catch {
-      showToast(t('vault_could_not_add_meal'), 'error');
+      afterTasteUse();
+    } catch (e: any) {
+      if (e?.status === 402) { setShowBrowse(false); afterTasteUse(); promptUpgrade('meal_planner'); }
+      else showToast(t('vault_could_not_add_meal'), 'error');
     }
-  }, [mealLocked, promptUpgrade, suggestLang, showToast, t]);
+  }, [canPlanMeal, promptUpgrade, suggestLang, showToast, t, afterTasteUse]);
 
   const generateRecipe = useCallback(async (meal: MealPlan) => {
     // A meal with its own recipe keeps its own name — no library aliasing.
@@ -1658,6 +1681,34 @@ export default function Kitchen() {
             ) : null}
 
             <PremiumPreviewBanner />
+
+            {/* Free's monthly taste: add meals by hand and send them to the
+                list, with the month's count in plain words. The camera, saved
+                plans and the AI recipe stay on the paid plans below. */}
+            {mealTaste ? (
+              <>
+                <Text testID="meal-taste-count" style={styles.scanHint}>
+                  {mealTaste.left > 0
+                    ? t('taste_meal_left', { left: mealTaste.left, limit: mealTaste.limit })
+                    : t('taste_meal_spent', {
+                        limit: mealTaste.limit,
+                        date: new Date(mealTaste.resets_on).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'long' }),
+                      })}
+                </Text>
+                <View style={styles.mealActions}>
+                  {meals.length > 0 && mealTaste.used > 0 ? (
+                    <PressScale testID="meal-taste-sync" onPress={syncMealsToShopping} style={[styles.mealActionBtn, { backgroundColor: ui.mint }]}>
+                      <Text style={styles.clearBtnText} numberOfLines={1}>{t('vault_sync_to_list')}</Text>
+                    </PressScale>
+                  ) : null}
+                  {mealTaste.left > 0 ? (
+                    <PressScale testID="meal-taste-add" onPress={() => setShowMealAdd(true)} style={[styles.mealActionBtn, { backgroundColor: ui.lavender }]}>
+                      <Text style={[styles.clearBtnText, { color: ui.lavenderText }]} numberOfLines={1}>{t('vault_add_short')}</Text>
+                    </PressScale>
+                  ) : null}
+                </View>
+              </>
+            ) : null}
 
             {/* Primary action: shopping-list meal ideas, full-width so it reads
                 as the headline way in. Secondary actions sit in their own row. */}

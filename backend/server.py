@@ -1398,6 +1398,159 @@ async def require_feature(user: dict, feature: str):
     return sub
 
 
+# -----------------------------------------------------------------------------
+# Monthly tastes: a little of two paid features, every month, on Free.
+#
+# Roland, 2026-10-15: "I do not want users to feel trapped about having to
+# jump straight to payment after trial." A trial that ends in a wall makes the
+# choice feel like pay-or-lose. So a household on Free keeps a small, regular
+# taste of the two features families reach for most often, with no timer and
+# no card: it never runs out for good, it comes back on the 1st of the month.
+#
+#   meal_planner   — 7 meals added to the planner each month (a week of
+#                    dinners), and sending those meals to the shopping list.
+#                    The AI parts (recipes, suggestions, the chef, capture)
+#                    stay on the paid plans: each one costs real money to run.
+#   weekly_report  — one week's report each month. Opening the same week's
+#                    report again is free; it is the week that is counted.
+#
+# Counted per household, per calendar month (UTC), in feature_tastes. The row
+# id is the key itself, so two parents planning at once cannot both take the
+# last meal: the second conditional $inc finds the count already at the limit.
+# -----------------------------------------------------------------------------
+FREE_TASTES = {
+    "meal_planner": {"limit": 7},
+    "weekly_report": {"limit": 1},
+}
+
+# What the upgrade wall says once this month's taste is used, instead of the
+# plain "available on Duo and Family" — so nobody thinks Free has lost it.
+TASTE_SPENT_MESSAGES = {
+    "meal_planner": ("This month's 7 free meals are planned. They come back on "
+                     "the 1st. Meal Planner is available on Duo and Family."),
+    "weekly_report": ("This month's free weekly report is used. Another one "
+                      "comes on the 1st. Weekly Report is available on Duo and Family."),
+}
+
+
+def _taste_month(now: Optional[datetime] = None) -> str:
+    return (now or utcnow()).strftime("%Y-%m")
+
+
+def _previous_taste_month(now: Optional[datetime] = None) -> str:
+    first = (now or utcnow()).replace(day=1)
+    return _taste_month(first - timedelta(days=1))
+
+
+def _next_month_start(now: Optional[datetime] = None) -> datetime:
+    now = now or utcnow()
+    first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return (first + timedelta(days=32)).replace(day=1)
+
+
+def _iso_week(now: Optional[datetime] = None) -> str:
+    year, week, _ = (now or utcnow()).isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def _taste_key(family_id: str, feature: str, month: str) -> dict:
+    return {"_id": f"{family_id}:{feature}:{month}", "family_id": family_id,
+            "feature": feature, "month": month}
+
+
+async def free_tastes(database: Any, family_id: str, limits: dict,
+                      now: Optional[datetime] = None) -> dict:
+    """This month's taste of each paid feature the household's plan lacks.
+
+    Empty for any plan that already includes them (and so for a trial, a
+    tester household, a grandfathered one: their limits are the top tier's)."""
+    now = now or utcnow()
+    month = _taste_month(now)
+    out: dict = {}
+    for feature, cfg in FREE_TASTES.items():
+        if limits.get(feature):
+            continue
+        row = await database["feature_tastes"].find_one(
+            {"_id": f"{family_id}:{feature}:{month}"}, {"_id": 0}) or {}
+        limit = int(cfg["limit"])
+        used = min(limit, int(row.get("used", 0) or 0))
+        entry = {"limit": limit, "used": used, "left": max(0, limit - used),
+                 "resets_on": iso(_next_month_start(now))}
+        if feature == "weekly_report":
+            this_week = _iso_week(now)
+            week = row.get("week")
+            if week != this_week:
+                # A week that straddles the 1st was opened last month: it is
+                # still the same week, so it stays open without a new taste.
+                prev = await database["feature_tastes"].find_one(
+                    {"_id": f"{family_id}:{feature}:{_previous_taste_month(now)}"}, {"_id": 0}) or {}
+                if prev.get("week") == this_week:
+                    week = this_week
+            entry["week"] = week
+            entry["this_week"] = this_week
+        out[feature] = entry
+    return out
+
+
+async def _use_taste(database: Any, family_id: str, feature: str,
+                     extra: Optional[dict] = None) -> bool:
+    """Take one of this month's tastes, atomically. False when none are left."""
+    limit = int(FREE_TASTES[feature]["limit"])
+    key = _taste_key(family_id, feature, _taste_month())
+    try:
+        await database["feature_tastes"].update_one(
+            key, {"$setOnInsert": {"used": 0, "created_at": utcnow()}}, upsert=True)
+    except Exception:
+        # Two first uses at once: the other request created the row. The
+        # conditional increment below works on it either way.
+        pass
+    result = await database["feature_tastes"].update_one(
+        {"_id": key["_id"], "used": {"$lt": limit}},
+        {"$inc": {"used": 1}, "$set": {"updated_at": utcnow(), **(extra or {})}})
+    return bool(result.modified_count)
+
+
+async def require_feature_or_taste(user: dict, feature: str, *, use: bool = True) -> dict:
+    """require_feature, except that a household on Free may use this month's
+    taste of the feature.
+
+    use=True takes one taste (adding a meal). use=False only asks whether the
+    household has used any this month (sending those meals to the list), so
+    it never spends one. The weekly report counts weeks, not opens."""
+    sub = await build_subscription(user["family_id"])
+    if is_admin_user(user):
+        return apply_admin_subscription(sub)
+    if sub["limits"].get(feature, False):
+        return sub
+    taste = (sub.get("tastes") or {}).get(feature)
+    if taste:
+        database = get_db()
+        if feature == "weekly_report":
+            this_week = taste.get("this_week") or _iso_week()
+            if taste.get("week") == this_week:
+                return sub
+            if taste["left"] > 0 and await _use_taste(
+                    database, user["family_id"], feature, {"week": this_week}):
+                return sub
+        elif use:
+            if taste["left"] > 0 and await _use_taste(database, user["family_id"], feature):
+                return sub
+        elif taste["used"] > 0:
+            return sub
+    plan_limit_error(
+        family_id=user["family_id"],
+        feature=feature,
+        current_plan=sub["plan"],
+        message=(TASTE_SPENT_MESSAGES.get(feature) if taste
+                 else PREMIUM_FEATURE_MESSAGES.get(feature, "Upgrade to use this feature.")),
+    )
+    return sub  # unreachable: plan_limit_error raises
+
+
+# How long after a trial ends the app may show the thank-you recap.
+TRIAL_THANKS_DAYS = 30
+
+
 AI_SCAN_PERIOD_DAYS = 30
 
 
@@ -1584,6 +1737,16 @@ async def build_subscription(family_id: str):
         # Household-only ones (helper accounts, the larger caps) — not just the
         # middle tier's.
         limits = PLAN_CATALOG["household"]["limits"]
+    # This month's taste of the paid features the limits leave out (Free only;
+    # every other limit set includes both). See FREE_TASTES.
+    tastes = await free_tastes(database, family_id, limits)
+    # A trial that ended recently, on a household that is on Free: the app
+    # shows a thank-you with what the family used, once, in place of a wall.
+    trial_ended_at = None
+    if not trial and family.get("trial_used") and family.get("plan") in (None, "village"):
+        ended = _coerce_dt(family.get("trial_ends_at"))
+        if ended and ended <= utcnow() <= ended + timedelta(days=TRIAL_THANKS_DAYS):
+            trial_ended_at = ended
     return {
         "plan": admin_display_plan(family["plan"]) if admin_household else family["plan"],
         # Lets the app show "you're previewing Premium free" notices so launch
@@ -1642,6 +1805,11 @@ async def build_subscription(family_id: str):
                    "recommended_plan": plan_for_household(family, young_people_count, duo_people)}
                   if trial else None),
         "trial_used": bool(family.get("trial_used")),
+        # Set only in the TRIAL_THANKS_DAYS after a trial ended on a household
+        # still on Free; the app's thank-you card reads it.
+        "trial_ended_at": iso(trial_ended_at),
+        # Free only: what is left of this month's taste of each paid feature.
+        "tastes": tastes,
         # Set up a brand-new household: asked once, at setup.
         "household_setup_due": bool(family.get("household_setup_due")),
         "household_living": family.get("household_living"),
@@ -4517,6 +4685,8 @@ INDEXES = {
     "password_resets": ["user_id"],
     # date drives the read-out's window; family_id the per-household rollup.
     "plan_walls": ["date", "family_id"],
+    # Read by _id (family:feature:month); family_id is what deletion sweeps by.
+    "feature_tastes": ["family_id"],
     "redemptions": ["redemption_id"],
     "rewards": ["family_id", "reward_id"],
     "routines": ["family_id", "routine_id"],
@@ -5969,6 +6139,8 @@ _FAMILY_SCOPED_COLLECTIONS = (
     #   shopping_pending  — items waiting to go out in one "added to the list"
     #                       notification, with the adder's name.
     "plan_walls", "shopping_pending",
+    # How much of each monthly Free taste a household has used (2026-10-15).
+    "feature_tastes",
 )
 
 
@@ -18455,10 +18627,12 @@ async def list_meals(user: dict = Depends(require_user), database=Depends(get_db
 
 @app.post("/api/meals")
 async def create_meal(body: MealPlanIn, user: dict = Depends(require_user), database=Depends(get_db)):
-    await require_feature(user, "meal_planner")
     day = body.day.lower()
     if day not in DAYS_OF_WEEK:
         raise HTTPException(400, f"Day must be one of {DAYS_OF_WEEK}")
+    # After the checks, so a refused meal never spends one of a Free
+    # household's monthly tastes.
+    await require_feature_or_taste(user, "meal_planner")
     meal = {
         "meal_id": new_id("meal"),
         "family_id": user["family_id"],
@@ -19261,7 +19435,9 @@ async def suggest_meals_ai(
 
 @app.post("/api/meals/sync-shopping")
 async def sync_meals_to_shopping(user: dict = Depends(require_user), database=Depends(get_db)):
-    await require_feature(user, "meal_planner")
+    # Sending planned meals to the list is part of the Free taste: it spends
+    # nothing, but needs at least one meal planned this month.
+    await require_feature_or_taste(user, "meal_planner", use=False)
     meals = await database["meals"].find(
         {"family_id": user["family_id"]}, {"_id": 0}
     ).to_list(200)
@@ -19583,11 +19759,57 @@ async def set_vault_expiry(doc_id: str, expiry_date: str = Query(""), user: dict
 
 
 # -----------------------------------------------------------------------------
+# The trial recap: what the household actually used, for the thank-you.
+#
+# Roland, 2026-10-15: the end of a trial should be a thank-you, not a wall.
+# This counts, inside the trial's own dates, the things the paid plans gave
+# the family, so the card can say "in your two weeks you planned 6 meals"
+# rather than "your trial ends tomorrow". Counts only, of the household's own
+# rows; nothing is stored. Zero counts are left out, so the card never lists
+# things a family did not do.
+# -----------------------------------------------------------------------------
+TRIAL_RECAP_SOURCES = (
+    # (key, collection, timestamp field, extra filter)
+    ("meals", "meals", "created_at", {}),
+    ("pocket_money", "allowance_txns", "created_at", {}),
+    ("stars", "star_transactions", "created_at", {"delta": {"$gt": 0}}),
+    ("carpools", "carpools", "created_at", {}),
+    ("gift_pots", "gift_pots", "created_at", {}),
+    ("santa", "santa_draws", "sent_at", {}),
+    ("documents", "vault", "created_at", {}),
+)
+
+
+@app.get("/api/trial/recap")
+async def trial_recap(user: dict = Depends(require_user), database=Depends(get_db)):
+    family = await get_family_doc(user["family_id"])
+    started = _coerce_dt(family.get("trial_started_at"))
+    ends = _coerce_dt(family.get("trial_ends_at"))
+    if not started or not ends:
+        return {"started_at": None, "ends_at": None, "ended": False, "items": []}
+    now = utcnow()
+    window = {"$gte": started, "$lte": min(ends, now)}
+    items = []
+    for key, collection, field, extra in TRIAL_RECAP_SOURCES:
+        count = await database[collection].count_documents(
+            {"family_id": user["family_id"], field: window, **extra})
+        if count:
+            items.append({"key": key, "count": count})
+    # The plan to mention, worked out exactly as the trial card does while
+    # the trial runs; after it ends the subscription no longer carries it.
+    recommended = plan_for_household(
+        family, await count_young_people(database, user["family_id"]),
+        await count_duo_people(database, user["family_id"]))
+    return {"started_at": iso(started), "ends_at": iso(ends),
+            "ended": now >= ends, "items": items, "recommended_plan": recommended}
+
+
+# -----------------------------------------------------------------------------
 # Weekly Report Card
 # -----------------------------------------------------------------------------
 @app.get("/api/report/weekly")
 async def weekly_report(user: dict = Depends(require_user), database=Depends(get_db)):
-    await require_feature(user, "weekly_report")
+    await require_feature_or_taste(user, "weekly_report")
     now = utcnow()
     week_ago = now - timedelta(days=7)
     fid = user["family_id"]

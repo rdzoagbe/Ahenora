@@ -1773,6 +1773,28 @@ export type PaidTier = 'duo' | 'family' | 'household';
 export type HouseholdLiving = 'solo' | 'couple' | 'family' | 'two_homes';
 export type BillingCycle = 'monthly' | 'yearly';
 
+/** A Free household's monthly taste of a paid feature (comes back on the 1st). */
+export interface FreeTaste {
+  limit: number;
+  used: number;
+  left: number;
+  /** ISO date the taste comes back. */
+  resets_on: string;
+  /** Weekly report only: the week this month's report was opened for, and this week. */
+  week?: string | null;
+  this_week?: string;
+}
+
+/** What a household used during its trial, for the thank-you card. */
+export interface TrialRecap {
+  started_at: string | null;
+  ends_at: string | null;
+  ended: boolean;
+  items: { key: 'meals' | 'pocket_money' | 'stars' | 'carpools' | 'gift_pots' | 'santa' | 'documents'; count: number }[];
+  /** The plan that fits this household, as the trial card recommends it. */
+  recommended_plan?: Plan;
+}
+
 export interface Subscription {
   plan: Plan;
   billing_cycle: BillingCycle;
@@ -1828,6 +1850,11 @@ export interface Subscription {
   /** A free trial in force (no card; nothing charged when it ends). */
   trial?: { plan: Plan; ends_at: string; days_left: number; recommended_plan?: Plan } | null;
   trial_used?: boolean;
+  /** Set for 30 days after a trial ended on a household still on Free: the
+   *  thank-you card reads it. */
+  trial_ended_at?: string | null;
+  /** Free only: what is left of this month's taste of each paid feature. */
+  tastes?: Partial<Record<'meal_planner' | 'weekly_report', FreeTaste>>;
   /** A brand-new household is asked who lives in it, once, at setup. */
   household_setup_due?: boolean;
   household_living?: HouseholdLiving | null;
@@ -3054,7 +3081,9 @@ export const api = {
   // Meal Planner
   listMeals: () => request<MealPlan[]>('/meals'),
   createMeal: (data: { day: string; meal_type?: string; title: string; ingredients?: string[]; notes?: string; recipe_id?: string }) =>
-    request<MealPlan>('/meals', { method: 'POST', body: data }),
+    // On Free this spends one of the month's meals: the next subscription read
+    // has to show the new count, not the cached one.
+    request<MealPlan>('/meals', { method: 'POST', body: data }).finally(invalidateUsageCaches),
   deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
   clearAllMeals: () => request<{ deleted: number }>('/meals/all', { method: 'DELETE' }),
   suggestMealsAI: (lang: string, variant = 0) =>
@@ -3138,7 +3167,8 @@ export const api = {
       { method: 'PATCH' }),
 
   // Weekly Report
-  weeklyReport: () => request<WeeklyReport>('/report/weekly'),
+  weeklyReport: () => request<WeeklyReport>('/report/weekly').finally(invalidateUsageCaches),   // may spend Free's monthly one
+  trialRecap: () => request<TrialRecap>('/trial/recap'),
   reportLite: () => request<{ tasks_done: number; stars_earned: number }>('/report/lite'),
 
   // Support

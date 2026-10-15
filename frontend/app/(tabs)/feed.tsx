@@ -355,7 +355,7 @@ const ANN_SEEN_KEY = 'coo_family_board_seen_at';
 const SEEN_ALERTS_KEY = 'coo_seen_alert_ids';
 
 export default function Feed() {
-  const { user, t, lang, subscription, dataVersion, requestInvite } = useStore();
+  const { user, t, lang, subscription, dataVersion, requestInvite, refreshSubscription } = useStore();
   // On Duo the children's side is put away: no custody line, no stars.
   const kidsHidden = !!subscription?.kids_sections_hidden;
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -378,7 +378,13 @@ export default function Feed() {
   // this fills it in immediately after.
   const [now, setNow] = useState<Date | null>(null);
   const { isLocked, promptUpgrade } = usePremiumGate();
-  const reportLocked = isLocked('weekly_report');
+  const reportPlanLocked = isLocked('weekly_report');
+  // Free reads one week's report a month (FREE_TASTES on the server). Opening
+  // it is what spends the month's taste, so it is never fetched on its own on
+  // Free: only when the parent taps it, or when this week is already the one.
+  const reportTaste = reportPlanLocked ? subscription?.tastes?.weekly_report : undefined;
+  const reportOpenThisWeek = !!reportTaste && !!reportTaste.week && reportTaste.week === reportTaste.this_week;
+  const reportLocked = reportPlanLocked && !(reportOpenThisWeek || (reportTaste?.left ?? 0) > 0);
   const { px, maxW } = useBreakpoint();
   const ui = useUI();
   const router = useRouter();
@@ -466,6 +472,22 @@ export default function Feed() {
   const newestAnnRef = useRef(0);
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [expandReport, setExpandReport] = useState(false);
+  // Opening the report. On Free with this month's report still unopened, this
+  // tap is the moment it is spent, so the fetch happens here and nowhere else.
+  const toggleReport = useCallback(() => {
+    setExpandReport((v) => !v);
+    if (reportTaste && !reportOpenThisWeek && !report) {
+      api.weeklyReport()
+        .then((r) => { setReport(r); refreshSubscription().catch(() => undefined); })
+        .catch((e: any) => {
+          if (e?.status === 402) {
+            setExpandReport(false);
+            refreshSubscription().catch(() => undefined);
+            promptUpgrade('weekly_report');
+          }
+        });
+    }
+  }, [reportTaste, reportOpenThisWeek, report, refreshSubscription, promptUpgrade]);
   const [loadError, setLoadError] = useState(false);
   // Calendar events whose day has fully passed. Tasks stay (overdue = still to
   // do), but a past event is history — we prompt before clearing, never silently.
@@ -563,7 +585,7 @@ export default function Feed() {
       // while the subscription is still loading (so the UI never flashes a
       // lock), which made every free household fire a guaranteed 402 on
       // each feed load.
-      if (subscription && !reportLocked) {
+      if (subscription && (!reportPlanLocked || reportOpenThisWeek)) {
         api.weeklyReport().then(setReport).catch(() => undefined);
       }
 
@@ -634,7 +656,7 @@ export default function Feed() {
       setRefreshing(false);
     }
     return loaded;
-  }, [t, subscription, reportLocked]);
+  }, [t, subscription, reportPlanLocked, reportOpenThisWeek]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1932,11 +1954,16 @@ export default function Feed() {
 
             {/* Weekly Report Card */}
             <PressScale
-              onPress={() => (reportLocked ? promptUpgrade('weekly_report') : setExpandReport((v) => !v))}
+              onPress={() => (reportLocked ? promptUpgrade('weekly_report') : toggleReport())}
               style={styles.sectionHeader}
             >
               <BarChart3 color={ui.mintText} size={18} />
               <Text style={styles.sectionHeaderText}>{t('feed_weekly_report')}</Text>
+              {reportTaste && !reportLocked ? (
+                <Text testID="report-taste" style={{ fontFamily: 'Figtree_600SemiBold', fontSize: 12, color: ui.mintText, marginLeft: 'auto', marginRight: 6 }}>
+                  {reportOpenThisWeek ? t('taste_report_used') : t('taste_report_free')}
+                </Text>
+              ) : null}
               {reportLocked ? (
                 <LockBadge onPress={() => promptUpgrade('weekly_report')} />
               ) : (

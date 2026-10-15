@@ -243,7 +243,10 @@ class EveryWallIsInstrumented(unittest.TestCase):
         with open(path, encoding="utf-8") as fh:
             lines = fh.read().split("\n")
         calls = [l for l in lines if re.fullmatch(r"\s*plan_limit_error\($", l)]
-        self.assertEqual(len(calls), 15, "the number of upgrade walls changed — "
+        # 16 since 2026-10-15: require_feature_or_taste walls the meal planner
+        # and weekly report once a Free household's monthly taste is used. Same
+        # features, already in the pricing read-out; only the message differs.
+        self.assertEqual(len(calls), 16, "the number of upgrade walls changed — "
                                          "check the pricing read-out still covers them")
 
 
