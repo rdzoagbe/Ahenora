@@ -141,8 +141,9 @@ async def main():
         r["A_pending_invite_with_role"] = mail_b in body and "Co-parent ·" in body
 
         # ---- Gating, FREE state (billing live: no testing window). By
-        # design the suggestions sheet OPENS as a free peek; the gate fires
-        # on ADDING the week to the planner. ----
+        # design the suggestions sheet OPENS as a free peek. Free keeps 7
+        # meals a month (tests/test_free_keeps_a_taste.py), so adding the week
+        # spends those; the gate fires once the month's meals are gone. ----
         async def open_meal_suggest(page):
             await page.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
@@ -160,7 +161,19 @@ async def main():
         await android.click('[data-testid="suggest-add-all"]')
         await android.wait_for_timeout(2500)
         body = await android.inner_text("body")
-        r["A_free_add_is_gated"] = "Upgrade needed" in body
+        taste = api("GET", "/subscription", token=tok_a)["tastes"]["meal_planner"]
+        r["A_free_week_uses_monthly_meals"] = (
+            "Upgrade needed" not in body and taste["used"] > 0
+            and await android.locator('[data-testid="meal-taste-count"]').count() == 1)
+        # Spend what is left of the month, then the same Add-all is the wall.
+        for i in range(taste["left"]):
+            api("POST", "/meals", {"day": "sunday", "title": f"Leftovers {i}"}, tok_a)
+        await open_meal_suggest(android)
+        if await android.locator('[data-testid="suggest-add-all"]').count():
+            await android.click('[data-testid="suggest-add-all"]')
+        await android.wait_for_timeout(2500)
+        body = await android.inner_text("body")
+        r["A_free_add_is_gated_once_month_spent"] = "Upgrade needed" in body
         await android.click('[data-testid="upgrade-close"]')
         await android.wait_for_timeout(500)
 
