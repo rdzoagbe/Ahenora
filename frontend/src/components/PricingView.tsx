@@ -848,6 +848,9 @@ const PLAN_THEMES: Record<
       'pf_free_4',
       'pf_free_5',
       'pf_free_6',
+      // A monthly taste of two paid features (FREE_TASTES on the server,
+      // 2026-10-15): it comes back on the 1st, no timer, no card.
+      'pf_free_taste',
     ],
   },
   duo: {
