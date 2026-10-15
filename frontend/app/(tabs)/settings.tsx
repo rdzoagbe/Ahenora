@@ -397,7 +397,7 @@ export default function Settings() {
               await api.deleteInvite(invite.invite_id);
             } catch (error: any) {
               setInvites(prev);
-              Alert.alert(t('set_error'), error?.message || t('set_please_try_again'));
+              Alert.alert(t('set_error'), apiErrorText(error, t, 'set_please_try_again'));
             }
           },
         },
@@ -523,7 +523,7 @@ export default function Settings() {
       }
     } catch (error: any) {
       logger.warn('notification settings failed', error);
-      setNotificationStatus(error?.message || t('set_notif_update_error'));
+      setNotificationStatus(apiErrorText(error, t, 'set_notif_update_error'));
     } finally {
       setSavingNotifications(false);
     }
@@ -649,7 +649,7 @@ export default function Settings() {
       await load();
     } catch (error: any) {
       setInviteError(true);
-      setInviteResult(error?.message || t('set_error'));
+      setInviteResult(apiErrorText(error, t, 'set_invite_failed'));
     } finally {
       setSending(false);
     }
@@ -695,7 +695,7 @@ export default function Settings() {
       await load();
     } catch (error: any) {
       setInviteError(true);
-      setInviteResult(error?.message || t('set_error'));
+      setInviteResult(apiErrorText(error, t, 'set_invite_failed'));
     } finally {
       setSending(false);
     }
@@ -733,7 +733,7 @@ export default function Settings() {
       await load();
     } catch (error: any) {
       setInviteError(true);
-      setInviteResult(error?.message || t('set_error'));
+      setInviteResult(apiErrorText(error, t, 'set_invite_failed'));
     } finally {
       setSending(false);
     }
@@ -1290,7 +1290,7 @@ export default function Settings() {
                 const r = await api.signOutEverywhere();
                 showToast(t('set_signed_out_everywhere', { n: r.ended }), 'success');
               } catch (e: any) {
-                showToast(e?.message || t('set_please_try_again'), 'error');
+                showToast(apiErrorText(e, t, 'set_please_try_again'), 'error');
               }
             }}
             style={styles.signOutAllBtn}

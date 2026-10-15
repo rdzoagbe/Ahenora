@@ -16,6 +16,7 @@ import { refreshOutcome } from '../../src/refreshOutcome';
 import { webConfirm } from '../../src/confirm';
 import { PressScale } from '../../src/components/PressScale';
 import { logger } from '../../src/logger';
+import { apiErrorText } from '../../src/apiError';
 import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
@@ -536,7 +537,7 @@ export default function Calendar() {
         else Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         logger.warn('calendar sync failed', e);
-        Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
+        Alert.alert(t('cal_calendar_sync_failed'), apiErrorText(e, t, 'cal_please_try_again'));
       } finally {
         // Only the run that is still current may take the spinner down;
         // a superseded or cancelled one clearing it stranded the user
@@ -756,7 +757,7 @@ export default function Calendar() {
       showToast(t('cal_carpool_added'), 'success');
     } catch (e: any) {
       logger.warn('create carpool failed', e);
-      showToast(e?.message || t('set_error'), 'error');
+      showToast(apiErrorText(e, t, 'set_error'), 'error');
     } finally {
       setCpSaving(false);
     }
@@ -965,7 +966,7 @@ export default function Calendar() {
       Alert.alert(t('cal_calendar_synced'), syncSummary(importResult));
     } catch (e: any) {
       logger.warn('calendar sync failed', e);
-      const message = e?.message || t('cal_please_try_again');
+      const message = apiErrorText(e, t, 'cal_please_try_again');
       setCalendarSyncStatus(`${t('cal_calendar_sync_failed')}: ${message}`);
       Alert.alert(t('cal_calendar_sync_failed'), message);
     } finally {
@@ -1015,7 +1016,7 @@ export default function Calendar() {
         else Alert.alert(t('cal_calendar_synced'), syncSummary(result));
       } catch (e: any) {
         logger.warn('microsoft calendar sync failed', e);
-        Alert.alert(t('cal_calendar_sync_failed'), e?.message || t('cal_please_try_again'));
+        Alert.alert(t('cal_calendar_sync_failed'), apiErrorText(e, t, 'cal_please_try_again'));
       } finally {
         // Only the run that is still current may take the spinner down;
         // a superseded or cancelled one clearing it stranded the user

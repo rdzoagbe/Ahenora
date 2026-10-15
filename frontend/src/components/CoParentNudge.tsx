@@ -56,6 +56,9 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
   const [recoverDismissed, setRecoverDismissed] = useState<boolean | null>(null);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  // A resend that failed says so; a button that just stops spinning reads as
+  // "sent" to the person watching it.
+  const [resendFailed, setResendFailed] = useState(false);
   // Set when the browser has no share sheet and the link went to the clipboard,
   // or when sharing failed and the link is being handed back rather than lost.
   const [linkNote, setLinkNote] = useState<string | null>(null);
@@ -90,8 +93,10 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
     // link has nobody to write to and goes through shareInvite instead.
     if (!recover || !recover.email || !onResend || sending) return;
     setSending(true);
+    setResendFailed(false);
     try {
       if (await onResend(recover.email)) setSent(true);
+      else setResendFailed(true);
     } finally {
       setSending(false);
     }
@@ -174,6 +179,9 @@ export function CoParentNudge({ visible, onInvite, stranded, onResend }: Props) 
             <Text style={styles.ctaText}>{sent ? t('cp_again_sent') : t('cp_again_cta')}</Text>
             {sent ? null : <ArrowRight color="#fff" size={16} />}
           </PressScale>
+          {resendFailed ? (
+            <Text testID="cp-nudge-failed" style={[styles.body, { color: ui.danger, marginTop: 8 }]}>{t('cp_resend_failed')}</Text>
+          ) : null}
         </>
       ) : (
         <>

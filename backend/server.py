@@ -12195,7 +12195,11 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
         changes["due_date"] = parse_dt(payload.due_date) if payload.due_date else None
 
     if payload.recurrence is not None:
-        if payload.recurrence not in {"none", "daily", "weekly", "monthly"}:
+        # The same set as creating a card. This used to leave out "yearly", so
+        # a birthday card (always yearly, and the edit sheet always resends
+        # the repeat) could not be edited at all: fixing a typo in the title
+        # came back "Invalid recurrence".
+        if payload.recurrence not in RECURRENCE_VALUES:
             raise HTTPException(status_code=400, detail="Invalid recurrence")
         changes["recurrence"] = payload.recurrence
 

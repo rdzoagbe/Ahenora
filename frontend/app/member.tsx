@@ -14,6 +14,7 @@ import { api, FamilyMember, Medicine, MemberRecord, StarTransaction, Vaccination
 import { localeFor } from '../src/utils/date';
 import { dueState } from '../src/vaccinations';
 import { logger } from '../src/logger';
+import { apiErrorText } from '../src/apiError';
 
 type Kind = 'parent' | 'teen' | 'kid' | 'helper' | 'member';
 
@@ -197,6 +198,7 @@ export default function MemberProfile() {
       await loadMember();
     } catch (e) {
       logger.warn('give stars failed', e);
+      Alert.alert(t('rec_title'), apiErrorText(e, t, 'rec_save_failed'));
     } finally {
       setBusy(false);
     }
@@ -468,7 +470,7 @@ export default function MemberProfile() {
       await api.updateFamilyMember(id, { avatar: next ?? '' });
     } catch (e: any) {
       setAvatar(previous);
-      Alert.alert(t('set_remove_member_error'), e?.message || t('set_please_try_again'));
+      Alert.alert(t('set_remove_member_error'), apiErrorText(e, t, 'set_please_try_again'));
     } finally {
       setSavingAvatar(false);
     }
@@ -483,7 +485,7 @@ export default function MemberProfile() {
       setDisplayName(next);
       setRenaming(false);
     } catch (e: any) {
-      Alert.alert(t('set_remove_member_error'), e?.message || t('set_please_try_again'));
+      Alert.alert(t('set_remove_member_error'), apiErrorText(e, t, 'set_please_try_again'));
     } finally {
       setSavingName(false);
     }
@@ -503,7 +505,7 @@ export default function MemberProfile() {
               await api.deleteFamilyMember(id);
               router.back();
             } catch (e: any) {
-              Alert.alert(t('set_remove_member_error'), e?.message || t('set_please_try_again'));
+              Alert.alert(t('set_remove_member_error'), apiErrorText(e, t, 'set_please_try_again'));
             }
           },
         },

@@ -23,6 +23,7 @@ import { logger } from '../src/logger';
 import { extractInviteToken, rememberInvite, readStoredInvite, clearStoredInvite, signInWithPendingInvite } from '../src/invite';
 import { googleClientIds } from '../src/googleClientIds';
 import { getLoginHint, clearLoginHint, maskEmail, LoginHint } from '../src/loginHint';
+import { apiErrorText } from '../src/apiError';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -35,19 +36,6 @@ WebBrowser.maybeCompleteAuthSession();
 // which is the one thing PNG is worst at) to 70 KB with no visible change:
 // mean difference 1.3/255, worst pixel 7.
 const BG_SOURCE = require('../assets/images/signin-bg.jpg');
-
-function authErrorMessage(error: unknown, params?: Record<string, string>, fallback?: string) {
-  const candidate = error as { description?: string; code?: string; name?: string } | null | undefined;
-  return (
-    candidate?.description ||
-    candidate?.code ||
-    candidate?.name ||
-    params?.error_description ||
-    params?.error ||
-    fallback ||
-    'Google returned an authentication error.'
-  );
-}
 
 export default function Landing() {
   const router = useRouter();
@@ -72,7 +60,16 @@ export default function Landing() {
   const continueAsHint = () => {
     if (!loginHint) return;
     if (loginHint.method === 'google') signIn();
+    else if (loginHint.method === 'apple') signInWithApple();
     else openEmailAuth('login', loginHint.email);
+  };
+  // What a failed sign-in says. A refused token (401/403) or a bad request is
+  // "try again", not "you have been signed out"; anything else (no network,
+  // a timeout, the server down) gets its own sentence. The server's text never
+  // reaches the screen.
+  const signInFailureText = (e: unknown) => {
+    const status = (e as { status?: number })?.status;
+    return status && status < 500 ? t('land_try_again') : apiErrorText(e, t, 'land_try_again');
   };
   const [signingIn, setSigningIn] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -85,6 +82,9 @@ export default function Landing() {
   const [pasteError, setPasteError] = useState(false);
   const [pasteBusy, setPasteBusy] = useState(false);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
+  // A link that was already used (forwarded on, opened twice). Said once, and
+  // nothing kept: sending it with the sign-in would only get a refusal.
+  const [inviteGone, setInviteGone] = useState(false);
   // What the invitation put aside, and how big the household is. Shown before
   // anybody is asked to make an account: signing up to find out what you have
   // agreed to is the wrong order.
@@ -135,7 +135,17 @@ export default function Landing() {
   useEffect(() => {
     if (!loading && user) {
       // A teen account gets the restricted teen view, never the full app.
-      router.replace(user.is_teen ? '/teen' : '/feed');
+      if (user.is_teen) { router.replace('/teen'); return; }
+      // Somebody sent here from Plans to sign in goes back to Plans, not Home
+      // (pricing.tsx writes it; this is the only reader).
+      let back: string | null = null;
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          back = window.sessionStorage.getItem('post_auth_redirect');
+          window.sessionStorage.removeItem('post_auth_redirect');
+        } catch { back = null; }
+      }
+      router.replace((back && back.startsWith('/') ? back : '/feed') as never);
     }
   }, [loading, user, router]);
 
@@ -147,6 +157,13 @@ export default function Landing() {
       try {
         const { api } = await import('../src/api');
         const invite = await api.getInvite(token);
+        if (invite.status && invite.status !== 'pending') {
+          // Used or withdrawn: the server says only that it no longer stands.
+          await clearStoredInvite();
+          setInviteToken(null);
+          setInviteGone(true);
+          return;
+        }
         setInvitedBy(invite.inviter_name);
         setInviteHandover(invite.handover || null);
         setInviteHousehold(invite.household || null);
@@ -190,8 +207,10 @@ export default function Landing() {
     try {
       const { api } = await import('../src/api');
       const invite = await api.getInvite(token);
+      if (invite.status && invite.status !== 'pending') { setPasteError(true); return; }
       await rememberInvite(token);
       setInviteToken(token);
+      setInviteGone(false);
       setInvitedBy(invite.inviter_name);
       setInviteHandover(invite.handover || null);
       setInviteHousehold(invite.household || null);
@@ -272,8 +291,9 @@ export default function Landing() {
       if (!response || handledResponseRef.current) return;
 
       if (response.type === 'error') {
+        // The provider's codes ("access_denied") go to the log, not the screen.
         logger.error('google auth-session error', response.error || response.params);
-        Alert.alert(t('land_google_signin_failed'), authErrorMessage(response.error, response.params, t('land_google_auth_error')));
+        Alert.alert(t('land_google_signin_failed'), t('land_google_auth_error'));
         return;
       }
 
@@ -296,7 +316,7 @@ export default function Landing() {
         await completeWithIdToken(idToken);
       } catch (error: any) {
         logger.error('google sign-in failed', error?.message || error);
-        Alert.alert(t('land_signin_failed'), error?.message || t('land_try_again'));
+        Alert.alert(t('land_signin_failed'), signInFailureText(error));
         handledResponseRef.current = false;
         setSigningIn(false);
       }
@@ -326,7 +346,7 @@ export default function Landing() {
     setSigningIn(true);
     completeWithIdToken(idToken).catch((error: any) => {
       logger.error('google redirect sign-in failed', error?.message || error);
-      Alert.alert(t('land_signin_failed'), error?.message || t('land_try_again'));
+      Alert.alert(t('land_signin_failed'), signInFailureText(error));
       handledResponseRef.current = false;
       setSigningIn(false);
     });
@@ -349,6 +369,12 @@ export default function Landing() {
         GoogleSignin.configure({ webClientId, scopes: ['profile', 'email'], offlineAccess: false });
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
         const userInfo = await GoogleSignin.signIn();
+        // Since v13 the library resolves a cancelled sheet ({type: 'cancelled'})
+        // instead of throwing: somebody who closed it has not failed at anything.
+        if ((userInfo as { type?: string })?.type === 'cancelled') {
+          setSigningIn(false);
+          return;
+        }
         const idToken = userInfo?.data?.idToken || (userInfo as any)?.idToken;
 
         if (!idToken) {
@@ -402,7 +428,7 @@ export default function Landing() {
       setSigningIn(false);
       if (error?.code === 'SIGN_IN_CANCELLED') return;
       logger.error('google sign-in failed', error?.message || error);
-      Alert.alert(t('land_signin_failed'), error?.message || t('land_try_again'));
+      Alert.alert(t('land_signin_failed'), signInFailureText(error));
     }
   };
 
@@ -472,6 +498,14 @@ export default function Landing() {
             <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('land_badge_google_play')}</Text>
           </View>
 
+          {inviteGone && !invitedBy ? (
+            <View
+              style={[styles.inviteBanner, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}
+              testID="invite-gone"
+            >
+              <Text style={[styles.inviteText, { color: theme.colors.textMuted }]}>{t('land_invite_bad')}</Text>
+            </View>
+          ) : null}
           {invitedBy ? (
             <View
               style={[styles.inviteBanner, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}

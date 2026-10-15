@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -51,8 +51,21 @@ export default function Onboarding() {
   // when it ends. Latched once seen, so the steps never shift under the
   // person once the answer has been saved.
   const [askHousehold, setAskHousehold] = useState(false);
+  // The subscription is what says whether to ask, and it arrives after sign-in
+  // on its own clock. Read it before the first step shows: when it landed
+  // mid-way the step list grew under the person's feet (the index stayed, the
+  // screen it pointed at changed). A fetch that fails, or takes too long,
+  // falls back to the short flow rather than hold the door.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const done = () => { if (alive) setReady(true); };
+    const giveUp = setTimeout(done, 8000);
+    refreshSubscription().catch(() => undefined).finally(() => { clearTimeout(giveUp); done(); });
+    return () => { alive = false; clearTimeout(giveUp); };
+  }, [refreshSubscription]);
   const setupDue = !!subscription?.household_setup_due;
-  if (setupDue && !askHousehold) setAskHousehold(true);
+  if (ready && setupDue && !askHousehold && step === 0) setAskHousehold(true);
   const [living, setLiving] = useState<Living | null>(null);
   const [children, setChildren] = useState(1);
   const [planBusy, setPlanBusy] = useState(false);
@@ -110,7 +123,10 @@ export default function Onboarding() {
       if (how === 'trial') logEvent('onboarding_trial_started');
       await refreshSubscription().catch(() => undefined);
     } catch (e) {
+      // Said, not swallowed: a family that was told nothing believed the
+      // trial had started and found the locks a week later.
       logger.warn('household setup failed', e);
+      Alert.alert(t('onb_setup_failed'));
     } finally {
       setPlanBusy(false);
     }
@@ -206,6 +222,14 @@ export default function Onboarding() {
   // roof is not asked it. A household that was not asked who lives there keeps
   // the question as it always had it.
   const askCustody = !askHousehold || living === 'two_homes';
+
+  if (!ready) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.bg, alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator color={theme.colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>

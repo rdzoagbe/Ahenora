@@ -30,6 +30,9 @@ export function InviteJoinPrompt() {
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The invitation no longer stands (used, withdrawn, expired): there is
+  // nothing left to retry, so the join button goes and only "Not now" stays.
+  const [gone, setGone] = useState(false);
   const checked = useRef(false);
 
   useEffect(() => {
@@ -202,12 +205,22 @@ export function InviteJoinPrompt() {
     // Anything else stays on screen with a retry: a silent close reads as
     // "nothing happened" and hides the actual problem.
     setBusy(false);
-    const detail = raw.match(/\{.*"detail"\s*:\s*"([^"]+)"/)?.[1];
-    // No detail means the request never got a readable answer — keep the raw
-    // reason visible ("Load failed", "aborted"...) so a user screenshot
-    // pinpoints network vs timeout vs server without a debug session.
-    const reason = raw.replace(/[{}"\\]/g, '').trim().slice(0, 90);
-    setError(detail || `${t('invite_join_error')}${reason ? ` (${reason})` : ''}`);
+    const status = /^\d{3}:/.test(raw) ? Number(raw.slice(0, 3)) : 0;
+    if (status === 404 || status === 410) {
+      // Unknown or expired: a retry can never succeed, so say so in the
+      // person's own language and forget the token.
+      await clearStoredInvite();
+      setGone(true);
+      setError(t('invite_join_gone'));
+      return;
+    }
+    // A real answer gets a translated sentence; the server's English detail
+    // stays in the log. No answer at all means the request never got a
+    // readable reply — keep the raw reason visible ("Load failed",
+    // "aborted"...) so a user screenshot pinpoints network vs timeout vs
+    // server without a debug session.
+    const reason = status ? '' : raw.replace(/[{}"\\]/g, '').trim().slice(0, 90);
+    setError(`${t('invite_join_error')}${reason ? ` (${reason})` : ''}`);
   };
 
   if (!token) return null;
@@ -242,6 +255,7 @@ export function InviteJoinPrompt() {
               {error ? (
                 <Text style={[styles.note, { color: c.danger, marginTop: 10 }]}>{error}</Text>
               ) : null}
+              {gone ? null : (
               <PressScale
                 testID="invite-join-accept"
                 onPress={accept}
@@ -261,6 +275,7 @@ export function InviteJoinPrompt() {
                   </Text>
                 )}
               </PressScale>
+              )}
               <PressScale
                 testID="invite-join-later"
                 onPress={dismiss}

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Reply, Send, X } from 'lucide-react-native';
 
 import { PressScale } from './PressScale';
+import ErrorState from './ErrorState';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { ChatMessage, CHAT_REACTIONS, chatCanEdit } from '../api';
@@ -197,6 +198,9 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
   const styles = createStyles(ui);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  // The first load failing is not "no messages yet": that hint over a thread
+  // full of messages is a lie the next poll may never correct.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   // The message being answered, if any. Held as the whole message rather than
@@ -303,10 +307,11 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
       if (!delta) since.current = undefined;
       const added = absorb(res.messages);
       if (!delta || added) markRead?.().catch(() => undefined);
+      setLoadFailed(false);
     } catch (e) {
       // A poll that fails is not worth telling anybody about: the next one is
       // a few seconds away. Only the first load decides what the screen shows.
-      if (!delta) logger.warn('chat load failed', e);
+      if (!delta) { logger.warn('chat load failed', e); setLoadFailed(true); }
     } finally {
       setLoading(false);
     }
@@ -432,7 +437,9 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
         onContentSizeChange={() => {
           if (atBottom.current) listRef.current?.scrollToEnd({ animated: false });
         }}
-        ListEmptyComponent={<Text style={styles.empty}>{emptyHint}</Text>}
+        ListEmptyComponent={loadFailed
+          ? <ErrorState onRetry={() => { setLoading(true); refresh(false); }} />
+          : <Text style={styles.empty}>{emptyHint}</Text>}
         renderItem={({ item, index }) => (
           <MessageRow
             item={item}

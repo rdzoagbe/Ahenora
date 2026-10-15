@@ -33,6 +33,9 @@ export default function KidScreen() {
 
   const [home, setHome] = useState<KidHome | null>(null);
   const [busy, setBusy] = useState(false);
+  // A tap that did not save says so: a child who sees a chore vanish and
+  // come straight back, with no word why, taps it again and again.
+  const [saveNote, setSaveNote] = useState<string | null>(null);
   const [exitOpen, setExitOpen] = useState(false);
   // A note from a parent. A child has no login and no inbox, so this is the
   // only place in the app someone can actually say something to them.
@@ -76,19 +79,27 @@ export default function KidScreen() {
     // Take it off the list straight away — a child who taps and sees nothing
     // happen taps again.
     setHome((h) => (h ? { ...h, chores: h.chores.filter((c) => c.card_id !== cardId) } : h));
-    try { await api.kidFinishChore(cardId); } catch (e) { logger.warn('kid finish failed', e); }
-    await load();
+    setSaveNote(null);
+    try {
+      await api.kidFinishChore(cardId);
+    } catch (e) {
+      logger.warn('kid finish failed', e);
+      setSaveNote(t('kid_couldnt_save'));
+    }
+    await load();   // puts the chore back if it did not save
     setBusy(false);
   };
 
   const spend = async (rewardId: string) => {
     if (busy) return;
     setBusy(true);
+    setSaveNote(null);
     try {
       const out = await api.kidRequestReward(rewardId);
       setHome((h) => (h ? { ...h, stars: out.stars } : h));
     } catch (e) {
       logger.warn('kid reward failed', e);
+      setSaveNote(t('kid_couldnt_save'));
     }
     await load();
     setBusy(false);
@@ -164,6 +175,9 @@ export default function KidScreen() {
             <Text testID="kid-stars" style={styles.starNumber}>{home.stars}</Text>
             <Text style={styles.starLabel}>{t('kid_stars_label')}</Text>
           </View>
+          {saveNote ? (
+            <Text testID="kid-save-note" style={[styles.noteText, { color: ui.danger, textAlign: 'center', marginTop: 8 }]}>{saveNote}</Text>
+          ) : null}
 
           {notes.length > 0 ? (
             <>

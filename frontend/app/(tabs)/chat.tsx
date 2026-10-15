@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { MessageCircle, Users } from 'lucide-react-native';
 
 import { PressScale } from '../../src/components/PressScale';
+import ErrorState from '../../src/components/ErrorState';
 import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
@@ -24,12 +25,17 @@ export default function ChatTab() {
   const [threads, setThreads] = useState<ChatThreadSummary[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // A failed load used to leave a header over nothing, as if the household
+  // had no rooms to talk in.
+  const [loadFailed, setLoadFailed] = useState(false);
   const loadThreads = useCallback(async () => {
     try {
       setThreads((await api.chatThreads()).threads);
+      setLoadFailed(false);
     } catch (e) {
       logger.warn('chat threads failed', e);
-      setThreads([]);
+      setThreads((prev) => prev ?? []);
+      setLoadFailed(true);
     }
   }, []);
 
@@ -59,6 +65,8 @@ export default function ChatTab() {
           showAdd={false} eyebrow={t('nav_more_chat_sub')} title={t('chat_title')} />
       {threads === null ? (
         <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>
+      ) : loadFailed && threads.length === 0 ? (
+        <ErrorState onRetry={loadThreads} />
       ) : (
         <View style={{ gap: 8, marginTop: 8 }}>
           {threads.map((th) => (

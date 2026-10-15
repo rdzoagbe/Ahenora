@@ -34,6 +34,7 @@ import { useStore } from '../../src/store';
 
 import { api, logEvent, Entitlements, ExpiryAlert, FamilyMember, VaultDoc, VaultVisibility } from '../../src/api';
 import { logger } from '../../src/logger';
+import { apiErrorText } from '../../src/apiError';
 import { refreshOutcome } from '../../src/refreshOutcome';
 import { onVaultChanged } from '../../src/vaultChanged';
 import { parseDisplayDate } from '../../src/dateDisplay';
@@ -195,7 +196,7 @@ export default function Vault() {
       }
     } catch (e: any) {
       logger.warn('Vault load failed:', e?.message || e);
-      showToast(e?.message || t('vault_could_not_load'), 'error');
+      showToast(apiErrorText(e, t, 'vault_could_not_load'), 'error');
     } finally {
       setLoading(false);
     }
@@ -408,7 +409,7 @@ export default function Vault() {
       logEvent('vault_added');
     } catch (e: any) {
       logger.warn('Save vault document failed:', e?.message || e);
-      showToast(e?.message || t('vault_could_not_save'), 'error');
+      showToast(apiErrorText(e, t, 'vault_could_not_save'), 'error');
     } finally {
       setSaving(false);
     }

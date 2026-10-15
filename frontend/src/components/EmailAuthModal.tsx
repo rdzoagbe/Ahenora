@@ -18,7 +18,8 @@ import { PasswordInput } from './PasswordInput';
 import { useStore } from '../store';
 import { detectDeviceLang } from '../i18n';
 import { logger } from '../logger';
-import { signInWithPendingInvite, INVITE_REJECTED_ON_EMAIL } from '../invite';
+import { signInWithPendingInvite, clearStoredInvite, INVITE_REJECTED_ON_EMAIL } from '../invite';
+import { apiErrorText } from '../apiError';
 
 type Mode = 'signup' | 'login';
 
@@ -130,12 +131,6 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
     setView('forgot');
   };
 
-  const readDetail = (e: any, fallback: string) => {
-    const raw = String(e?.message || '');
-    const match = raw.match(/\{.*"detail"\s*:\s*"([^"]+)"/);
-    return match?.[1] || fallback;
-  };
-
   // Step one: ask the server to email a code. The reply is deliberately the
   // same whether or not the account exists, so the message here never confirms
   // an email is registered — it just moves on to the code entry.
@@ -159,10 +154,16 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
         : t('forgot_code_sent'));
     } catch (e: any) {
       logger.warn('reset request failed', e?.message || e);
-      // Even on error, keep the flow moving — a failed send must not reveal
-      // whether the address exists. Let them try the code / resend.
-      setForgotStage('verify');
-      setForgotNote(t('forgot_code_sent'));
+      // No answer at all (offline, timed out): say so and stay here, rather
+      // than promise a code that was never asked for. A real answer, even an
+      // error, keeps the flow moving — a failed send must not reveal whether
+      // the address exists. Let them try the code / resend.
+      if (!e?.status) {
+        setForgotError(t('err_offline'));
+      } else {
+        setForgotStage('verify');
+        setForgotNote(t('forgot_code_sent'));
+      }
     } finally {
       setForgotBusy(false);
     }
@@ -194,7 +195,13 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
       onSuccess();
     } catch (e: any) {
       logger.warn('reset failed', e?.message || e);
-      setForgotError(readDetail(e, t('forgot_failed')));
+      // The status decides the sentence; the server's English never reaches
+      // the screen (src/apiError.ts).
+      setForgotError(
+        e?.status === 400 ? t('forgot_code_bad')
+          : e?.status === 429 ? t('email_too_many')
+            : apiErrorText(e, t, 'forgot_failed'),
+      );
       setForgotBusy(false);
     }
   };
@@ -226,34 +233,52 @@ export function EmailAuthModal({ visible, onClose, onSuccess, inviteToken, initi
       // The invite is read from durable storage as well as the prop, and an
       // invite the server refuses (unknown, expired) is dropped so it can
       // never be the reason somebody cannot get into their own account.
-      const result = await signInWithPendingInvite(
-        inviteToken,
-        (invite_token) =>
-          mode === 'signup'
-            ? api.registerWithEmail({
-                name: name.trim(),
-                email: trimmedEmail,
-                password,
-                invite_token,
-                language: detectDeviceLang(),
-              })
-            : api.loginWithEmail({
-                email: trimmedEmail,
-                password,
-                invite_token,
-              }),
-        INVITE_REJECTED_ON_EMAIL,
-      );
+      const run = (invite_token?: string) =>
+        mode === 'signup'
+          ? api.registerWithEmail({
+              name: name.trim(),
+              email: trimmedEmail,
+              password,
+              invite_token,
+              language: detectDeviceLang(),
+            })
+          : api.loginWithEmail({
+              email: trimmedEmail,
+              password,
+              invite_token,
+            });
+      let result;
+      try {
+        result = await signInWithPendingInvite(inviteToken, run, INVITE_REJECTED_ON_EMAIL);
+      } catch (e: any) {
+        // An invitation that was already accepted (a link forwarded on, or
+        // opened twice) answers 409 on this route too — and it must never be
+        // the reason somebody cannot get into their own account. Drop it and
+        // go in without it. The server's wording is only matched here, never
+        // shown.
+        if (e?.status === 409 && /invite/i.test(String(e?.message || ''))) {
+          await clearStoredInvite();
+          result = await run(undefined);
+        } else {
+          throw e;
+        }
+      }
 
       await setUserFromAuth(result.user, result.session_token, 'email');
       reset();
       onSuccess();
     } catch (e: any) {
       logger.warn('email auth failed', e?.message || e);
-      const raw = String(e?.message || '');
-      // request() throws `${status}: ${body}` — surface the readable detail when present.
-      const match = raw.match(/\{.*"detail"\s*:\s*"([^"]+)"/);
-      setError(match?.[1] || (mode === 'signup' ? t('email_signup_failed') : t('email_login_failed')));
+      // The status decides what is said, in the person's own language. The
+      // server's detail is English written for a developer and stays in the
+      // log (src/apiError.ts).
+      const status = e?.status as number | undefined;
+      setError(
+        status === 401 ? t('email_wrong_credentials')
+          : status === 409 ? (mode === 'signup' ? t('email_exists') : t('email_login_failed'))
+            : status === 429 ? t('email_too_many')
+              : apiErrorText(e, t, mode === 'signup' ? 'email_signup_failed' : 'email_login_failed'),
+      );
       setBusy(false);
     }
   };
