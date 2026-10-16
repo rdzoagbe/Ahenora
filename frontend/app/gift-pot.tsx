@@ -15,6 +15,7 @@ import { useStore } from '../src/store';
 import { usePremiumGate } from '../src/components/PremiumGate';
 import { api, GiftContribution, GiftPot } from '../src/api';
 import { logger } from '../src/logger';
+import { apiErrorText } from '../src/apiError';
 
 /**
  * The Gift Pot — one shared present instead of five small ones. Reached from a
@@ -85,7 +86,7 @@ export default function GiftPotRoute() {
       setPot(created);
     } catch (e) {
       if ((e as { status?: number })?.status === 402) { promptUpgrade('gift_pot'); }
-      else logger.warn('start pot failed', e);
+      else { logger.warn('start pot failed', e); showToast(apiErrorText(e, t, 'vault_could_not_update'), 'error'); }
     } finally {
       setBusy(false);
     }
@@ -145,7 +146,7 @@ export default function GiftPotRoute() {
       // while this screen was open. Saying so is better than "could not
       // update", because the pot genuinely should not be deleted now.
       logger.warn('delete pot failed', e);
-      showToast(e?.message || t('vault_could_not_update'), 'error');
+      showToast(apiErrorText(e, t, 'vault_could_not_update'), 'error');
     } finally {
       setBusy(false);
     }

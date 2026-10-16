@@ -287,7 +287,10 @@ function todayTimeLabel(card: Card, t: TFunc, lang: string): string {
   const due = new Date(time);
   if (!sameLocalDay(due, new Date())) return due.toLocaleDateString(lang, { weekday: 'short' });
   if (due.getHours() === 0 && due.getMinutes() === 0) return t('feed_all_day');
-  return due.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+  // The same shape as the calendar ("8:00 AM", "17:00"). The two-digit hour
+  // gave English "08:00 AM", which did not fit the column on a phone and read
+  // "08:0…" on every row of the day.
+  return due.toLocaleTimeString(localeFor(lang), { hour: 'numeric', minute: '2-digit' });
 }
 
 /**
@@ -829,7 +832,7 @@ export default function Feed() {
       );
     } catch (e: any) {
       logger.warn('capture failed', e);
-      showToast(e?.message || t('feed_could_not_update'), 'error');
+      showToast(apiErrorText(e, t, 'feed_could_not_update'), 'error');
     } finally {
       setCapturing(false);
     }
@@ -2593,7 +2596,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   todayLink: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
   todayRow: { flexDirection: 'row', alignItems: 'stretch' },
   todayTime: {
-    width: 58, paddingLeft: 14, paddingTop: 29, color: ui.text,
+    // Wide enough for "11:00 AM" at this size; a time cut to "11:0…" is no time.
+    width: 76, paddingLeft: 14, paddingTop: 29, color: ui.text,
     fontFamily: 'Figtree_700Bold', fontSize: 12.5, fontVariant: ['tabular-nums'],
   },
   todayRowBody: { flex: 1, minWidth: 0 },

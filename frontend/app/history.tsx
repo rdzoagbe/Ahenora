@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft, Eye, RotateCcw, Trash2 } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
+import ErrorState from '../src/components/ErrorState';
 import { MiniRow, useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, ActivityEntry, Card } from '../src/api';
@@ -29,17 +30,18 @@ export default function HistoryRoute() {
   const styles = useMemo(() => createStyles(ui), [ui]);
 
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [done, setDone] = useState<Card[]>([]);
   const [hidden, setHidden] = useState<ActivityEntry[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const [cards, lines] = await Promise.all([
-        api.listCards('DONE').catch(() => [] as Card[]),
-        api.listHiddenActivity().catch(() => [] as ActivityEntry[]),
-      ]);
-      setDone(cards);
-      setHidden(lines);
+      // A dead network is not an empty history: the completed list decides
+      // whether the screen shows "nothing yet" or "couldn't load".
+      const [cards, lines] = await Promise.allSettled([api.listCards('DONE'), api.listHiddenActivity()]);
+      if (cards.status === 'fulfilled') { setDone(cards.value); setLoadFailed(false); }
+      else { logger.warn('history load failed', cards.reason); setLoadFailed(true); }
+      setHidden(lines.status === 'fulfilled' ? lines.value : []);
     } finally {
       setLoading(false);
     }
@@ -128,6 +130,8 @@ export default function HistoryRoute() {
       <ScrollView contentContainerStyle={styles.scroll}>
         {loading ? (
           <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
+        ) : loadFailed && groups.length === 0 ? (
+          <ErrorState onRetry={() => { setLoading(true); load(); }} />
         ) : groups.length === 0 ? (
           <Text style={styles.empty} testID="history-empty">{t('hist_empty')}</Text>
         ) : groups.map((group) => (

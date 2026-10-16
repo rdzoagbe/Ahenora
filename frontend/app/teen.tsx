@@ -83,7 +83,9 @@ export default function TeenScreen() {
         ? { ...prev, notes: prev.notes.map((n) => (n.note_id === noteId ? updated : n)) }
         : prev));
     } catch (e) {
+      // The parent is waiting on this "got it": a tap that did nothing must say so.
       logger.warn('teen note ack failed', e);
+      Alert.alert(t('teen_couldnt_save'));
     } finally {
       setAckingNote(null);
     }

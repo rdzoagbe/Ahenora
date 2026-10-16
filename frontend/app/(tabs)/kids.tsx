@@ -56,6 +56,7 @@ import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore,
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
+import { apiErrorText } from '../../src/apiError';
 import { refreshOutcome, onlyWhatIsOnScreen, type RefreshSnapshot } from '../../src/refreshOutcome';
 import { useKidsSectionsHidden } from '../../src/kidsSections';
 import { ChildrenLockedCard } from '../../src/components/FreeChangeCard';
@@ -661,7 +662,7 @@ export default function Kids() {
       loaded = { items: m.length, waiting: waiting ?? undefined };
     } catch (e: any) {
       logger.warn('Kids page load failed:', e?.message || e);
-      setErrorMessage(e?.message || t('kids_load_error'));
+      setErrorMessage(apiErrorText(e, t, 'kids_load_error'));
     } finally {
       setLoading(false);
     }
@@ -787,7 +788,7 @@ export default function Kids() {
           ],
         );
       } else {
-        showToast(e?.message || t('kids_add_child_error'), 'error');
+        showToast(apiErrorText(e, t, 'kids_add_child_error'), 'error');
       }
     } finally {
       setSaving(false);
@@ -820,7 +821,7 @@ export default function Kids() {
       setTeenApprovals((prev) => prev.filter((a) => a.card_id !== cardId));
       if (approve) { showToast(t('teen_star_awarded', { count: stars }), 'success'); load(); }
     } catch (e: any) {
-      showToast(e?.message || t('set_error'), 'error');
+      showToast(apiErrorText(e, t, 'set_error'), 'error');
     } finally {
       setApprovingId(null);
     }
@@ -867,7 +868,7 @@ export default function Kids() {
           ],
         );
       } else {
-        showToast(e?.message || t('set_error'), 'error');
+        showToast(apiErrorText(e, t, 'set_error'), 'error');
       }
     } finally {
       setTeenSending(false);
@@ -919,7 +920,7 @@ export default function Kids() {
       showToast(t('kids_child_updated'), 'success');
     } catch (e: any) {
       logger.warn('Update child failed:', e?.message || e);
-      showToast(e?.message || t('kids_child_update_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_child_update_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -953,7 +954,7 @@ export default function Kids() {
       showToast(t('kids_pin_removed'), 'success');
     } catch (e: any) {
       logger.warn('Remove PIN failed:', e?.message || e);
-      showToast(e?.message || t('kids_child_update_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_child_update_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -973,7 +974,7 @@ export default function Kids() {
       await load();
     } catch (e: any) {
       logger.warn('Delete child failed:', e?.message || e);
-      showToast(e?.message || t('kids_child_remove_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_child_remove_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -1024,7 +1025,7 @@ export default function Kids() {
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Adjust stars failed:', e?.message || e);
-      showToast(e?.message || t('kids_update_stars_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_update_stars_error'), 'error');
     } finally {
       setSaving(false);
       starActionRef.current = false;
@@ -1052,7 +1053,7 @@ export default function Kids() {
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Quick add failed:', e?.message || e);
-      showToast(e?.message || t('kids_add_stars_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_add_stars_error'), 'error');
     } finally {
       starActionRef.current = false;
     }
@@ -1080,7 +1081,7 @@ export default function Kids() {
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Weekly claim failed:', e?.message || e);
-      showToast(e?.message || t('kids_update_stars_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_update_stars_error'), 'error');
     } finally {
       setClaiming(false);
     }
@@ -1109,7 +1110,7 @@ export default function Kids() {
       showToast(t('kids_goal_saved', { n: updated.weekly_target || target }), 'success');
     } catch (e: any) {
       logger.warn('Weekly goal save failed:', e?.message || e);
-      showToast(e?.message || t('kids_update_stars_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_update_stars_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -1129,7 +1130,7 @@ export default function Kids() {
       showToast(t('kids_balance_updated'), 'success');
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
-      showToast(e?.message || t('kids_update_stars_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_update_stars_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -1153,7 +1154,7 @@ export default function Kids() {
       showToast(t('kids_allowance_paid', { amount: `${t('currency_symbol')}${res.transaction.amount}` }), 'success');
     } catch (e: any) {
       logger.warn('Pay allowance failed:', e?.message || e);
-      showToast(e?.message || t('kids_allowance_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_allowance_error'), 'error');
     } finally {
       moneySavingRef.current = false;
     }
@@ -1178,7 +1179,7 @@ export default function Kids() {
   const recordMoney = useCallback(async (type: 'deposit' | 'withdrawal') => {
     if (!activeChild) return;
     const amount = Number((moneyAmount || '').replace(',', '.'));
-    if (!Number.isFinite(amount) || amount <= 0) return;
+    if (!Number.isFinite(amount) || amount <= 0) { showToast(t('kids_valid_money'), 'error'); return; }
     if (moneySavingRef.current) return;
     moneySavingRef.current = true;
     try {
@@ -1198,7 +1199,7 @@ export default function Kids() {
       showToast(t('kids_money_saved'), 'success');
     } catch (e: any) {
       logger.warn('Record pocket money failed:', e?.message || e);
-      showToast(e?.message || t('kids_allowance_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_allowance_error'), 'error');
     } finally {
       moneySavingRef.current = false;
     }
@@ -1216,7 +1217,7 @@ export default function Kids() {
       showToast(t('kids_allowance_saved'), 'success');
     } catch (e: any) {
       logger.warn('Save allowance failed:', e?.message || e);
-      showToast(e?.message || t('kids_allowance_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_allowance_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -1256,7 +1257,7 @@ export default function Kids() {
       showToast(t('kids_allowance_stopped'), 'success');
     } catch (e: any) {
       logger.warn('Stop allowance failed:', e?.message || e);
-      showToast(e?.message || t('kids_allowance_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_allowance_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -1294,7 +1295,7 @@ export default function Kids() {
       setAssignTitle('');
       showToast(t('kids_task_assigned', { name: activeChild.name }), 'success');
     } catch (e: any) {
-      showToast(e?.message || t('vault_could_not_add_meal'), 'error');
+      showToast(apiErrorText(e, t, 'vault_could_not_add_meal'), 'error');
     } finally {
       setAssigningTask(false);
     }
@@ -1494,7 +1495,7 @@ export default function Kids() {
       showToast(t('kids_routine_added', { name: created.name }), 'success');
     } catch (e: any) {
       logger.warn('Save routine failed:', e?.message || e);
-      showToast(e?.message || t('kids_routine_add_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_routine_add_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -1541,7 +1542,7 @@ export default function Kids() {
       showToast(t('kids_chore_added', { title: created.title }), 'success');
     } catch (e: any) {
       logger.warn('Create chore failed:', e?.message || e);
-      showToast(e?.message || t('kids_chore_add_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_chore_add_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -1582,7 +1583,7 @@ export default function Kids() {
       showToast(t('kids_reward_saved', { title }), 'success');
     } catch (e: any) {
       logger.warn('Save reward failed:', e?.message || e);
-      showToast(e?.message || t('kids_reward_save_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_reward_save_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -1598,7 +1599,7 @@ export default function Kids() {
         await api.deleteReward(reward.reward_id);
       } catch (e: any) {
         setRewards((prev) => [...prev, reward]);
-        showToast(e?.message || t('kids_reward_save_error'), 'error');
+        showToast(apiErrorText(e, t, 'kids_reward_save_error'), 'error');
       }
     };
     const title = t('kids_reward_delete_q', { title: reward.title });
@@ -1632,7 +1633,7 @@ export default function Kids() {
       await refreshHistory(activeChild.member_id);
     } catch (e: any) {
       logger.warn('Redeem failed:', e?.message || e);
-      showToast(e?.message || t('kids_reward_redeem_error'), 'error');
+      showToast(apiErrorText(e, t, 'kids_reward_redeem_error'), 'error');
     } finally {
       starActionRef.current = false;
     }

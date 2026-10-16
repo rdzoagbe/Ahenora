@@ -6,6 +6,7 @@ import { Camera, Plus, Trash2, TrendingDown, TrendingUp, Scale } from 'lucide-re
 import * as ImagePicker from 'expo-image-picker';
 
 import { PressScale } from './PressScale';
+import ErrorState from './ErrorState';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { api, Expense, ExpenseOverview, MerchantRow, ScannedReceipt,
@@ -71,6 +72,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const [overview, setOverview] = useState<ExpenseOverview | null>(null);
   const [recent, setRecent] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [showSix, setShowSix] = useState(false);
 
   const [adding, setAdding] = useState(false);
@@ -101,8 +103,12 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setOverview(data);
       setRecent(list.filter((e) => (e.category || 'General') === CATEGORY));
       setSettlement(settle);
+      setLoadFailed(false);
     } catch (e) {
+      // Without this the screen showed "£0 · 0 shops" over a month the family
+      // spent plenty in: a failed load is not an empty one.
       logger.warn('expenses load failed', e);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -247,8 +253,9 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       await load();
     } catch (e) {
       logger.warn('expense delete failed', e);
+      Alert.alert(t('exp_save_failed'), apiErrorText(e, t, 'err_please_try_again'));
     }
-  }, [load]);
+  }, [load, t]);
 
   // The month to lead with: the newest finished month if there is one, because
   // that is the month we can actually say something about. Otherwise the month
@@ -290,6 +297,8 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     <View style={styles.root}>
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={ui.orange} /></View>
+      ) : loadFailed && !overview ? (
+        <View style={styles.center}><ErrorState onRetry={() => { setLoading(true); load(); }} /></View>
       ) : (
         <Wrapper {...wrapperProps}>
 

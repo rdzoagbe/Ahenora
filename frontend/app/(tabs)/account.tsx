@@ -189,7 +189,7 @@ export default function AccountScreen() {
       setPwNew('');
       Alert.alert(t('acc_pw_done_title'), t('acc_pw_done_msg'));
     } catch (e: any) {
-      Alert.alert(t('acc_pw_error_title'), e?.message || t('acc_pw_error_msg'));
+      Alert.alert(t('acc_pw_error_title'), apiErrorText(e, t, 'acc_pw_error_msg'));
     } finally {
       setPwSaving(false);
     }
