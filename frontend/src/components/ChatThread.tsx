@@ -17,7 +17,9 @@ import { logger } from '../logger';
 interface Props {
   /** `since` asks only for what arrived after that moment. Callers that
    *  ignore it still work — the merge below is keyed on message id. */
-  load: (since?: string) => Promise<{ messages: ChatMessage[] }>;
+  /** `since` polls for what changed; `before` pages back into history. The
+   *  server says with `has_more` whether anything older than the page exists. */
+  load: (since?: string, before?: string) => Promise<{ messages: ChatMessage[]; has_more?: boolean }>;
   /** `replyTo` is the id of the message being answered, when there is one. */
   send: (text: string, replyTo?: string) => Promise<{ message: ChatMessage }>;
   markRead?: () => Promise<unknown>;
@@ -201,6 +203,11 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
   // The first load failing is not "no messages yet": that hint over a thread
   // full of messages is a lie the next poll may never correct.
   const [loadFailed, setLoadFailed] = useState(false);
+  // Whether the thread goes back further than the page on screen. The screen
+  // used to show the newest 200 and stop, and that page passed for the whole
+  // conversation; "where did you say the dentist was" was simply gone.
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   // The message being answered, if any. Held as the whole message rather than
@@ -307,6 +314,7 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
       if (!delta) since.current = undefined;
       const added = absorb(res.messages);
       if (!delta || added) markRead?.().catch(() => undefined);
+      if (!delta) setHasMore(res.has_more === true);
       setLoadFailed(false);
     } catch (e) {
       // A poll that fails is not worth telling anybody about: the next one is
@@ -318,6 +326,24 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
   }, [load, markRead, absorb]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // The page before the oldest message on screen. Merged through absorb like
+  // everything else; the poll cursor only ever moves forward, so older rows
+  // never drag it back.
+  const loadOlder = useCallback(async () => {
+    const oldest = messages[0]?.created_at;
+    if (!oldest || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const res = await load(undefined, oldest);
+      absorb(res.messages);
+      setHasMore(res.has_more === true);
+    } catch (e) {
+      logger.warn('chat load earlier failed', e);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [messages, loadingOlder, load, absorb]);
 
   // Messages arrive while you are looking at them.
   //
@@ -437,6 +463,15 @@ export function ChatThread({ load, send, markRead, react, edit, emptyHint }: Pro
         onContentSizeChange={() => {
           if (atBottom.current) listRef.current?.scrollToEnd({ animated: false });
         }}
+        // Keeps what the reader is looking at in place when a page is
+        // prepended above it.
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        ListHeaderComponent={hasMore ? (
+          <PressScale testID="chat-load-earlier" accessibilityRole="button" onPress={loadOlder} disabled={loadingOlder}
+            style={[styles.loadEarlier, loadingOlder && { opacity: 0.6 }]}>
+            <Text style={styles.loadEarlierText}>{t('chat_load_earlier')}</Text>
+          </PressScale>
+        ) : null}
         ListEmptyComponent={loadFailed
           ? <ErrorState onRetry={() => { setLoading(true); refresh(false); }} />
           : <Text style={styles.empty}>{emptyHint}</Text>}
@@ -591,6 +626,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { padding: 16, gap: 10, flexGrow: 1 },
   empty: { flex: 1, textAlign: 'center', color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 14, marginTop: 40 },
+  loadEarlier: { alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: ui.soft, marginTop: 8, marginBottom: 12 },
+  loadEarlierText: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
   bubbleRow: { flexDirection: 'row' },
   rowMine: { justifyContent: 'flex-end' },
   rowTheirs: { justifyContent: 'flex-start' },

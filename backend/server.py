@@ -10071,6 +10071,8 @@ async def _chat_insert(database, family_id: str, thread: str, sender_user_id: st
 # downloading thousands of messages to look at the last three — and the moment
 # the screen started polling for live updates, doing so every few seconds.
 CHAT_PAGE = 200
+# Past shopping trips and saved meal plans: a page, reached again with `before`.
+SHOPPING_HISTORY_PAGE = 30
 
 
 def _kid_viewer_id(member_id: str) -> str:
@@ -10099,22 +10101,44 @@ async def _chat_audience(database, family_id: str, thread: str, participants: se
 
 async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id: str,
                                 since: Optional[str] = None,
-                                others: Optional[set] = None) -> list:
+                                others: Optional[set] = None,
+                                before: Optional[str] = None) -> list:
     """The newest messages in a thread, oldest first.
 
     `since` returns only what has CHANGED after that moment, which is what
     makes polling cheap: a quiet thread answers with an empty list.
+
+    `before` returns the page of messages sent BEFORE that moment: how a
+    reader reaches last month. Without it the screen showed the newest 200
+    and stopped, and the thread looked like the whole conversation.
     """
+    query: dict = {"family_id": family_id, "thread": thread}
+    earlier = _coerce_dt(before) if before else None
+    if earlier:
+        query["created_at"] = {"$lt": earlier}
     rows = []
     async for m in database["messages"].find(
-            {"family_id": family_id, "thread": thread},
-            {"_id": 0}).sort("created_at", -1).limit(CHAT_PAGE):
+            query, {"_id": 0}).sort("created_at", -1).limit(CHAT_PAGE):
         rows.append(m)
     rows.reverse()
     cutoff = _coerce_dt(since) if since else None
     if cutoff:
         rows = [m for m in rows if (_chat_changed_at(m) or cutoff) > cutoff]
     return [public_chat_message(m, viewer_id, others) for m in rows]
+
+
+async def _chat_has_older(database, family_id: str, thread: str, msgs: list) -> bool:
+    """Whether anything was sent before the first message on this page — what
+    tells the screen to offer "Load earlier messages" rather than let the
+    page pass for the whole conversation."""
+    if not msgs:
+        return False
+    oldest = _coerce_dt(msgs[0].get("created_at"))
+    if not oldest:
+        return False
+    found = await database["messages"].find_one(
+        {"family_id": family_id, "thread": thread, "created_at": {"$lt": oldest}}, {"_id": 0})
+    return found is not None
 
 
 async def _mark_read(database, family_id: str, thread: str, viewer_id: str) -> None:
@@ -10302,6 +10326,7 @@ async def _canonical_thread(database, family_id: str, thread: str) -> str:
 
 @app.get("/api/family/chat/{thread}")
 async def family_chat_get(thread: str, since: Optional[str] = None,
+                          before: Optional[str] = None,
                           user=Depends(require_chat_account)):
     database = get_db()
     thread = await _canonical_thread(database, user["family_id"], thread)
@@ -10311,8 +10336,10 @@ async def family_chat_get(thread: str, since: Optional[str] = None,
     # Before the fetch, so the rows carry the read this very call performed.
     await _mark_read_if_needed(database, user["family_id"], thread, user["user_id"])
     msgs = await _chat_thread_messages(database, user["family_id"], thread,
-                                       user["user_id"], since, others=audience)
-    return {"messages": msgs}
+                                       user["user_id"], since, others=audience, before=before)
+    # A poll (`since`) says nothing about history; a page does.
+    has_more = False if since else await _chat_has_older(database, user["family_id"], thread, msgs)
+    return {"messages": msgs, "has_more": has_more}
 
 
 @app.post("/api/family/chat/{thread}")
@@ -10464,7 +10491,8 @@ async def family_chat_edit(thread: str, message_id: str, payload: ChatEditIn,
 
 
 @app.get("/api/teen/chat")
-async def teen_chat_get(since: Optional[str] = None, teen=Depends(require_teen)):
+async def teen_chat_get(since: Optional[str] = None, before: Optional[str] = None,
+                        teen=Depends(require_teen)):
     """A teen's own thread, kept for the teen screen. The key is forced to their
     user id, so it can only ever be theirs."""
     database = get_db()
@@ -10472,8 +10500,9 @@ async def teen_chat_get(since: Optional[str] = None, teen=Depends(require_teen))
     others = await _thread_participants(database, teen["family_id"], tuid)
     await _mark_read_if_needed(database, teen["family_id"], tuid, tuid)
     msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid, since,
-                                       others=others)
-    return {"messages": msgs}
+                                       others=others, before=before)
+    has_more = False if since else await _chat_has_older(database, teen["family_id"], tuid, msgs)
+    return {"messages": msgs, "has_more": has_more}
 
 
 @app.post("/api/teen/chat")
@@ -13627,6 +13656,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
     updated = 0
     removed = 0
     skipped = 0
+    cancelled_kept = 0
     contacts_found: dict[str, dict] = {}
 
     for event in events:
@@ -13645,6 +13675,14 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
                 })
                 if result.deleted_count:
                     removed += 1
+                    continue
+                # Kept on purpose, but said: a shared card the school has
+                # cancelled was silently "skipped" and lived on for everyone.
+                kept = await database["cards"].find_one({
+                    "family_id": user["family_id"], "google_event_id": event_id, "status": "OPEN"},
+                    {"_id": 0, "card_id": 1})
+                if kept:
+                    cancelled_kept += 1
                     continue
             skipped += 1
             continue
@@ -13798,6 +13836,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
         "updated": updated,
         "removed": removed,
         "skipped": skipped,
+        "cancelled_kept": cancelled_kept,
         "events_seen": len(events),
         "contacts_found": len(contacts_found),
         "contacts": contacts,
@@ -13932,6 +13971,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
     updated = 0
     removed = 0
     skipped = 0
+    cancelled_kept = 0
     contacts_found: dict[str, dict] = {}
 
     for event in events:
@@ -13949,6 +13989,12 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
                 })
                 if result.deleted_count:
                     removed += 1
+                    continue
+                kept = await database["cards"].find_one({
+                    "family_id": user["family_id"], "ms_event_id": event_id, "status": "OPEN"},
+                    {"_id": 0, "card_id": 1})
+                if kept:
+                    cancelled_kept += 1
                     continue
             skipped += 1
             continue
@@ -14086,6 +14132,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
         "updated": updated,
         "removed": removed,
         "skipped": skipped,
+        "cancelled_kept": cancelled_kept,
         "events_seen": len(events),
         "contacts_found": len(contacts_found),
         "contacts": contacts,
@@ -16878,11 +16925,18 @@ async def clear_checked_shopping(user=Depends(require_user)):
 
 
 @app.get("/api/shopping/history")
-async def list_shopping_history(user=Depends(require_user)):
+async def list_shopping_history(before: Optional[str] = None, user=Depends(require_user)):
+    """The 30 newest trips; `before` is how the app reaches the ones from
+    earlier. Without it the sheet stopped at 30 and looked complete, and last
+    Christmas's list was gone from view four months later."""
     database = get_db()
+    query: dict = {"family_id": user["family_id"]}
+    earlier = _coerce_dt(before) if before else None
+    if earlier:
+        query["created_at"] = {"$lt": earlier}
     rows = await database["shopping_history"].find(
-        {"family_id": user["family_id"]}, {"_id": 0}
-    ).sort("created_at", -1).to_list(30)
+        query, {"_id": 0}
+    ).sort("created_at", -1).to_list(SHOPPING_HISTORY_PAGE)
     return [public_shopping_history(h) for h in rows]
 
 
@@ -18880,10 +18934,17 @@ async def save_meal_plan(body: SavedPlanIn, user: dict = Depends(require_user), 
 
 
 @app.get("/api/meals/saved")
-async def list_saved_plans(user: dict = Depends(require_user), database=Depends(get_db)):
+async def list_saved_plans(before: Optional[str] = None, user: dict = Depends(require_user),
+                           database=Depends(get_db)):
+    """The 30 newest saved plans; `before` reaches the earlier ones (same
+    reason as the shopping history)."""
+    query: dict = {"family_id": user["family_id"]}
+    earlier = _coerce_dt(before) if before else None
+    if earlier:
+        query["created_at"] = {"$lt": earlier}
     rows = await database["meal_plans_saved"].find(
-        {"family_id": user["family_id"]}, {"_id": 0}
-    ).sort("created_at", -1).to_list(30)
+        query, {"_id": 0}
+    ).sort("created_at", -1).to_list(SHOPPING_HISTORY_PAGE)
     return [public_saved_plan(p) for p in rows]
 
 
@@ -19823,11 +19884,11 @@ async def pay_allowance(member_id: str, user: dict = Depends(require_full_member
 
 @app.get("/api/allowances/{member_id}/balance")
 async def get_allowance_balance(member_id: str, user: dict = Depends(require_full_member), database=Depends(get_db)):
-    txns = await database["allowance_txns"].find(
-        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0}
-    ).to_list(1000)
+    # Every transaction, not the first thousand: a balance read off a capped
+    # list went quietly wrong once a child's ledger outgrew it.
     balance = 0.0
-    for t in txns:
+    async for t in database["allowance_txns"].find(
+            {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0, "txn_type": 1, "amount": 1}):
         if t.get("txn_type") == "withdrawal":
             balance -= t.get("amount", 0)
         else:

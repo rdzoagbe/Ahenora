@@ -383,6 +383,9 @@ export default function Calendar() {
     // Say how far ahead the sync looked: "all imported" with an anniversary
     // missing read as a bug when the anniversary was simply past the window.
     if (r.days) parts.push(t('cal_sync_window', { days: r.days }));
+    // A cancelled meeting whose card is shared is kept (it is the family's
+    // now) — but said, so nobody waits for an event the school called off.
+    if (r.cancelled_kept) parts.push(t('cal_cancelled_kept', { n: r.cancelled_kept }));
     return `${parts.join(' · ')}.`;
   }, [t]);
 

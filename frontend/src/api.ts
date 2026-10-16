@@ -1631,6 +1631,8 @@ export interface CalendarImportResult {
   updated?: number;
   removed?: number;
   skipped: number;
+  // Cancelled in the calendar but kept here because the card is shared.
+  cancelled_kept?: number;
   events_seen: number;
   contacts_found: number;
   contacts: CalendarContact[];
@@ -2659,9 +2661,9 @@ export const api = {
   chatThreads: () => request<{ threads: ChatThreadSummary[] }>('/family/chat/threads'),
   /** `since` fetches only what has arrived after that moment, so a screen can
    *  poll a quiet thread for nothing. Omit it for the whole recent history. */
-  chatGet: (thread: string, since?: string) =>
-    request<{ messages: ChatMessage[] }>(
-      `/family/chat/${encodeURIComponent(thread)}${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+  chatGet: (thread: string, since?: string, before?: string) =>
+    request<{ messages: ChatMessage[]; has_more?: boolean }>(
+      `/family/chat/${encodeURIComponent(thread)}${chatPageQuery(since, before)}`),
   chatSend: (thread: string, text: string, replyTo?: string) =>
     request<{ ok: boolean; message: ChatMessage }>(`/family/chat/${encodeURIComponent(thread)}`, {
       method: 'POST', body: { text, reply_to: replyTo },
@@ -2669,9 +2671,8 @@ export const api = {
   signOutEverywhere: () => request<{ ok: boolean; ended: number }>('/auth/sign-out-everywhere', { method: 'POST' }),
   chatRead: (thread: string) =>
     request<{ ok: boolean }>(`/family/chat/${encodeURIComponent(thread)}/read`, { method: 'POST' }),
-  teenChatGet: (since?: string) =>
-    request<{ messages: ChatMessage[] }>(
-      `/teen/chat${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+  teenChatGet: (since?: string, before?: string) =>
+    request<{ messages: ChatMessage[]; has_more?: boolean }>(`/teen/chat${chatPageQuery(since, before)}`),
   chatReact: (thread: string, messageId: string, emoji: string) =>
     request<{ ok: boolean; message: ChatMessage }>(
       `/family/chat/${encodeURIComponent(thread)}/${encodeURIComponent(messageId)}/react`,
@@ -3016,7 +3017,9 @@ export const api = {
     }),
   // Wipes the whole list (it's archived to history first, so it's recoverable).
   clearAllShopping: () => request<{ deleted: number }>('/shopping/all', { method: 'DELETE' }),
-  listShoppingHistory: () => request<ShoppingHistoryEntry[]>('/shopping/history'),
+  /** `before` (an ISO moment) reaches the trips older than the page shown. */
+  listShoppingHistory: (before?: string) =>
+    request<ShoppingHistoryEntry[]>(`/shopping/history${before ? `?before=${encodeURIComponent(before)}` : ''}`),
   // The household's regulars — items bought on several past trips and not on the
   // list right now. Powers the "Your regulars" quick-add row.
   listFrequentShopping: () => request<{ items: FrequentItem[] }>('/shopping/frequent'),
@@ -3128,7 +3131,8 @@ export const api = {
     }),
   syncMealsToShopping: () => request<{ ok: boolean; added: number }>('/meals/sync-shopping', { method: 'POST' }),
   saveMealPlan: (name: string) => request<SavedMealPlan>('/meals/save', { method: 'POST', body: { name } }),
-  listSavedPlans: () => request<SavedMealPlan[]>('/meals/saved'),
+  listSavedPlans: (before?: string) =>
+    request<SavedMealPlan[]>(`/meals/saved${before ? `?before=${encodeURIComponent(before)}` : ''}`),
   reuseSavedPlan: (id: string) => request<{ ok: boolean; added: number }>(`/meals/saved/${id}/reuse`, { method: 'POST' }),
   deleteSavedPlan: (id: string) => request<{ ok: boolean }>(`/meals/saved/${id}`, { method: 'DELETE' }),
 
@@ -3199,3 +3203,11 @@ export const api = {
     ),
   deleteChore: (id: string) => request<{ ok: boolean }>(`/chores/${id}`, { method: 'DELETE' }),
 };
+
+/** `since` polls for what changed; `before` pages back into history. */
+function chatPageQuery(since?: string, before?: string): string {
+  const parts: string[] = [];
+  if (since) parts.push(`since=${encodeURIComponent(since)}`);
+  if (before) parts.push(`before=${encodeURIComponent(before)}`);
+  return parts.length ? `?${parts.join('&')}` : '';
+}
