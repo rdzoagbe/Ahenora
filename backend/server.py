@@ -13195,39 +13195,86 @@ def _looks_like_birthday(title: Optional[str], event_type: Optional[str] = None)
     return any(w in t for w in _BIRTHDAY_WORDS)
 
 
+class _UpstreamHTTPError(Exception):
+    """A provider answered with an HTTP error; `code` and `body` say which."""
+
+    def __init__(self, code: int, body: str):
+        super().__init__(f"{code}: {body[:200]}")
+        self.code = code
+        self.body = body
+
+
+def _http_get_json(url: str, headers: dict, timeout: int = 20) -> dict:
+    """One GET, parsed. Kept separate so the tests can stand in for a provider
+    by URL instead of for the whole fetch, which is where the real bugs were:
+    a second page never asked for, a second calendar never read."""
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise _UpstreamHTTPError(e.code, e.read().decode("utf-8", errors="replace"))
+
+
+# Google keeps the birthdays and anniversaries taken from a person's contacts
+# in a calendar of their own. The events scope the app asks for can read it
+# by id, so it is asked for by name rather than found through calendarList.
+GOOGLE_BIRTHDAYS_CALENDAR_ID = "addressbook#contacts@group.v.calendar.google.com"
+# Enough for a family in a month; a calendar past this is paged, not cut.
+CALENDAR_PAGE_SIZE = 250
+CALENDAR_MAX_EVENTS = 2000
+
+
+async def _google_calendar_ids(access_token: str) -> list[str]:
+    """Every calendar the person has ticked in Google Calendar, primary first.
+
+    Needs the calendar.readonly scope. The app asks only for
+    calendar.events.readonly, under which Google refuses the list — so a
+    refusal is not an error here: the primary and the birthdays calendars,
+    which that scope can read by id, are what we fall back to.
+    """
+    ids = ["primary"]
+    url = ("https://www.googleapis.com/calendar/v3/users/me/calendarList?"
+           + urllib.parse.urlencode({"minAccessRole": "reader",
+                                     "fields": "items(id,selected,primary,deleted)"}))
+    try:
+        data = await asyncio.to_thread(
+            _http_get_json, url, {"Authorization": f"Bearer {access_token}"})
+    except Exception:
+        data = {}
+    for item in data.get("items") or []:
+        cal_id = item.get("id")
+        if not cal_id or item.get("deleted") or item.get("primary"):
+            continue
+        if item.get("selected") is False:
+            continue
+        ids.append(cal_id)
+    if GOOGLE_BIRTHDAYS_CALENDAR_ID not in ids:
+        ids.append(GOOGLE_BIRTHDAYS_CALENDAR_ID)
+    return ids
+
+
 async def _fetch_google_calendar_events(access_token: str, days: int) -> list[dict]:
+    """Every event in the window, from every calendar, however many pages.
+
+    This used to read one page of the primary calendar and stop: the 101st
+    event of the month, and anything in a shared family calendar or in the
+    birthdays calendar, was silently never imported, while the summary said
+    the sync had gone fine.
+    """
     now = utcnow()
     time_min = now.isoformat().replace("+00:00", "Z")
     time_max = (now + timedelta(days=days)).isoformat().replace("+00:00", "Z")
+    headers = {"Authorization": f"Bearer {access_token}"}
 
-    params = urllib.parse.urlencode(
-        {
-            "timeMin": time_min,
-            "timeMax": time_max,
-            "singleEvents": "true",
-            "orderBy": "startTime",
-            "maxResults": "100",
-            # Cancellations must arrive too, or a deleted meeting lives on
-            # in the app forever. Google omits them unless asked.
-            "showDeleted": "true",
-        }
-    )
-
-    url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events?{params}"
-
-    def _request():
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {access_token}"},
-            method="GET",
-        )
-
+    def _get(url: str, *, optional: bool) -> dict:
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                raw = response.read().decode("utf-8")
-                return json.loads(raw)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
+            return _http_get_json(url, headers)
+        except _UpstreamHTTPError as e:
+            # A calendar the person does not have (no birthdays calendar, a
+            # shared one withdrawn) is not a failed sync.
+            if optional and e.code in (403, 404):
+                return {}
             # Never let Google's own 401/403 propagate as OUR 401 — the app
             # treats a 401 as an expired session and signs the user out. Remap
             # an upstream auth failure to a clear, non-session error.
@@ -13236,14 +13283,48 @@ async def _fetch_google_calendar_events(access_token: str, days: int) -> list[di
                     status_code=400,
                     detail="Google Calendar access was denied or expired. Please reconnect your Google account and try again.",
                 )
-            raise HTTPException(status_code=502, detail=f"Google Calendar error: {body[:200]}")
+            raise HTTPException(status_code=502, detail=f"Google Calendar error: {e.body[:200]}")
         except HTTPException:
             raise
         except Exception as e:
+            if optional:
+                return {}
             raise HTTPException(status_code=502, detail=f"Google Calendar request failed: {e}")
 
-    data = await asyncio.to_thread(_request)
-    return data.get("items") or []
+    events: list[dict] = []
+    seen: set[str] = set()
+    for cal_id in await _google_calendar_ids(access_token):
+        page_token = None
+        while True:
+            query = {
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": str(CALENDAR_PAGE_SIZE),
+                # Cancellations must arrive too, or a deleted meeting lives on
+                # in the app forever. Google omits them unless asked.
+                "showDeleted": "true",
+            }
+            if page_token:
+                query["pageToken"] = page_token
+            url = (f"https://www.googleapis.com/calendar/v3/calendars/"
+                   f"{urllib.parse.quote(cal_id, safe='')}/events?{urllib.parse.urlencode(query)}")
+            data = await asyncio.to_thread(_get, url, optional=cal_id != "primary")
+            for item in data.get("items") or []:
+                # The same invitation can sit in two of a person's calendars;
+                # iCalUID is the one identity it keeps across them.
+                key = item.get("iCalUID") or item.get("id")
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                events.append(item)
+            page_token = data.get("nextPageToken")
+            if not page_token or len(events) >= CALENDAR_MAX_EVENTS:
+                break
+        if len(events) >= CALENDAR_MAX_EVENTS:
+            break
+    return events
 
 
 # -----------------------------------------------------------------------------
@@ -13677,6 +13758,16 @@ def _parse_ms_event_start(event: dict):
     dt_str = str(start.get("dateTime") or "").strip()
     if not dt_str:
         return None
+    if event.get("isAllDay"):
+        # Graph gives an all-day event as midnight UTC on its date. Kept as a
+        # time, that lands on the evening before for a family west of
+        # Greenwich; the same 09:00 UTC the Google import uses keeps it on its
+        # own day everywhere the app is sold.
+        try:
+            return datetime.fromisoformat(dt_str[:10]).replace(
+                hour=9, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        except ValueError:
+            return None
     # Graph returns up to 7 fractional digits; Python's fromisoformat takes 6.
     if "." in dt_str:
         head, frac = dt_str.split(".", 1)
@@ -13706,29 +13797,21 @@ def _ms_event_contacts(event: dict) -> list[dict]:
 
 
 async def _fetch_microsoft_calendar_events(access_token: str, days: int) -> list[dict]:
+    """Every event in the window, from every calendar, however many pages —
+    the same promise as the Google import. Calendars.Read covers the list of
+    calendars as well as their events; if the list is refused anyway, the
+    default calendar is read on its own as before."""
     now = utcnow()
     start = now.isoformat().replace("+00:00", "Z")
     end = (now + timedelta(days=days)).isoformat().replace("+00:00", "Z")
-    params = urllib.parse.urlencode({
-        "startDateTime": start,
-        "endDateTime": end,
-        "$orderby": "start/dateTime",
-        "$top": "100",
-        "$select": "id,subject,start,end,location,bodyPreview,webLink,attendees,isCancelled,organizer,iCalUId",
-    })
-    url = f"https://graph.microsoft.com/v1.0/me/calendarView?{params}"
+    headers = {"Authorization": f"Bearer {access_token}", "Prefer": 'outlook.timezone="UTC"'}
 
-    def _request():
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {access_token}", "Prefer": 'outlook.timezone="UTC"'},
-            method="GET",
-        )
+    def _get(url: str, *, optional: bool) -> dict:
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
+            return _http_get_json(url, headers)
+        except _UpstreamHTTPError as e:
+            if optional and e.code in (403, 404):
+                return {}
             # Remap upstream auth failures so the app doesn't read them as an
             # expired session (which would sign the user out).
             if e.code in (401, 403):
@@ -13736,14 +13819,47 @@ async def _fetch_microsoft_calendar_events(access_token: str, days: int) -> list
                     status_code=400,
                     detail="Outlook access was denied or expired. Please reconnect your Microsoft account and try again.",
                 )
-            raise HTTPException(status_code=502, detail=f"Outlook Calendar error: {body[:200]}")
+            raise HTTPException(status_code=502, detail=f"Outlook Calendar error: {e.body[:200]}")
         except HTTPException:
             raise
         except Exception as e:
+            if optional:
+                return {}
             raise HTTPException(status_code=502, detail=f"Outlook Calendar request failed: {e}")
 
-    data = await asyncio.to_thread(_request)
-    return data.get("value") or []
+    listing = await asyncio.to_thread(
+        _get, "https://graph.microsoft.com/v1.0/me/calendars?$select=id,name,isDefaultCalendar&$top=50",
+        optional=True)
+    calendars = [c.get("id") for c in (listing.get("value") or []) if c.get("id")]
+    # The default calendar first, and on its own when the list is refused.
+    calendars.sort(key=lambda cid: 0 if any(
+        c.get("id") == cid and c.get("isDefaultCalendar") for c in listing.get("value") or []) else 1)
+    bases = ([f"https://graph.microsoft.com/v1.0/me/calendars/{urllib.parse.quote(cid, safe='')}/calendarView"
+              for cid in calendars] or ["https://graph.microsoft.com/v1.0/me/calendarView"])
+
+    params = urllib.parse.urlencode({
+        "startDateTime": start,
+        "endDateTime": end,
+        "$orderby": "start/dateTime",
+        "$top": str(CALENDAR_PAGE_SIZE),
+        "$select": "id,subject,start,end,location,bodyPreview,webLink,attendees,isCancelled,organizer,iCalUId,isAllDay",
+    })
+    events: list[dict] = []
+    seen: set[str] = set()
+    for i, base in enumerate(bases):
+        url = f"{base}?{params}"
+        while url:
+            data = await asyncio.to_thread(_get, url, optional=i > 0)
+            for item in data.get("value") or []:
+                key = item.get("iCalUId") or item.get("id")
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                events.append(item)
+            url = data.get("@odata.nextLink") if len(events) < CALENDAR_MAX_EVENTS else None
+        if len(events) >= CALENDAR_MAX_EVENTS:
+            break
+    return events
 
 
 @app.post("/api/calendar/import-microsoft")

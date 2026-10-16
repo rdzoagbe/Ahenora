@@ -377,6 +377,9 @@ export default function Calendar() {
     if (r.updated) parts.push(`${r.updated} ${t('cal_events_updated')}`);
     if (r.removed) parts.push(`${r.removed} ${t('cal_events_removed')}`);
     parts.push(`${r.contacts_found} ${t('cal_people_found')}`);
+    // Say how far ahead the sync looked: "all imported" with an anniversary
+    // missing read as a bug when the anniversary was simply past the window.
+    if (r.days) parts.push(t('cal_sync_window', { days: r.days }));
     return `${parts.join(' · ')}.`;
   }, [t]);
 
