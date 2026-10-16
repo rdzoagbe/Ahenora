@@ -593,9 +593,31 @@ def iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.astimezone(timezone.utc).isoformat()
 
 
+# Where a date without a time is pinned. Noon UTC is the same calendar date
+# everywhere the app is sold (UTC-11 to UTC+11); midnight UTC was the evening
+# before for every family west of Greenwich.
+DATE_ONLY_HOUR_UTC = 12
+
+
+def is_date_only(value: Optional[str]) -> bool:
+    """A bare YYYY-MM-DD: a day, not a moment."""
+    return bool(value) and len(value.strip()) == 10 and value.strip()[4] == "-" and value.strip()[7] == "-"
+
+
 def parse_dt(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
+    value = value.strip()
+    if is_date_only(value):
+        # The day printed on a letter, a passport, a scanned appointment: it has
+        # no clock, so it is kept at noon UTC, which reads as that same day in
+        # every timezone a family lives in. At midnight UTC (what fromisoformat
+        # would give) a Montreal family saw the vaccination on the day before.
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").replace(
+                hour=DATE_ONLY_HOUR_UTC, tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format")
     value = value.replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(value)
@@ -2036,9 +2058,12 @@ def public_card(card: dict) -> dict:
         "description": card.get("description"),
         "assignee": card.get("assignee"),
         "due_date": iso(card.get("due_date")),
-        # Absent on every card written before this existed, and False is
-        # the right reading of absent: it never raises a warning.
-        "time_set": bool(card.get("time_set")),
+        # Absent on every card written before this existed. The app reads the
+        # three values apart: True shows the time, False says "All day", and
+        # absent falls back to guessing from the clock — because an old card
+        # with a real time must not be relabelled "All day". (The clash check
+        # reads absent as False: it never raises a warning.)
+        "time_set": (bool(card["time_set"]) if "time_set" in card else None),
         "status": card["status"],
         "source": card["source"],
         "image_base64": card.get("image_base64"),
@@ -13135,9 +13160,12 @@ def _parse_google_event_start(event: dict) -> Optional[datetime]:
 
     raw_date = start.get("date")
     if raw_date:
+        # All day: a day, not a moment. Noon UTC keeps it on that day in every
+        # timezone (see parse_dt); 09:00 UTC used to read as a 5 AM event in
+        # Montreal and as the evening before in Hawaii.
         try:
-            return datetime.fromisoformat(raw_date).replace(
-                hour=9,
+            return datetime.fromisoformat(raw_date[:10]).replace(
+                hour=DATE_ONLY_HOUR_UTC,
                 minute=0,
                 second=0,
                 microsecond=0,
@@ -13147,6 +13175,11 @@ def _parse_google_event_start(event: dict) -> Optional[datetime]:
             return None
 
     return None
+
+
+def _google_event_all_day(event: dict) -> bool:
+    start = event.get("start") or {}
+    return bool(start.get("date")) and not start.get("dateTime")
 
 
 def _event_attendee_contacts(event: dict) -> list[dict]:
@@ -13439,13 +13472,17 @@ async def stage_scanned_event(payload: ScanEventIn, user=Depends(require_user),
     if await _candidate_exists(database, user["family_id"], dedupe_key):
         return {"ok": True, "staged": False, "reason": "already_pending"}
 
+    # A letter that names a day and no time is a day: no clock on the card,
+    # and no "60 minutes before" push that would land in the night.
+    date_only = is_date_only(payload.due_date)
     card = {
         "type": card_type,
         "title": title,
         "description": (payload.description or "").strip()[:2000],
         "due_date": due,
+        "time_set": not date_only,
         "recurrence": "none",
-        "reminder_minutes": max(0, min(payload.reminder_minutes, 60 * 24 * 7)),
+        "reminder_minutes": 0 if date_only else max(0, min(payload.reminder_minutes, 60 * 24 * 7)),
         "source": "CAMERA",
         "external_source": "document_scan",
         "icon": guess_icon(title, card_type),
@@ -13527,6 +13564,9 @@ async def decide_event_candidates(payload: CandidateDecisionIn,
             "description": doc.get("description") or "",
             "assignee": assignee or user.get("name"),
             "due_date": doc.get("due_date"),
+            # Carried over, or an all-day event accepted from the review list
+            # came out as a timed one.
+            "time_set": bool(doc.get("time_set")),
             "status": "OPEN",
             "source": doc.get("source") or "CALENDAR",
             "image_base64": None,
@@ -13617,6 +13657,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
         if not start_dt:
             skipped += 1
             continue
+        all_day = _google_event_all_day(event)
 
         title = (event.get("summary") or "Calendar event").strip()
         location = (event.get("location") or "").strip()
@@ -13640,11 +13681,20 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
                 changed["title"] = title
             if ensure_aware_utc(existing.get("due_date")) != start_dt:
                 changed["due_date"] = start_dt
-            if changed:
+            # An all-day event imported before the flag existed showed as a
+            # 5 AM event and pushed in the night: say what it is on resync.
+            # Quietly — a flag put right is not "1 updated" in the summary.
+            backfill = {}
+            if existing.get("time_set") != (not all_day):
+                backfill["time_set"] = not all_day
+            if all_day and existing.get("reminder_minutes"):
+                backfill["reminder_minutes"] = 0
+            if changed or backfill:
                 await database["cards"].update_one(
                     {"family_id": user["family_id"], "google_event_id": event_id},
-                    {"$set": changed},
+                    {"$set": {**backfill, **changed}},
                 )
+            if changed:
                 updated += 1
             else:
                 skipped += 1
@@ -13698,7 +13748,9 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             "source": "CALENDAR",
             "image_base64": None,
             "recurrence": "yearly" if is_bday else "none",
-            "reminder_minutes": 60,
+            # A day has no "60 minutes before": the morning digest names it.
+            "reminder_minutes": 0 if all_day else 60,
+            "time_set": not all_day,
             "location": location,
             "google_event_id": event_id,
             "google_ical_uid": event.get("iCalUID"),
@@ -13761,11 +13813,11 @@ def _parse_ms_event_start(event: dict):
     if event.get("isAllDay"):
         # Graph gives an all-day event as midnight UTC on its date. Kept as a
         # time, that lands on the evening before for a family west of
-        # Greenwich; the same 09:00 UTC the Google import uses keeps it on its
-        # own day everywhere the app is sold.
+        # Greenwich; noon UTC (the same rule as parse_dt and the Google
+        # import) keeps it on its own day everywhere the app is sold.
         try:
             return datetime.fromisoformat(dt_str[:10]).replace(
-                hour=9, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+                hour=DATE_ONLY_HOUR_UTC, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
         except ValueError:
             return None
     # Graph returns up to 7 fractional digits; Python's fromisoformat takes 6.
@@ -13906,6 +13958,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             continue
 
         start_dt = _parse_ms_event_start(event)
+        all_day = bool(event.get("isAllDay"))
         if not start_dt:
             skipped += 1
             continue
@@ -13923,11 +13976,17 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
                 changed["title"] = new_title
             if ensure_aware_utc(existing.get("due_date")) != start_dt:
                 changed["due_date"] = start_dt
-            if changed:
+            backfill = {}
+            if existing.get("time_set") != (not all_day):
+                backfill["time_set"] = not all_day
+            if all_day and existing.get("reminder_minutes"):
+                backfill["reminder_minutes"] = 0
+            if changed or backfill:
                 await database["cards"].update_one(
                     {"family_id": user["family_id"], "ms_event_id": event_id},
-                    {"$set": changed},
+                    {"$set": {**backfill, **changed}},
                 )
+            if changed:
                 updated += 1
             else:
                 skipped += 1
@@ -13980,7 +14039,8 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             "source": "CALENDAR",
             "image_base64": None,
             "recurrence": "yearly" if is_bday else "none",
-            "reminder_minutes": 60,
+            "reminder_minutes": 0 if all_day else 60,
+            "time_set": not all_day,
             "location": location,
             "ms_event_id": event_id,
             "google_ical_uid": event.get("iCalUId"),

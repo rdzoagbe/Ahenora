@@ -134,7 +134,7 @@ class GoogleReadsEverything(unittest.TestCase):
 
     def test_an_all_day_event_keeps_its_day(self):
         start = server._parse_google_event_start({"start": {"date": "2026-10-20"}})
-        self.assertEqual((start.year, start.month, start.day, start.hour, start.tzinfo), (2026, 10, 20, 9, timezone.utc))
+        self.assertEqual((start.year, start.month, start.day, start.hour, start.tzinfo), (2026, 10, 20, 12, timezone.utc))
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
@@ -172,8 +172,8 @@ class OutlookReadsEverything(unittest.TestCase):
 
     def test_an_all_day_event_keeps_its_day_everywhere(self):
         start = server._parse_ms_event_start({"isAllDay": True, "start": {"dateTime": "2026-10-20T00:00:00.0000000", "timeZone": "UTC"}})
-        self.assertEqual((start.year, start.month, start.day, start.hour), (2026, 10, 20, 9),
-                         "midnight UTC is the evening before west of Greenwich; 09:00 UTC is the same day everywhere")
+        self.assertEqual((start.year, start.month, start.day, start.hour), (2026, 10, 20, 12),
+                         "midnight UTC is the evening before west of Greenwich; noon UTC is the same day everywhere")
         timed = server._parse_ms_event_start({"start": {"dateTime": "2026-10-20T14:30:00.0000000", "timeZone": "UTC"}})
         self.assertEqual((timed.hour, timed.minute), (14, 30), "a timed event keeps its time")
 

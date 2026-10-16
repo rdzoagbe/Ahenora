@@ -6,6 +6,19 @@ export function pad2(value: number) {
 // `undefined` to toLocaleDateString uses the DEVICE locale, so a French user on
 // an English phone saw English day letters ("M T W T F S S") and "Tue" — this
 // keeps dates in the app's chosen language instead.
+/**
+ * The calendar day a Date falls on where the person is, as a bare
+ * YYYY-MM-DD. For a day with no clock (a passport expiry, a letter's date):
+ * the server pins a bare date to noon UTC, the same day in every timezone,
+ * where toISOString() of local midnight would have been the evening before.
+ */
+export function localDayIso(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export function localeFor(lang?: string): string {
   switch (lang) {
     case 'es': return 'es-ES';

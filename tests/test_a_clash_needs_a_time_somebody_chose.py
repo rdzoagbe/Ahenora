@@ -166,11 +166,17 @@ class TheFlagSurvivesTheRoundTrip(unittest.TestCase):
         # None means "the client did not mention it" — the same rule as room.
         self.assertIsNone(server.CardPatchIn().time_set)
 
-    def test_the_serialiser_reads_absent_as_not_chosen(self):
+    def test_the_serialiser_leaves_absent_as_absent(self):
+        """Absent is a third value, not False (2026-10-16): the app shows
+        "All day" for False, and an old card with a real 07:00 that read as
+        False would have been relabelled "All day". The clash check below
+        still reads absent as not chosen — that is its own rule, tested as
+        such."""
         card = {"card_id": "c", "family_id": "f", "type": "TASK", "title": "t",
                 "status": "OPEN", "source": "MANUAL", "recurrence": "none",
                 "reminder_minutes": 60, "created_at": server.utcnow()}
-        self.assertIs(server.public_card(card)["time_set"], False)
+        self.assertIsNone(server.public_card(card)["time_set"])
+        self.assertIs(server.public_card({**card, "time_set": False})["time_set"], False)
 
     def test_the_serialiser_carries_a_chosen_time_back_out(self):
         card = {"card_id": "c", "family_id": "f", "type": "TASK", "title": "t",

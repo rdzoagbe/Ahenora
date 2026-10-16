@@ -38,7 +38,7 @@ import { apiErrorText } from '../../src/apiError';
 import { refreshOutcome } from '../../src/refreshOutcome';
 import { onVaultChanged } from '../../src/vaultChanged';
 import { parseDisplayDate } from '../../src/dateDisplay';
-import { localeFor } from '../../src/utils/date';
+import { localDayIso, localeFor } from '../../src/utils/date';
 
 // The drawers now live in one module shared with the scan router, so the
 // list the model is offered and the list the screen renders cannot drift.
@@ -135,7 +135,11 @@ export default function Vault() {
     // The picker speaks the display string it shows; the server wants a date.
     const parsed = chosen ? parseDisplayDate(chosen, localeFor(lang)) : null;
     if (chosen && !parsed) { showToast(t('vault_could_not_save'), 'error'); return; }
-    const iso = parsed ? parsed.toISOString() : null;
+    // The day, not the moment. toISOString() of local midnight was "the
+    // evening before, UTC", and a co-parent in another timezone read the
+    // passport as expiring a day early. A bare date is pinned by the server
+    // to noon UTC, which is that same day everywhere.
+    const iso = parsed ? localDayIso(parsed) : null;
     setExpiryFor(null);
     try {
       await api.setVaultExpiry(doc.doc_id, iso);
