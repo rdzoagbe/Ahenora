@@ -184,6 +184,42 @@ export default function Kitchen() {
   const [showMealHistory, setShowMealHistory] = useState(false);
   const [savedPlans, setSavedPlans] = useState<SavedMealPlan[]>([]);
   const [histLoading, setHistLoading] = useState(false);
+  // The server hands over a page (30) of past trips and of saved plans. A
+  // sheet that stopped there and looked complete had lost last Christmas's
+  // list by spring; "Show older" reaches the rest, until a short page says
+  // there is no more.
+  const HISTORY_PAGE = 30;
+  const [histEnd, setHistEnd] = useState(false);
+  const [plansEnd, setPlansEnd] = useState(false);
+  const [olderBusy, setOlderBusy] = useState(false);
+  const loadOlderTrips = useCallback(async () => {
+    const oldest = shopHistory[shopHistory.length - 1]?.created_at;
+    if (!oldest || olderBusy) return;
+    setOlderBusy(true);
+    try {
+      const more = await api.listShoppingHistory(oldest);
+      setShopHistory((prev) => [...prev, ...more.filter((h) => !prev.some((p) => p.history_id === h.history_id))]);
+      if (more.length < HISTORY_PAGE) setHistEnd(true);
+    } catch (e) {
+      showToast(apiErrorText(e, t, 'vault_could_not_load'), 'error');
+    } finally {
+      setOlderBusy(false);
+    }
+  }, [shopHistory, olderBusy, showToast, t]);
+  const loadOlderPlans = useCallback(async () => {
+    const oldest = savedPlans[savedPlans.length - 1]?.created_at;
+    if (!oldest || olderBusy) return;
+    setOlderBusy(true);
+    try {
+      const more = await api.listSavedPlans(oldest);
+      setSavedPlans((prev) => [...prev, ...more.filter((p) => !prev.some((q) => q.plan_id === p.plan_id))]);
+      if (more.length < HISTORY_PAGE) setPlansEnd(true);
+    } catch (e) {
+      showToast(apiErrorText(e, t, 'vault_could_not_load'), 'error');
+    } finally {
+      setOlderBusy(false);
+    }
+  }, [savedPlans, olderBusy, showToast, t]);
   const [savePlanName, setSavePlanName] = useState('');
   const [restoreEntry, setRestoreEntry] = useState<ShoppingHistoryEntry | null>(null);
   const [restoreSel, setRestoreSel] = useState<Set<number>>(new Set());
@@ -1912,6 +1948,11 @@ export default function Kitchen() {
             </View>
           ))
         )}
+        {shopHistory.length >= HISTORY_PAGE && !histEnd ? (
+          <PressScale testID="shop-history-older" accessibilityRole="button" onPress={loadOlderTrips} disabled={olderBusy} style={[styles.reuseBtn, { alignSelf: 'center', marginTop: 10 }, olderBusy && { opacity: 0.6 }]}>
+            <Text style={styles.reuseText}>{t('kitchen_show_older')}</Text>
+          </PressScale>
+        ) : null}
         {shopHistory.length > 0 ? (
           <PressScale testID="shop-history-clear" onPress={clearShopHistory} style={styles.clearAllBtn}>
             <Trash2 color={ui.danger} size={14} />
@@ -2005,6 +2046,11 @@ export default function Kitchen() {
             </View>
           ))
         )}
+        {savedPlans.length >= HISTORY_PAGE && !plansEnd ? (
+          <PressScale testID="saved-plans-older" accessibilityRole="button" onPress={loadOlderPlans} disabled={olderBusy} style={[styles.reuseBtn, { alignSelf: 'center', marginTop: 10 }, olderBusy && { opacity: 0.6 }]}>
+            <Text style={styles.reuseText}>{t('kitchen_show_older')}</Text>
+          </PressScale>
+        ) : null}
       </KeyboardAwareBottomSheet>
 
       {/* Browse every recipe, search it, and drop one on any day */}

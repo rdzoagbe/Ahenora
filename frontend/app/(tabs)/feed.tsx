@@ -286,7 +286,11 @@ function todayTimeLabel(card: Card, t: TFunc, lang: string): string {
   if (time === null) return t('feed_any_time');
   const due = new Date(time);
   if (!sameLocalDay(due, new Date())) return due.toLocaleDateString(lang, { weekday: 'short' });
-  if (due.getHours() === 0 && due.getMinutes() === 0) return t('feed_all_day');
+  // The server says whether a time was chosen. False is a day ("All day");
+  // true is a moment and shows its time; absent (cards from before the flag)
+  // falls back to guessing from the clock — a card at local midnight is a day.
+  if (card.time_set === false) return t('feed_all_day');
+  if (card.time_set !== true && due.getHours() === 0 && due.getMinutes() === 0) return t('feed_all_day');
   // The same shape as the calendar ("8:00 AM", "17:00"). The two-digit hour
   // gave English "08:00 AM", which did not fit the column on a phone and read
   // "08:0…" on every row of the day.

@@ -593,9 +593,31 @@ def iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.astimezone(timezone.utc).isoformat()
 
 
+# Where a date without a time is pinned. Noon UTC is the same calendar date
+# everywhere the app is sold (UTC-11 to UTC+11); midnight UTC was the evening
+# before for every family west of Greenwich.
+DATE_ONLY_HOUR_UTC = 12
+
+
+def is_date_only(value: Optional[str]) -> bool:
+    """A bare YYYY-MM-DD: a day, not a moment."""
+    return bool(value) and len(value.strip()) == 10 and value.strip()[4] == "-" and value.strip()[7] == "-"
+
+
 def parse_dt(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
+    value = value.strip()
+    if is_date_only(value):
+        # The day printed on a letter, a passport, a scanned appointment: it has
+        # no clock, so it is kept at noon UTC, which reads as that same day in
+        # every timezone a family lives in. At midnight UTC (what fromisoformat
+        # would give) a Montreal family saw the vaccination on the day before.
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").replace(
+                hour=DATE_ONLY_HOUR_UTC, tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format")
     value = value.replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(value)
@@ -2036,9 +2058,12 @@ def public_card(card: dict) -> dict:
         "description": card.get("description"),
         "assignee": card.get("assignee"),
         "due_date": iso(card.get("due_date")),
-        # Absent on every card written before this existed, and False is
-        # the right reading of absent: it never raises a warning.
-        "time_set": bool(card.get("time_set")),
+        # Absent on every card written before this existed. The app reads the
+        # three values apart: True shows the time, False says "All day", and
+        # absent falls back to guessing from the clock — because an old card
+        # with a real time must not be relabelled "All day". (The clash check
+        # reads absent as False: it never raises a warning.)
+        "time_set": (bool(card["time_set"]) if "time_set" in card else None),
         "status": card["status"],
         "source": card["source"],
         "image_base64": card.get("image_base64"),
@@ -10046,6 +10071,8 @@ async def _chat_insert(database, family_id: str, thread: str, sender_user_id: st
 # downloading thousands of messages to look at the last three — and the moment
 # the screen started polling for live updates, doing so every few seconds.
 CHAT_PAGE = 200
+# Past shopping trips and saved meal plans: a page, reached again with `before`.
+SHOPPING_HISTORY_PAGE = 30
 
 
 def _kid_viewer_id(member_id: str) -> str:
@@ -10074,22 +10101,44 @@ async def _chat_audience(database, family_id: str, thread: str, participants: se
 
 async def _chat_thread_messages(database, family_id: str, thread: str, viewer_id: str,
                                 since: Optional[str] = None,
-                                others: Optional[set] = None) -> list:
+                                others: Optional[set] = None,
+                                before: Optional[str] = None) -> list:
     """The newest messages in a thread, oldest first.
 
     `since` returns only what has CHANGED after that moment, which is what
     makes polling cheap: a quiet thread answers with an empty list.
+
+    `before` returns the page of messages sent BEFORE that moment: how a
+    reader reaches last month. Without it the screen showed the newest 200
+    and stopped, and the thread looked like the whole conversation.
     """
+    query: dict = {"family_id": family_id, "thread": thread}
+    earlier = _coerce_dt(before) if before else None
+    if earlier:
+        query["created_at"] = {"$lt": earlier}
     rows = []
     async for m in database["messages"].find(
-            {"family_id": family_id, "thread": thread},
-            {"_id": 0}).sort("created_at", -1).limit(CHAT_PAGE):
+            query, {"_id": 0}).sort("created_at", -1).limit(CHAT_PAGE):
         rows.append(m)
     rows.reverse()
     cutoff = _coerce_dt(since) if since else None
     if cutoff:
         rows = [m for m in rows if (_chat_changed_at(m) or cutoff) > cutoff]
     return [public_chat_message(m, viewer_id, others) for m in rows]
+
+
+async def _chat_has_older(database, family_id: str, thread: str, msgs: list) -> bool:
+    """Whether anything was sent before the first message on this page — what
+    tells the screen to offer "Load earlier messages" rather than let the
+    page pass for the whole conversation."""
+    if not msgs:
+        return False
+    oldest = _coerce_dt(msgs[0].get("created_at"))
+    if not oldest:
+        return False
+    found = await database["messages"].find_one(
+        {"family_id": family_id, "thread": thread, "created_at": {"$lt": oldest}}, {"_id": 0})
+    return found is not None
 
 
 async def _mark_read(database, family_id: str, thread: str, viewer_id: str) -> None:
@@ -10277,6 +10326,7 @@ async def _canonical_thread(database, family_id: str, thread: str) -> str:
 
 @app.get("/api/family/chat/{thread}")
 async def family_chat_get(thread: str, since: Optional[str] = None,
+                          before: Optional[str] = None,
                           user=Depends(require_chat_account)):
     database = get_db()
     thread = await _canonical_thread(database, user["family_id"], thread)
@@ -10286,8 +10336,10 @@ async def family_chat_get(thread: str, since: Optional[str] = None,
     # Before the fetch, so the rows carry the read this very call performed.
     await _mark_read_if_needed(database, user["family_id"], thread, user["user_id"])
     msgs = await _chat_thread_messages(database, user["family_id"], thread,
-                                       user["user_id"], since, others=audience)
-    return {"messages": msgs}
+                                       user["user_id"], since, others=audience, before=before)
+    # A poll (`since`) says nothing about history; a page does.
+    has_more = False if since else await _chat_has_older(database, user["family_id"], thread, msgs)
+    return {"messages": msgs, "has_more": has_more}
 
 
 @app.post("/api/family/chat/{thread}")
@@ -10439,7 +10491,8 @@ async def family_chat_edit(thread: str, message_id: str, payload: ChatEditIn,
 
 
 @app.get("/api/teen/chat")
-async def teen_chat_get(since: Optional[str] = None, teen=Depends(require_teen)):
+async def teen_chat_get(since: Optional[str] = None, before: Optional[str] = None,
+                        teen=Depends(require_teen)):
     """A teen's own thread, kept for the teen screen. The key is forced to their
     user id, so it can only ever be theirs."""
     database = get_db()
@@ -10447,8 +10500,9 @@ async def teen_chat_get(since: Optional[str] = None, teen=Depends(require_teen))
     others = await _thread_participants(database, teen["family_id"], tuid)
     await _mark_read_if_needed(database, teen["family_id"], tuid, tuid)
     msgs = await _chat_thread_messages(database, teen["family_id"], tuid, tuid, since,
-                                       others=others)
-    return {"messages": msgs}
+                                       others=others, before=before)
+    has_more = False if since else await _chat_has_older(database, teen["family_id"], tuid, msgs)
+    return {"messages": msgs, "has_more": has_more}
 
 
 @app.post("/api/teen/chat")
@@ -13135,9 +13189,12 @@ def _parse_google_event_start(event: dict) -> Optional[datetime]:
 
     raw_date = start.get("date")
     if raw_date:
+        # All day: a day, not a moment. Noon UTC keeps it on that day in every
+        # timezone (see parse_dt); 09:00 UTC used to read as a 5 AM event in
+        # Montreal and as the evening before in Hawaii.
         try:
-            return datetime.fromisoformat(raw_date).replace(
-                hour=9,
+            return datetime.fromisoformat(raw_date[:10]).replace(
+                hour=DATE_ONLY_HOUR_UTC,
                 minute=0,
                 second=0,
                 microsecond=0,
@@ -13147,6 +13204,11 @@ def _parse_google_event_start(event: dict) -> Optional[datetime]:
             return None
 
     return None
+
+
+def _google_event_all_day(event: dict) -> bool:
+    start = event.get("start") or {}
+    return bool(start.get("date")) and not start.get("dateTime")
 
 
 def _event_attendee_contacts(event: dict) -> list[dict]:
@@ -13195,39 +13257,86 @@ def _looks_like_birthday(title: Optional[str], event_type: Optional[str] = None)
     return any(w in t for w in _BIRTHDAY_WORDS)
 
 
+class _UpstreamHTTPError(Exception):
+    """A provider answered with an HTTP error; `code` and `body` say which."""
+
+    def __init__(self, code: int, body: str):
+        super().__init__(f"{code}: {body[:200]}")
+        self.code = code
+        self.body = body
+
+
+def _http_get_json(url: str, headers: dict, timeout: int = 20) -> dict:
+    """One GET, parsed. Kept separate so the tests can stand in for a provider
+    by URL instead of for the whole fetch, which is where the real bugs were:
+    a second page never asked for, a second calendar never read."""
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise _UpstreamHTTPError(e.code, e.read().decode("utf-8", errors="replace"))
+
+
+# Google keeps the birthdays and anniversaries taken from a person's contacts
+# in a calendar of their own. The events scope the app asks for can read it
+# by id, so it is asked for by name rather than found through calendarList.
+GOOGLE_BIRTHDAYS_CALENDAR_ID = "addressbook#contacts@group.v.calendar.google.com"
+# Enough for a family in a month; a calendar past this is paged, not cut.
+CALENDAR_PAGE_SIZE = 250
+CALENDAR_MAX_EVENTS = 2000
+
+
+async def _google_calendar_ids(access_token: str) -> list[str]:
+    """Every calendar the person has ticked in Google Calendar, primary first.
+
+    Needs the calendar.readonly scope. The app asks only for
+    calendar.events.readonly, under which Google refuses the list — so a
+    refusal is not an error here: the primary and the birthdays calendars,
+    which that scope can read by id, are what we fall back to.
+    """
+    ids = ["primary"]
+    url = ("https://www.googleapis.com/calendar/v3/users/me/calendarList?"
+           + urllib.parse.urlencode({"minAccessRole": "reader",
+                                     "fields": "items(id,selected,primary,deleted)"}))
+    try:
+        data = await asyncio.to_thread(
+            _http_get_json, url, {"Authorization": f"Bearer {access_token}"})
+    except Exception:
+        data = {}
+    for item in data.get("items") or []:
+        cal_id = item.get("id")
+        if not cal_id or item.get("deleted") or item.get("primary"):
+            continue
+        if item.get("selected") is False:
+            continue
+        ids.append(cal_id)
+    if GOOGLE_BIRTHDAYS_CALENDAR_ID not in ids:
+        ids.append(GOOGLE_BIRTHDAYS_CALENDAR_ID)
+    return ids
+
+
 async def _fetch_google_calendar_events(access_token: str, days: int) -> list[dict]:
+    """Every event in the window, from every calendar, however many pages.
+
+    This used to read one page of the primary calendar and stop: the 101st
+    event of the month, and anything in a shared family calendar or in the
+    birthdays calendar, was silently never imported, while the summary said
+    the sync had gone fine.
+    """
     now = utcnow()
     time_min = now.isoformat().replace("+00:00", "Z")
     time_max = (now + timedelta(days=days)).isoformat().replace("+00:00", "Z")
+    headers = {"Authorization": f"Bearer {access_token}"}
 
-    params = urllib.parse.urlencode(
-        {
-            "timeMin": time_min,
-            "timeMax": time_max,
-            "singleEvents": "true",
-            "orderBy": "startTime",
-            "maxResults": "100",
-            # Cancellations must arrive too, or a deleted meeting lives on
-            # in the app forever. Google omits them unless asked.
-            "showDeleted": "true",
-        }
-    )
-
-    url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events?{params}"
-
-    def _request():
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {access_token}"},
-            method="GET",
-        )
-
+    def _get(url: str, *, optional: bool) -> dict:
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                raw = response.read().decode("utf-8")
-                return json.loads(raw)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
+            return _http_get_json(url, headers)
+        except _UpstreamHTTPError as e:
+            # A calendar the person does not have (no birthdays calendar, a
+            # shared one withdrawn) is not a failed sync.
+            if optional and e.code in (403, 404):
+                return {}
             # Never let Google's own 401/403 propagate as OUR 401 — the app
             # treats a 401 as an expired session and signs the user out. Remap
             # an upstream auth failure to a clear, non-session error.
@@ -13236,14 +13345,48 @@ async def _fetch_google_calendar_events(access_token: str, days: int) -> list[di
                     status_code=400,
                     detail="Google Calendar access was denied or expired. Please reconnect your Google account and try again.",
                 )
-            raise HTTPException(status_code=502, detail=f"Google Calendar error: {body[:200]}")
+            raise HTTPException(status_code=502, detail=f"Google Calendar error: {e.body[:200]}")
         except HTTPException:
             raise
         except Exception as e:
+            if optional:
+                return {}
             raise HTTPException(status_code=502, detail=f"Google Calendar request failed: {e}")
 
-    data = await asyncio.to_thread(_request)
-    return data.get("items") or []
+    events: list[dict] = []
+    seen: set[str] = set()
+    for cal_id in await _google_calendar_ids(access_token):
+        page_token = None
+        while True:
+            query = {
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": str(CALENDAR_PAGE_SIZE),
+                # Cancellations must arrive too, or a deleted meeting lives on
+                # in the app forever. Google omits them unless asked.
+                "showDeleted": "true",
+            }
+            if page_token:
+                query["pageToken"] = page_token
+            url = (f"https://www.googleapis.com/calendar/v3/calendars/"
+                   f"{urllib.parse.quote(cal_id, safe='')}/events?{urllib.parse.urlencode(query)}")
+            data = await asyncio.to_thread(_get, url, optional=cal_id != "primary")
+            for item in data.get("items") or []:
+                # The same invitation can sit in two of a person's calendars;
+                # iCalUID is the one identity it keeps across them.
+                key = item.get("iCalUID") or item.get("id")
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                events.append(item)
+            page_token = data.get("nextPageToken")
+            if not page_token or len(events) >= CALENDAR_MAX_EVENTS:
+                break
+        if len(events) >= CALENDAR_MAX_EVENTS:
+            break
+    return events
 
 
 # -----------------------------------------------------------------------------
@@ -13358,13 +13501,17 @@ async def stage_scanned_event(payload: ScanEventIn, user=Depends(require_user),
     if await _candidate_exists(database, user["family_id"], dedupe_key):
         return {"ok": True, "staged": False, "reason": "already_pending"}
 
+    # A letter that names a day and no time is a day: no clock on the card,
+    # and no "60 minutes before" push that would land in the night.
+    date_only = is_date_only(payload.due_date)
     card = {
         "type": card_type,
         "title": title,
         "description": (payload.description or "").strip()[:2000],
         "due_date": due,
+        "time_set": not date_only,
         "recurrence": "none",
-        "reminder_minutes": max(0, min(payload.reminder_minutes, 60 * 24 * 7)),
+        "reminder_minutes": 0 if date_only else max(0, min(payload.reminder_minutes, 60 * 24 * 7)),
         "source": "CAMERA",
         "external_source": "document_scan",
         "icon": guess_icon(title, card_type),
@@ -13446,6 +13593,9 @@ async def decide_event_candidates(payload: CandidateDecisionIn,
             "description": doc.get("description") or "",
             "assignee": assignee or user.get("name"),
             "due_date": doc.get("due_date"),
+            # Carried over, or an all-day event accepted from the review list
+            # came out as a timed one.
+            "time_set": bool(doc.get("time_set")),
             "status": "OPEN",
             "source": doc.get("source") or "CALENDAR",
             "image_base64": None,
@@ -13506,6 +13656,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
     updated = 0
     removed = 0
     skipped = 0
+    cancelled_kept = 0
     contacts_found: dict[str, dict] = {}
 
     for event in events:
@@ -13525,6 +13676,14 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
                 if result.deleted_count:
                     removed += 1
                     continue
+                # Kept on purpose, but said: a shared card the school has
+                # cancelled was silently "skipped" and lived on for everyone.
+                kept = await database["cards"].find_one({
+                    "family_id": user["family_id"], "google_event_id": event_id, "status": "OPEN"},
+                    {"_id": 0, "card_id": 1})
+                if kept:
+                    cancelled_kept += 1
+                    continue
             skipped += 1
             continue
 
@@ -13536,6 +13695,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
         if not start_dt:
             skipped += 1
             continue
+        all_day = _google_event_all_day(event)
 
         title = (event.get("summary") or "Calendar event").strip()
         location = (event.get("location") or "").strip()
@@ -13559,11 +13719,20 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
                 changed["title"] = title
             if ensure_aware_utc(existing.get("due_date")) != start_dt:
                 changed["due_date"] = start_dt
-            if changed:
+            # An all-day event imported before the flag existed showed as a
+            # 5 AM event and pushed in the night: say what it is on resync.
+            # Quietly — a flag put right is not "1 updated" in the summary.
+            backfill = {}
+            if existing.get("time_set") != (not all_day):
+                backfill["time_set"] = not all_day
+            if all_day and existing.get("reminder_minutes"):
+                backfill["reminder_minutes"] = 0
+            if changed or backfill:
                 await database["cards"].update_one(
                     {"family_id": user["family_id"], "google_event_id": event_id},
-                    {"$set": changed},
+                    {"$set": {**backfill, **changed}},
                 )
+            if changed:
                 updated += 1
             else:
                 skipped += 1
@@ -13617,7 +13786,9 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
             "source": "CALENDAR",
             "image_base64": None,
             "recurrence": "yearly" if is_bday else "none",
-            "reminder_minutes": 60,
+            # A day has no "60 minutes before": the morning digest names it.
+            "reminder_minutes": 0 if all_day else 60,
+            "time_set": not all_day,
             "location": location,
             "google_event_id": event_id,
             "google_ical_uid": event.get("iCalUID"),
@@ -13665,6 +13836,7 @@ async def import_google_calendar(payload: CalendarImportIn, user=Depends(require
         "updated": updated,
         "removed": removed,
         "skipped": skipped,
+        "cancelled_kept": cancelled_kept,
         "events_seen": len(events),
         "contacts_found": len(contacts_found),
         "contacts": contacts,
@@ -13677,6 +13849,16 @@ def _parse_ms_event_start(event: dict):
     dt_str = str(start.get("dateTime") or "").strip()
     if not dt_str:
         return None
+    if event.get("isAllDay"):
+        # Graph gives an all-day event as midnight UTC on its date. Kept as a
+        # time, that lands on the evening before for a family west of
+        # Greenwich; noon UTC (the same rule as parse_dt and the Google
+        # import) keeps it on its own day everywhere the app is sold.
+        try:
+            return datetime.fromisoformat(dt_str[:10]).replace(
+                hour=DATE_ONLY_HOUR_UTC, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        except ValueError:
+            return None
     # Graph returns up to 7 fractional digits; Python's fromisoformat takes 6.
     if "." in dt_str:
         head, frac = dt_str.split(".", 1)
@@ -13706,29 +13888,21 @@ def _ms_event_contacts(event: dict) -> list[dict]:
 
 
 async def _fetch_microsoft_calendar_events(access_token: str, days: int) -> list[dict]:
+    """Every event in the window, from every calendar, however many pages —
+    the same promise as the Google import. Calendars.Read covers the list of
+    calendars as well as their events; if the list is refused anyway, the
+    default calendar is read on its own as before."""
     now = utcnow()
     start = now.isoformat().replace("+00:00", "Z")
     end = (now + timedelta(days=days)).isoformat().replace("+00:00", "Z")
-    params = urllib.parse.urlencode({
-        "startDateTime": start,
-        "endDateTime": end,
-        "$orderby": "start/dateTime",
-        "$top": "100",
-        "$select": "id,subject,start,end,location,bodyPreview,webLink,attendees,isCancelled,organizer,iCalUId",
-    })
-    url = f"https://graph.microsoft.com/v1.0/me/calendarView?{params}"
+    headers = {"Authorization": f"Bearer {access_token}", "Prefer": 'outlook.timezone="UTC"'}
 
-    def _request():
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {access_token}", "Prefer": 'outlook.timezone="UTC"'},
-            method="GET",
-        )
+    def _get(url: str, *, optional: bool) -> dict:
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
+            return _http_get_json(url, headers)
+        except _UpstreamHTTPError as e:
+            if optional and e.code in (403, 404):
+                return {}
             # Remap upstream auth failures so the app doesn't read them as an
             # expired session (which would sign the user out).
             if e.code in (401, 403):
@@ -13736,14 +13910,47 @@ async def _fetch_microsoft_calendar_events(access_token: str, days: int) -> list
                     status_code=400,
                     detail="Outlook access was denied or expired. Please reconnect your Microsoft account and try again.",
                 )
-            raise HTTPException(status_code=502, detail=f"Outlook Calendar error: {body[:200]}")
+            raise HTTPException(status_code=502, detail=f"Outlook Calendar error: {e.body[:200]}")
         except HTTPException:
             raise
         except Exception as e:
+            if optional:
+                return {}
             raise HTTPException(status_code=502, detail=f"Outlook Calendar request failed: {e}")
 
-    data = await asyncio.to_thread(_request)
-    return data.get("value") or []
+    listing = await asyncio.to_thread(
+        _get, "https://graph.microsoft.com/v1.0/me/calendars?$select=id,name,isDefaultCalendar&$top=50",
+        optional=True)
+    calendars = [c.get("id") for c in (listing.get("value") or []) if c.get("id")]
+    # The default calendar first, and on its own when the list is refused.
+    calendars.sort(key=lambda cid: 0 if any(
+        c.get("id") == cid and c.get("isDefaultCalendar") for c in listing.get("value") or []) else 1)
+    bases = ([f"https://graph.microsoft.com/v1.0/me/calendars/{urllib.parse.quote(cid, safe='')}/calendarView"
+              for cid in calendars] or ["https://graph.microsoft.com/v1.0/me/calendarView"])
+
+    params = urllib.parse.urlencode({
+        "startDateTime": start,
+        "endDateTime": end,
+        "$orderby": "start/dateTime",
+        "$top": str(CALENDAR_PAGE_SIZE),
+        "$select": "id,subject,start,end,location,bodyPreview,webLink,attendees,isCancelled,organizer,iCalUId,isAllDay",
+    })
+    events: list[dict] = []
+    seen: set[str] = set()
+    for i, base in enumerate(bases):
+        url = f"{base}?{params}"
+        while url:
+            data = await asyncio.to_thread(_get, url, optional=i > 0)
+            for item in data.get("value") or []:
+                key = item.get("iCalUId") or item.get("id")
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                events.append(item)
+            url = data.get("@odata.nextLink") if len(events) < CALENDAR_MAX_EVENTS else None
+        if len(events) >= CALENDAR_MAX_EVENTS:
+            break
+    return events
 
 
 @app.post("/api/calendar/import-microsoft")
@@ -13764,6 +13971,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
     updated = 0
     removed = 0
     skipped = 0
+    cancelled_kept = 0
     contacts_found: dict[str, dict] = {}
 
     for event in events:
@@ -13782,6 +13990,12 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
                 if result.deleted_count:
                     removed += 1
                     continue
+                kept = await database["cards"].find_one({
+                    "family_id": user["family_id"], "ms_event_id": event_id, "status": "OPEN"},
+                    {"_id": 0, "card_id": 1})
+                if kept:
+                    cancelled_kept += 1
+                    continue
             skipped += 1
             continue
 
@@ -13790,6 +14004,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             continue
 
         start_dt = _parse_ms_event_start(event)
+        all_day = bool(event.get("isAllDay"))
         if not start_dt:
             skipped += 1
             continue
@@ -13807,11 +14022,17 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
                 changed["title"] = new_title
             if ensure_aware_utc(existing.get("due_date")) != start_dt:
                 changed["due_date"] = start_dt
-            if changed:
+            backfill = {}
+            if existing.get("time_set") != (not all_day):
+                backfill["time_set"] = not all_day
+            if all_day and existing.get("reminder_minutes"):
+                backfill["reminder_minutes"] = 0
+            if changed or backfill:
                 await database["cards"].update_one(
                     {"family_id": user["family_id"], "ms_event_id": event_id},
-                    {"$set": changed},
+                    {"$set": {**backfill, **changed}},
                 )
+            if changed:
                 updated += 1
             else:
                 skipped += 1
@@ -13864,7 +14085,8 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
             "source": "CALENDAR",
             "image_base64": None,
             "recurrence": "yearly" if is_bday else "none",
-            "reminder_minutes": 60,
+            "reminder_minutes": 0 if all_day else 60,
+            "time_set": not all_day,
             "location": location,
             "ms_event_id": event_id,
             "google_ical_uid": event.get("iCalUId"),
@@ -13910,6 +14132,7 @@ async def import_microsoft_calendar(payload: CalendarImportIn, user=Depends(requ
         "updated": updated,
         "removed": removed,
         "skipped": skipped,
+        "cancelled_kept": cancelled_kept,
         "events_seen": len(events),
         "contacts_found": len(contacts_found),
         "contacts": contacts,
@@ -16702,11 +16925,18 @@ async def clear_checked_shopping(user=Depends(require_user)):
 
 
 @app.get("/api/shopping/history")
-async def list_shopping_history(user=Depends(require_user)):
+async def list_shopping_history(before: Optional[str] = None, user=Depends(require_user)):
+    """The 30 newest trips; `before` is how the app reaches the ones from
+    earlier. Without it the sheet stopped at 30 and looked complete, and last
+    Christmas's list was gone from view four months later."""
     database = get_db()
+    query: dict = {"family_id": user["family_id"]}
+    earlier = _coerce_dt(before) if before else None
+    if earlier:
+        query["created_at"] = {"$lt": earlier}
     rows = await database["shopping_history"].find(
-        {"family_id": user["family_id"]}, {"_id": 0}
-    ).sort("created_at", -1).to_list(30)
+        query, {"_id": 0}
+    ).sort("created_at", -1).to_list(SHOPPING_HISTORY_PAGE)
     return [public_shopping_history(h) for h in rows]
 
 
@@ -18704,10 +18934,17 @@ async def save_meal_plan(body: SavedPlanIn, user: dict = Depends(require_user), 
 
 
 @app.get("/api/meals/saved")
-async def list_saved_plans(user: dict = Depends(require_user), database=Depends(get_db)):
+async def list_saved_plans(before: Optional[str] = None, user: dict = Depends(require_user),
+                           database=Depends(get_db)):
+    """The 30 newest saved plans; `before` reaches the earlier ones (same
+    reason as the shopping history)."""
+    query: dict = {"family_id": user["family_id"]}
+    earlier = _coerce_dt(before) if before else None
+    if earlier:
+        query["created_at"] = {"$lt": earlier}
     rows = await database["meal_plans_saved"].find(
-        {"family_id": user["family_id"]}, {"_id": 0}
-    ).sort("created_at", -1).to_list(30)
+        query, {"_id": 0}
+    ).sort("created_at", -1).to_list(SHOPPING_HISTORY_PAGE)
     return [public_saved_plan(p) for p in rows]
 
 
@@ -19647,11 +19884,11 @@ async def pay_allowance(member_id: str, user: dict = Depends(require_full_member
 
 @app.get("/api/allowances/{member_id}/balance")
 async def get_allowance_balance(member_id: str, user: dict = Depends(require_full_member), database=Depends(get_db)):
-    txns = await database["allowance_txns"].find(
-        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0}
-    ).to_list(1000)
+    # Every transaction, not the first thousand: a balance read off a capped
+    # list went quietly wrong once a child's ledger outgrew it.
     balance = 0.0
-    for t in txns:
+    async for t in database["allowance_txns"].find(
+            {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0, "txn_type": 1, "amount": 1}):
         if t.get("txn_type") == "withdrawal":
             balance -= t.get("amount", 0)
         else:

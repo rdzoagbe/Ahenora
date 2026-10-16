@@ -95,8 +95,11 @@ function cardDateKey(card: Card) {
   return dateKey(new Date(card.due_date));
 }
 
-function timeParts(value?: string | null) {
+function timeParts(value?: string | null, timeSet?: boolean | null) {
   if (!value) return { time: '', ampm: '' };
+  // A day, not a moment: no clock to show. (An imported all-day event used to
+  // read "5:00 AM" in Montreal and "1:00 PM" in Paris.)
+  if (timeSet === false) return { time: '', ampm: '' };
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return { time: '', ampm: '' };
   let h = date.getHours();
@@ -377,6 +380,12 @@ export default function Calendar() {
     if (r.updated) parts.push(`${r.updated} ${t('cal_events_updated')}`);
     if (r.removed) parts.push(`${r.removed} ${t('cal_events_removed')}`);
     parts.push(`${r.contacts_found} ${t('cal_people_found')}`);
+    // Say how far ahead the sync looked: "all imported" with an anniversary
+    // missing read as a bug when the anniversary was simply past the window.
+    if (r.days) parts.push(t('cal_sync_window', { days: r.days }));
+    // A cancelled meeting whose card is shared is kept (it is the family's
+    // now) — but said, so nobody waits for an event the school called off.
+    if (r.cancelled_kept) parts.push(t('cal_cancelled_kept', { n: r.cancelled_kept }));
     return `${parts.join(' · ')}.`;
   }, [t]);
 
@@ -1510,7 +1519,7 @@ export default function Calendar() {
               {shownGroups.flatMap((group) => group.items).map((card, index, arr) => {
                 const color = TYPE_COLOR[card.type] || ui.mintText;
                 const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
-                const { time, ampm } = timeParts(card.due_date);
+                const { time, ampm } = timeParts(card.due_date, card.time_set);
                 const sub = cleanText(card.description) || cleanText(card.assignee) || (isGoogle ? t('cal_google_calendar') : t('cal_family'));
                 const glyph = glyphFor(card.icon);
                 return (

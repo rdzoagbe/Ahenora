@@ -56,7 +56,10 @@ describe('the alert itself is the way in', () => {
 describe('saving', () => {
   it('turns the picker string into a date the server takes', () => {
     expect(VAULT).toContain('parseDisplayDate(chosen, localeFor(lang))');
-    expect(VAULT).toContain('parsed.toISOString()');
+    // As the day it is (2026-10-16), not toISOString() of local midnight: that
+    // was the evening before in UTC, and a co-parent in another timezone read
+    // the passport as expiring a day early.
+    expect(VAULT).toContain('localDayIso(parsed)');
   });
 
   it('passes null through to clear rather than skipping the call', () => {

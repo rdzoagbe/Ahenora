@@ -32,7 +32,7 @@ export default function Conversation() {
   // so inline arrows re-created every render made it re-fetch on every render —
   // a loop bounded only by network latency. Keyed on the thread, which is the
   // only thing that should ever restart the conversation.
-  const load = useCallback((since?: string) => api.chatGet(thread, since), [thread]);
+  const load = useCallback((since?: string, before?: string) => api.chatGet(thread, since, before), [thread]);
   const send = useCallback(
     (text: string, replyTo?: string) => api.chatSend(thread, text, replyTo), [thread]);
   const react = useCallback(
