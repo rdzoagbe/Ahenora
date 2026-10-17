@@ -17,6 +17,10 @@ import { apiErrorText } from '../apiError';
 
 const CATEGORY = 'Groceries';
 const MONTHS = 6;
+// The receipts card shows this many at a time. The screen used to stop at
+// twenty with nothing to say there were more, and the list passed for the
+// whole four months the server had sent; "Show older" reaches the rest.
+const RECEIPTS_PAGE = 20;
 
 /** "2026-07" → a Date on the first of that month, for formatting only. */
 function monthDate(key: string): Date {
@@ -71,6 +75,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
 
   const [overview, setOverview] = useState<ExpenseOverview | null>(null);
   const [recent, setRecent] = useState<Expense[]>([]);
+  const [receiptsShown, setReceiptsShown] = useState(RECEIPTS_PAGE);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [showSix, setShowSix] = useState(false);
@@ -488,7 +493,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
               <Text style={styles.lbl}>{t('exp_receipts')}</Text>
               {recent.length === 0 ? (
                 <Text style={styles.empty}>{t('exp_empty')}</Text>
-              ) : recent.slice(0, 20).map((e, i) => (
+              ) : recent.slice(0, receiptsShown).map((e, i) => (
                 <View key={e.expense_id} style={[styles.row, i > 0 && styles.rowDivider]}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.shopName} numberOfLines={1}>{e.merchant || e.description}</Text>
@@ -506,6 +511,16 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                   </PressScale>
                 </View>
               ))}
+              {recent.length > receiptsShown ? (
+                <PressScale
+                  testID="receipts-older"
+                  accessibilityRole="button"
+                  onPress={() => setReceiptsShown((n) => n + RECEIPTS_PAGE)}
+                  style={styles.older}
+                >
+                  <Text style={styles.olderText}>{t('kitchen_show_older')}</Text>
+                </PressScale>
+              ) : null}
             </View>
           ) : null}
 
@@ -770,4 +785,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   tickOn: { backgroundColor: ui.orange, borderColor: ui.orange },
   rowOff: { color: ui.muted, textDecorationLine: 'line-through' },
   quietText: { fontFamily: 'Figtree_600SemiBold', fontSize: 14, color: ui.muted },
+  older: { alignSelf: 'center', marginTop: 10, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: ui.soft },
+  olderText: { fontFamily: 'Figtree_600SemiBold', fontSize: 13, color: ui.orangeText },
 });
