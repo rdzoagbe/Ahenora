@@ -45,6 +45,18 @@ describe('past trips and saved plans go back', () => {
   });
 });
 
+describe('the receipts go back too', () => {
+  const spending = read('components', 'SpendingView.tsx');
+
+  it('shows twenty, then offers "Show older" while there are more', () => {
+    expect(spending).toContain('recent.slice(0, receiptsShown)');
+    expect(spending).toContain('{recent.length > receiptsShown ? (');
+    expect(spending).toContain('testID="receipts-older"');
+    expect(spending).toContain('setReceiptsShown((n) => n + RECEIPTS_PAGE)');
+    expect(spending).not.toContain('slice(0, 20)');
+  });
+});
+
 describe('a cancelled meeting that is kept is said', () => {
   it('in the sync summary', () => {
     expect(read('..', 'app', '(tabs)', 'calendar.tsx')).toContain("if (r.cancelled_kept) parts.push(t('cal_cancelled_kept', { n: r.cancelled_kept }));");
