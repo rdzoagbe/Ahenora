@@ -2392,14 +2392,15 @@ export const api = {
     );
   },
   /** `awarded_for` credits an earlier day of THIS week, for a parent catching
-   *  up — without it, Tuesday's job lands on Sunday. */
+   *  up — without it, Tuesday's job lands on Sunday. The device's zone goes
+   *  with it so "today" is the parent's today, not Greenwich's. */
   adjustMemberStars: (member_id: string, data: { delta: number; reason?: string; awarded_for?: string }) => {
     cache.invalidate('familyMembers');
     return request<{ ok: boolean; member: FamilyMember; transaction: StarTransaction }>(
       `/family/members/${member_id}/stars`,
       {
         method: 'POST',
-        body: data,
+        body: { ...data, timezone: deviceTimeZone() },
       }
     );
   },

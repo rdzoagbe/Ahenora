@@ -133,6 +133,36 @@ describe('weekDayCells', () => {
     expect(out.map((c) => c.isFuture)).toEqual([false, false, false, true, true, true, true]);
   });
 
+  // ---- today is the reader's today ----------------------------------------
+
+  it('marks today by the reader’s calendar, not Greenwich’s', () => {
+    // Tuesday 21:00 in Montreal is Wednesday 01:00 UTC. The reader is still
+    // in Tuesday; the row used to light Wednesday and offer Tuesday as past.
+    const montrealEvening = new Date('2026-09-02T01:00:00.000Z');
+    const out = weekDayCells([], montrealEvening, 'en-US', '2026-09-01');
+    expect(out.map((c) => c.isToday)).toEqual([false, true, false, false, false, false, false]);
+    expect(out.map((c) => c.isFuture)).toEqual([false, false, true, true, true, true, true]);
+  });
+
+  it('does not call the reader’s own morning the future', () => {
+    // Wednesday 07:00 in Tokyo is Tuesday 22:00 UTC. Wednesday has begun for
+    // the reader, so its cell is today and can be credited.
+    const tokyoMorning = new Date('2026-09-01T22:00:00.000Z');
+    const out = weekDayCells([], tokyoMorning, 'en-US', '2026-09-02');
+    expect(out[2].isToday).toBe(true);
+    expect(out[2].isFuture).toBe(false);
+    expect(out[3].isFuture).toBe(true);
+  });
+
+  it('shows a star pinned to the family’s day in that day’s column', () => {
+    // The server stamps a chore done at 21:00 Tuesday in Montreal with
+    // Tuesday noon UTC, recorded at Wednesday 01:00 UTC. Tuesday's column.
+    const out = weekDayCells(
+      [txn(1, '2026-09-01T12:00:00.000Z', '2026-09-02T01:00:00.000Z')],
+      new Date('2026-09-02T01:00:00.000Z'), 'en-US', '2026-09-01');
+    expect(out.map((c) => c.earned)).toEqual([0, 1, 0, 0, 0, 0, 0]);
+  });
+
   it('offers each day back to the server at noon, so it lands on the right date', () => {
     // A midnight stamp sent as UTC is the previous day for anyone west of
     // Greenwich — the whole reason this is noon.
