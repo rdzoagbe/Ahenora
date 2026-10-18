@@ -104,8 +104,12 @@ async def main():
             '[data-testid="onboarding-child-1"]').count() == 1
         await page.fill('[data-testid="onboarding-child-0"]', "Ama")
         await page.fill('[data-testid="onboarding-child-1"]', "Leo")
+        # The web build renders the row as role=checkbox but drops aria-checked
+        # (native keeps accessibilityState.checked); a ticked row is the one
+        # carrying the tick icon, the only SVG in it — the chore's own icon is
+        # text.
         r["three_chores_are_ticked_to_start"] = await page.locator(
-            '[aria-checked="true"][data-testid^="onboarding-chore-"]').count() == 3
+            '[data-testid^="onboarding-chore-"] svg').count() == 3
         await page.click('[data-testid="onboarding-chore-pet"]')       # a fourth
         await page.wait_for_timeout(200)
         await page.screenshot(path="onboarding_kids.png")
