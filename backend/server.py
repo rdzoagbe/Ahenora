@@ -11489,7 +11489,9 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
 # only: a phone still on 2.0.0 receives nothing until it updates from the
 # store, and store_version below is how it learns that.
 MIN_SUPPORTED_RUNTIME = "3.0.0"
-CURRENT_STORE_VERSION = "1.2.0"
+# 1.2.1 was approved on both stores in early October 2026; the admin read-out
+# and the smoke log said 1.2.0 until the stability check of 2026-10-18 noticed.
+CURRENT_STORE_VERSION = "1.2.1"
 
 
 @app.get("/api/app/version-info")
