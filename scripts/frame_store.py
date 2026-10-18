@@ -62,17 +62,17 @@ SUB_MAX, SUB_MIN = round(38 * _w), round(28 * _w)
 # languages — the capture step writes the same names into a per-language dir.
 SLIDES = {
     "en": [
-        ("01-feed.png",     "A better home base\nfor family life",     "Tasks, reminders and the daily plan — sorted"),
-        ("02-calendar.png", "One shared\nfamily calendar",            "You each choose exactly what to share"),
-        ("03-kids.png",     "Chores kids\nwant to finish",            "Stars they swap for rewards you set"),
+        ("01-kids.png",     "Chores kids\nwant to finish",            "Stars, a weekend treat, pocket money on time"),
+        ("02-feed.png",     "The whole family's\nday, sorted",         "Tasks, reminders and the daily plan"),
+        ("03-calendar.png", "One shared\nfamily calendar",            "You each choose exactly what to share"),
         ("04-kitchen.png",  "The week's meals,\nplanned in minutes",  "Snap a recipe, sync it to your shopping list"),
         ("05-quickadd.png", "Capture anything\nin a single tap",      "Type it, scan it, or just say it"),
         ("06-household.png","Everything a\nhousehold needs",          "Vault, calendar, kids and co-parenting"),
     ],
     "fr": [
-        ("01-feed.png",     "Un meilleur port d'attache\npour la vie de famille", "Tâches, rappels et le programme du jour — organisés"),
-        ("02-calendar.png", "Un seul calendrier\nfamilial partagé",              "Chacun choisit précisément ce qu'il partage"),
-        ("03-kids.png",     "Des tâches que les enfants\naiment terminer",       "Des étoiles à échanger contre vos récompenses"),
+        ("01-kids.png",     "Des corvées que les enfants\nont envie de finir",   "Des étoiles, une récompense le week-end, l'argent de poche à l'heure"),
+        ("02-feed.png",     "La journée de toute\nla famille, organisée",        "Tâches, rappels et le programme du jour"),
+        ("03-calendar.png", "Un seul calendrier\nfamilial partagé",              "Chacun choisit précisément ce qu'il partage"),
         ("04-kitchen.png",  "Les repas de la semaine,\nplanifiés en minutes",    "Photographiez une recette, synchronisez la liste de courses"),
         ("05-quickadd.png", "Capturez tout\nen un seul geste",                   "Écrivez-le, scannez-le, ou dites-le simplement"),
         ("06-household.png","Tout ce dont un\nfoyer a besoin",                   "Coffre, calendrier, enfants et coparentalité"),

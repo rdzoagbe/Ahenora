@@ -10,49 +10,61 @@ the Console screens.
 **App name** (max 30 chars) — brand + the strongest head term, so it ranks for
 something people actually search (the brand alone ranks for nothing).
 ```
-Ahenora: Family Organizer
+Ahenora: Family Chore Chart
 ```
-*(25 chars. Alternatives: `Ahenora: Family Calendar` / `Ahenora — Family Planner`.)*
+*(27 chars. Leads with the kids' wedge: "chore chart" is a category parents search by name, and "family" stays. The conservative alternative is `Ahenora: Family Organizer`, with the wedge carried by the short description alone.)*
 
-**Short description** (max 80 chars) — second-heaviest ranking field; packs four
-high-volume search terms plus the "calm" brand promise.
+**Short description** (max 80 chars) — second-heaviest ranking field. Since 2026-10-18
+it sells the kids' week first (chores, stars, treat, pocket money) and the calendar
+last: the wedge families pay for, in the field they read in the search results.
 ```
-Family calendar, chore chart, tasks & meal planner — one calm, shared home.
+Chores kids want to do: stars, a weekly treat, pocket money, the family calendar
 ```
 
 **Full description** (max 4000 chars) — keyword-rich but readable; the head terms
-(family organizer, family calendar, chore chart, meal planner, co-parenting,
-single parent) recur naturally, front-loaded in the first two lines.
+(family organizer, chore chart, pocket money, family calendar, meal planner,
+co-parenting, single parent) recur naturally, front-loaded in the first two lines.
+The kids' week comes first and the rest of the household second: every line under
+THE KIDS' WEEK describes something the app does today (stars, the weekend treat and
+full-week bonus, pocket money with a due date and a reminder, kid mode with a PIN,
+teen accounts, custody weeks), checked against the code on 2026-10-18.
 ```
-Ahenora is the calm family organizer that keeps your whole household running from one shared, private place — the family calendar, the kids' chores, the meal plan, and the paperwork, all in one app.
+Ahenora is the family organizer that runs the kids' week: a chore chart with stars kids actually want to earn, rewards you set, a weekend treat to work towards, and pocket money paid on time — with the family calendar, meals and paperwork around it.
 
-Stop juggling sticky notes, group chats, and half-remembered reminders. Whether you're two parents, a single parent, or co-parents across two homes, Ahenora brings everyone onto the same page.
+Stop juggling sticky notes, group chats and half-remembered reminders. Whether you're two parents, a single parent, or co-parents across two homes, Ahenora puts the whole household on the same page.
 
-WHAT AHENORA DOES
+THE KIDS' WEEK
 
-• Shared family calendar — See everyone's week at a glance. Import your Google Calendar so events become tasks you can actually act on.
-• Tasks & reminders — Capture to-dos, permission slips, and appointments, assign them, and get nudged before they're due.
-• Kids' chores & rewards — A simple chore chart with stars kids actually want to earn, plus pocket-money tracking.
-• Teen accounts — Give a 13–17-year-old their own private login: just their tasks and schedule, nothing else. They tick it off, you approve, everyone stays in sync.
-• Meal planner & shopping list — Plan the week's meals from what you buy, with seasoned step-by-step recipes, and a shared shopping list that sorts itself into aisles and updates for everyone.
-• Scan documents — Snap a school letter or bill and turn it into a task or a saved document.
-• Secure vault — Keep important household paperwork organised by category.
-• Handoff notes & announcements — Leave a note for your partner and keep the whole family in the loop.
+• Chore chart with stars — Give stars for chores done. Stars build up and get swapped for rewards you decide on: screen time, a treat, pocket money. You decide what a star is worth.
+• A good week earns a treat — Stars earned this week count towards a weekend treat, and a full week of jobs earns a bonus star. The count starts fresh each Monday; saved stars stay theirs.
+• Pocket money — Set an allowance with a due date, get reminded the day before, and record it when paid. Every star and every payment sits in a ledger both parents can see.
+• Kid mode — Hand over your phone and it shows only that child's chores and stars, with a PIN to get back out.
+• Teen accounts — Give a 13–17-year-old their own private login: just their tasks and the shared calendar. They tick it off, you approve.
+• Two homes — Co-parents see the same custody weeks and the same chores, whichever house the child is in this week.
+
+AROUND IT, THE REST OF THE HOUSEHOLD
+
+• Shared family calendar — Everyone's week at a glance. Import your Google or Outlook calendar, all-day events included.
+• Tasks & reminders — Capture to-dos, permission slips and appointments, assign them, and get nudged before they're due.
+• Meal planner & shopping list — Plan the week's dinners, with step-by-step recipes, and a shared shopping list that sorts itself into aisles.
+• Scan documents — Snap a school letter or bill and turn it into a calendar event or a saved document.
+• Secure vault — Keep the household's paperwork organised by category.
+• Family chat & handoff notes — Leave a note for your partner and keep everyone in the loop.
 
 BUILT FOR REAL FAMILIES
 
-Ahenora is made for busy parents and guardians — two-parent homes, single parents, and co-parenting families managing life across two houses. Invite your partner, a grandparent, or a carer so everyone stays coordinated.
+Ahenora is made for busy parents and guardians — two-parent homes, single parents, and co-parenting families managing life across two houses. Invite your partner, a grandparent or a carer so everyone stays coordinated.
 
 PRIVATE BY DESIGN
 
 We don't sell your data. Everything is encrypted in transit, and you're always in control — manage notifications, delete content, or delete your account any time from Settings.
 
-Every new household gets the whole app free for 14 days, with no card. After that, the Free plan keeps two adults organised, and Duo, Family or Household add the rest. Bring calm to your household — try Ahenora today.
+Every new household gets the whole app free for 14 days, with no card. After that, Free keeps two adults organised, and Family brings the kids' side — up to five children — with meal planning and unlimited scans. Bring calm to the kids' week — try Ahenora today.
 ```
 
 **App category:** Parenting (keep — broad discovery + your audience; don't switch to Productivity)
 
-**Tags:** family organizer, household, chores, calendar, tasks, family calendar, chore chart, meal planner, co-parenting
+**Tags:** chore chart, family organizer, chores, pocket money, allowance, family calendar, tasks, meal planner, co-parenting
 
 *(Play has no separate keyword field — ranking comes from the title + short + full
 description above, so that copy is where the keyword work actually lands.)*
@@ -78,13 +90,19 @@ Order screenshots by what SELLS, not by app navigation, and put a short benefit
 caption band on each. The first two do ~80% of the browse→install conversion —
 make them your strongest. (Portrait, from a preview build with sample data.)
 
-1. Feed / "today" view — caption: "Your whole family, one calm home"
-2. Shared calendar — caption: "Everyone's week at a glance"
-3. Kids' chores + stars — caption: "Chores kids actually want to do"
-4. Teen account screen — caption: "Teens get their own private space"
-   (newest, most differentiating feature — competitors don't have it; give it a slot)
-5. Meal planner — caption: "Plan the week, shop in one tap"
-6. Scan a document — caption: "Snap a letter, make it a task"
+Since 2026-10-18 the kids' week leads, because it is what Family is paid for
+and the first two screenshots decide the install:
+
+1. Kids' chores + stars — caption: "Chores kids want to finish"
+2. Feed / "today" view — caption: "The whole family's day, sorted"
+3. Shared calendar — caption: "One shared family calendar"
+4. Meal planner — caption: "The week's meals, planned in minutes"
+5. Quick add — caption: "Capture anything in a single tap"
+6. Household — caption: "Everything a household needs"
+
+The capture script (`scripts/store_capture.py`) and the framing script
+(`scripts/frame_store.py`) number the shots in this order; re-run both before
+uploading so the files on disk match.
 
 ---
 

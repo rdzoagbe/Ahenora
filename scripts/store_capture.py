@@ -158,9 +158,11 @@ async def main():
             await p.screenshot(path=f"{OUT}/{name}.png")
             print("captured", name)
 
-        await shot("feed", "01-feed")
-        await shot("calendar", "02-calendar")
-        await shot("kids", "03-kids")
+        # The kids' week leads (docs/PLAY_STORE_LISTING.md, section 2): it is
+        # what Family is paid for, and the first screenshot decides the install.
+        await shot("kids", "01-kids")
+        await shot("feed", "02-feed")
+        await shot("calendar", "03-calendar")
 
         async def open_meal_planner():
             # Kitchen opens on the shopping list; switch to the meal planner,
