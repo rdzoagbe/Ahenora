@@ -1975,6 +1975,53 @@ async def roll_week_if_stale(database, member: dict) -> dict:
     return member
 
 
+async def _zone_of(database, user_id: Optional[str]) -> Optional[str]:
+    """The IANA zone of one person's most recently seen device, or None.
+
+    Phones send it with their push token and browsers with their subscription,
+    for the morning digest; here it says which calendar day "today" is. A
+    person with no device on record gets None, and the caller falls back to
+    the clock rather than guessing a zone.
+    """
+    if not user_id:
+        return None
+    for coll in ("notification_tokens", "web_push_subscriptions"):
+        async for row in database[coll].find(
+                {"user_id": user_id, "active": True, "timezone": {"$ne": None}},
+                {"_id": 0, "timezone": 1}).sort("updated_at", -1).limit(1):
+            zone = _valid_timezone(row.get("timezone"))
+            if zone:
+                return zone
+    return None
+
+
+def _local_day_pinned(zone: Optional[str], now: Optional[datetime] = None) -> datetime:
+    """Today, where the person is, as the moment a star is stamped with.
+
+    The weekday row on the child's page is drawn in UTC days, because the
+    server's week turns at Monday 00:00 UTC (see current_week_start). Stamping
+    a star with the clock put a chore done at 21:00 in Montreal into tomorrow's
+    column, and one done at 07:00 in Tokyo into yesterday's. The date rule
+    already has the answer: the local calendar day, pinned to noon UTC, is the
+    same day in every zone from UTC-11 to UTC+11.
+
+    The server's week is not moved: inside the hours where the local day and
+    the server's week disagree (Sunday evening in the Americas, Monday
+    morning east of Greenwich) the star lands where it always has, on the
+    clock, so the meter and the row keep telling one story.
+    """
+    now = now or utcnow()
+    if not zone:
+        return now
+    local_date = _local_now(zone, now).date()
+    pinned = datetime(local_date.year, local_date.month, local_date.day,
+                      DATE_ONLY_HOUR_UTC, tzinfo=timezone.utc)
+    start = current_week_start()
+    if pinned < start or pinned >= start + timedelta(days=7):
+        return now
+    return pinned
+
+
 # Structured, not prose: the client composes the sentence in the reader's own
 # language, so a French co-parent doesn't read an English activity feed.
 ACTIVITY_KINDS = {
@@ -5414,6 +5461,9 @@ class StarAdjustmentIn(BaseModel):
     # week by the handler: editing a settled week would move a meter that has
     # already paid out a treat.
     awarded_for: Optional[str] = None
+    # Where the parent is (an IANA zone), so "today" is their today: without it
+    # a star given at 21:00 in Montreal sat in tomorrow's column.
+    timezone: Optional[str] = None
 
 
 class WeeklyClaimIn(BaseModel):
@@ -8057,8 +8107,9 @@ async def award_stars_to_member(
     await log_activity(database, user, "stars_awarded", member.get("name", ""), delta)
     # `created_at` is when this was recorded; `awarded_for` is the day the job
     # was actually done. They differ whenever a parent catches up on Sunday,
-    # and only the second one can honestly place a star on a weekday.
-    when = _coerce_dt(awarded_for) or utcnow()
+    # and only the second one can honestly place a star on a weekday. With no
+    # day named, it is today where the family is, not today in Greenwich.
+    when = _coerce_dt(awarded_for) or _local_day_pinned(await _zone_of(database, user.get("user_id")))
     transaction = {
         "transaction_id": new_id("star"),
         "family_id": family_id,
@@ -8140,12 +8191,21 @@ async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=De
     # up on Sunday should not have Tuesday's job land on Sunday. Bounded to the
     # current week in both directions: the future is not a day anyone has
     # worked, and a settled week may already have paid out a treat.
-    awarded_for = utcnow()
+    # "Today" is the parent's today: the zone sent with the request, else the
+    # one their device registered for the morning digest, else the clock.
+    zone = _valid_timezone(getattr(payload, "timezone", None)) or await _zone_of(database, user["user_id"])
+    now = utcnow()
+    awarded_for = _local_day_pinned(zone, now)
     if payload.awarded_for:
         parsed = _coerce_dt(parse_dt(payload.awarded_for))
         if not parsed:
             raise HTTPException(status_code=400, detail="Invalid date")
-        if parsed < current_week_start() or parsed > utcnow():
+        # A day is in the future when it has not come for the parent, not when
+        # its noon has not struck in Greenwich: at 07:00 in Tokyo, today's cell
+        # is already a day someone has worked.
+        local_today = _local_now(zone, now).date() if zone else None
+        ahead = parsed > now and (local_today is None or parsed.date() > local_today)
+        if parsed < current_week_start() or ahead:
             raise HTTPException(status_code=400, detail="Pick a day from this week")
         awarded_for = parsed
 

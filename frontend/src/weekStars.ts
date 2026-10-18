@@ -11,6 +11,8 @@
  * is supposed to mirror, rather than inspected inside a component.
  */
 
+import { localDayIso } from './utils/date';
+
 export interface StarLedgerEntry {
   delta: number;
   /** The day the job was done, when a parent filled in a missed day. */
@@ -94,6 +96,12 @@ export function weekDayCells(
   entries: StarLedgerEntry[],
   now: Date,
   locale: string,
+  // The reader's calendar day (YYYY-MM-DD), which is what "today" means to
+  // them. The cells are UTC days because the server's week is; a star is
+  // stamped with the family's day pinned to noon UTC, so the UTC day of a
+  // cell and the family's day agree. Reading today off the UTC clock made
+  // 21:00 in Montreal "tomorrow" and 07:00 in Tokyo "yesterday".
+  localToday: string = localDayIso(now),
 ): WeekDayCell[] {
   const monday = weekStartUTC(now);
 
@@ -130,11 +138,11 @@ export function weekDayCells(
     }
   });
 
-  const todayKey = dayKey(now);
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
     d.setUTCDate(monday.getUTCDate() + i);
     const k = dayKey(d);
+    const day = d.toISOString().slice(0, 10);
     return {
       key: k,
       // Noon UTC, not midnight: the day is the point, and a midnight stamp
@@ -143,10 +151,13 @@ export function weekDayCells(
       letter: d.toLocaleDateString(locale, { weekday: 'narrow', timeZone: 'UTC' }),
       name: d.toLocaleDateString(locale, { weekday: 'long', timeZone: 'UTC' }),
       earned: earnedByDay[k] || 0,
-      isToday: k === todayKey,
+      isToday: day === localToday,
       // Sunday's stars cannot be given on Wednesday. The server refuses it;
-      // the row should not offer it either.
-      isFuture: d.getTime() > now.getTime(),
+      // the row should not offer it either. The future is any day after the
+      // reader's today: Wednesday at 21:00 Tuesday in Montreal, even though
+      // Greenwich is already in it; not Wednesday at 07:00 Wednesday in
+      // Tokyo, even though Greenwich is not. The server draws the same line.
+      isFuture: day > localToday,
     };
   });
 }
