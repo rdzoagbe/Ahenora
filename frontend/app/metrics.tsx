@@ -33,6 +33,7 @@ const EVENT_LABELS: Record<string, string> = {
   onboarding_custody_set: 'Onboardings that set custody',
   onboarding_household_set: 'New households that said who lives there',
   onboarding_trial_started: 'Free trials started at setup',
+  onboarding_kids_seeded: 'Children and first chores added at setup',
   onboarding_skipped: 'Onboardings skipped',
   calendar_import_cancelled: 'Calendar imports cancelled',
 };

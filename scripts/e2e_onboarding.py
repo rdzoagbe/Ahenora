@@ -94,8 +94,23 @@ async def main():
         r["two_homes_is_pointed_at_family"] = "Family" in await page.inner_text(
             '[data-testid="onboarding-plan-title"]')
         await page.screenshot(path="onboarding_plan.png")
-        await page.click('[data-testid="onboarding-trial"]')          # plan -> setup
+        await page.click('[data-testid="onboarding-trial"]')          # plan -> kids
         await page.wait_for_timeout(900)
+        # The kids' week: a household with children is asked who they are and
+        # handed their first chores, before the task and the shopping list.
+        r["a_home_with_children_is_asked_who_they_are"] = await page.locator(
+            '[data-testid="onboarding-kids-title"]').count() == 1
+        r["one_name_field_per_child_counted"] = await page.locator(
+            '[data-testid="onboarding-child-1"]').count() == 1
+        await page.fill('[data-testid="onboarding-child-0"]', "Ama")
+        await page.fill('[data-testid="onboarding-child-1"]', "Leo")
+        r["three_chores_are_ticked_to_start"] = await page.locator(
+            '[aria-checked="true"][data-testid^="onboarding-chore-"]').count() == 3
+        await page.click('[data-testid="onboarding-chore-pet"]')       # a fourth
+        await page.wait_for_timeout(200)
+        await page.screenshot(path="onboarding_kids.png")
+        await page.click('[data-testid="onboarding-continue"]')       # kids -> setup
+        await page.wait_for_timeout(500)
         await page.click('[data-testid="onboarding-continue"]')       # setup -> invite
         await page.wait_for_timeout(700)
 
@@ -112,10 +127,26 @@ async def main():
         await page.screenshot(path="onboarding_step.png")
         await page.click('[data-testid="onboarding-custody-even"]')
         await page.wait_for_timeout(300)
-        await page.click('[data-testid="onboarding-continue"]')       # 2 -> 3
+        await page.click('[data-testid="onboarding-continue"]')       # invite -> ready
         await page.wait_for_timeout(500)
+        ready = await page.inner_text('[data-testid="onboarding-ready-try"]')
+        r["the_first_thing_to_try_is_the_first_star"] = "Ama" in ready
         await page.click('[data-testid="onboarding-continue"]')
         await page.wait_for_timeout(3000)
+
+        # The children exist with their chores, and the parent landed on them.
+        kids = [m for m in api("GET", "/family/members", None, tok)
+                if str(m.get("role", "")).lower() == "child"]
+        r["both_children_were_added"] = sorted(m["name"] for m in kids) == ["Ama", "Leo"]
+        chores = api("GET", "/chores", None, tok)
+        by_kid = {}
+        for ch in chores:
+            for mid in ch.get("assigned_members") or []:
+                by_kid[mid] = by_kid.get(mid, 0) + 1
+        r["each_child_has_the_four_chores_picked"] = (
+            len(kids) == 2 and all(by_kid.get(m["member_id"]) == 4 for m in kids))
+        r["no_chore_rotates_between_the_children"] = all(not ch.get("rotate") for ch in chores)
+        r["setup_lands_on_the_family_tab"] = "/kids" in page.url
 
         sub = api("GET", "/subscription", None, tok)
         cust = sub.get("custody") or {}
@@ -142,7 +173,10 @@ async def main():
         await page2.wait_for_timeout(500)
         await page2.click('[data-testid="onboarding-trial"]')
         await page2.wait_for_timeout(900)
-        await page2.click('[data-testid="onboarding-continue"]')
+        await page2.fill('[data-testid="onboarding-child-0"]', "Kofi")
+        await page2.click('[data-testid="onboarding-continue"]')      # kids -> setup
+        await page2.wait_for_timeout(500)
+        await page2.click('[data-testid="onboarding-continue"]')      # setup -> invite
         await page2.wait_for_timeout(700)
         # One home: the custody question is not asked at all.
         r["one_home_is_not_asked_about_custody"] = await page2.locator(
@@ -177,6 +211,8 @@ async def main():
         r["the_trial_says_no_card"] = "No card needed" in await page3.inner_text("body")
         await page3.click('[data-testid="onboarding-trial"]')
         await page3.wait_for_timeout(1200)
+        r["a_couple_is_not_asked_about_kids"] = await page3.locator(
+            '[data-testid="onboarding-kids-title"]').count() == 0
         await page3.click('[data-testid="onboarding-continue"]')      # setup -> invite
         await page3.wait_for_timeout(700)
         r["a_couple_is_not_asked_about_custody"] = await page3.locator(
