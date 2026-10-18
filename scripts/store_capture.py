@@ -30,6 +30,11 @@ CONTENT = {
                   ("Grocery run", "Jordan"), ("Pack school lunches", "Jordan"),
                   ("Walk the dog", "Ama"), ("Book dentist for Ama", "Jordan"),
                   ("Sign school permission slip", "Jordan")],
+        # Icons come from the app's own catalogue (backend/card_icons.py); any other
+        # glyph is refused with "Unknown icon".
+        "chores": [("Tidy your room", "🧹", "Ama", 5), ("Feed the dog", "🐶", "Ama", 3),
+                   ("Help with dinner", "🍳", "Ama", 4), ("Take the bins out", "🗑️", "Leo", 5),
+                   ("Homework done", "📚", "Leo", 3)],
         "vault": [("Passports", "Legal"), ("Home insurance", "Insurance")],
         "events": [("Soccer practice", 0, "Leo"), ("Dentist appointment", 1, "Ama"),
                    ("Parent-teacher meeting", 2, "Jordan"), ("Swim class", 3, "Ama"),
@@ -46,6 +51,9 @@ CONTENT = {
                   ("Faire les courses", "Jordan"), ("Préparer les déjeuners", "Jordan"),
                   ("Promener le chien", "Ama"), ("RDV dentiste pour Ama", "Jordan"),
                   ("Signer l'autorisation scolaire", "Jordan")],
+        "chores": [("Ranger ta chambre", "🧹", "Ama", 5), ("Nourrir le chien", "🐶", "Ama", 3),
+                   ("Aider pour le dîner", "🍳", "Ama", 4), ("Sortir les poubelles", "🗑️", "Leo", 5),
+                   ("Devoirs faits", "📚", "Leo", 3)],
         "vault": [("Passeports", "Legal"), ("Assurance habitation", "Insurance")],
         "events": [("Entraînement de foot", 0, "Leo"), ("Rendez-vous dentiste", 1, "Ama"),
                    ("Réunion parents-profs", 2, "Jordan"), ("Cours de natation", 3, "Ama"),
@@ -80,11 +88,23 @@ def seed():
     if LANG != "en":
         api("PATCH", "/auth/language", {"language": LANG}, tok)
 
-    # Kids with stars
-    api("POST", "/family/members", {"name": "Ama", "role": "Child",
-                                    "starting_stars": 42, "pin": "1234"}, tok)
-    api("POST", "/family/members", {"name": "Leo", "role": "Child",
-                                    "starting_stars": 28, "pin": "5678"}, tok)
+    # Kids with stars — a bank from before, and a week in progress, because
+    # the child's page is the first store screenshot and "0 this week" sold
+    # nothing. The chores are what the page is about; the stars this week are
+    # what a parent sees first.
+    ama = api("POST", "/family/members", {"name": "Ama", "role": "Child",
+                                          "starting_stars": 42, "pin": "1234"}, tok)
+    leo = api("POST", "/family/members", {"name": "Leo", "role": "Child",
+                                          "starting_stars": 28, "pin": "5678"}, tok)
+    for title, icon, who, stars in c["chores"]:
+        member = ama if who == "Ama" else leo
+        api("POST", "/chores", {"title": title, "icon": icon, "frequency": "daily",
+                                "assigned_members": [member["member_id"]],
+                                "star_reward": stars}, tok)
+    for member, delta, reason in ((ama, 5, c["chores"][0][0]), (ama, 3, c["chores"][1][0]),
+                                  (ama, 4, c["chores"][2][0]), (leo, 5, c["chores"][3][0])):
+        api("POST", f"/family/members/{member['member_id']}/stars",
+            {"delta": delta, "reason": reason}, tok)
     # Rewards
     for title, cost, icon in c["rewards"]:
         api("POST", "/rewards", {"title": title, "cost_stars": cost, "icon": icon}, tok)
@@ -101,8 +121,12 @@ def seed():
     now = datetime.now(timezone.utc).replace(hour=15, minute=0, second=0, microsecond=0)
     for title, days, who in c["events"]:
         due = (now + timedelta(days=days)).isoformat()
-        api("POST", "/cards", {"type": "EVENT", "title": title, "assignee": who,
-                               "due_date": due, "shared": True}, tok)
+        # APPOINTMENT, not EVENT: the server retired EVENT as a card type and
+        # refused the seed with 400, which nothing caught until the next listing.
+        # time_set: the clock time was chosen, so the feed shows "3:00 PM"
+        # rather than "All day" (the server stores an unsent flag as false).
+        api("POST", "/cards", {"type": "APPOINTMENT", "title": title, "assignee": who,
+                               "due_date": due, "shared": True, "time_set": True}, tok)
     # Meals for the week (admin unlocks meal_planner)
     for day, title in c["dinners"]:
         try:
@@ -158,9 +182,30 @@ async def main():
             await p.screenshot(path=f"{OUT}/{name}.png")
             print("captured", name)
 
-        await shot("feed", "01-feed")
-        await shot("calendar", "02-calendar")
-        await shot("kids", "03-kids")
+        # The kids' week leads (docs/PLAY_STORE_LISTING.md, section 2): it is
+        # what Family is paid for, and the first screenshot decides the install.
+        async def open_ama():
+            # The first-run tip sits over the list; then Ama's own page, the
+            # week row, her chores and the stars she has earned this week.
+            try:
+                await p.click('[data-testid="kids-first-run-tip-got-it"]', timeout=3000)
+            except Exception:
+                pass
+            await p.click("text=Ama")
+        await shot("kids", "01-kids", before=open_ama)
+
+        async def settle_feed():
+            # The trial's thank-you card sits at the foot of the feed on this
+            # seeded household. "Got it" closes it for good; the page is then
+            # loaded again so the screenshot is the feed a family lives with.
+            try:
+                await p.click('[data-testid="trial-thanks-ok"]', timeout=3000)
+                await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+                await p.wait_for_timeout(3000)
+            except Exception:
+                pass
+        await shot("feed", "02-feed", before=settle_feed)
+        await shot("calendar", "03-calendar")
 
         async def open_meal_planner():
             # Kitchen opens on the shopping list; switch to the meal planner,

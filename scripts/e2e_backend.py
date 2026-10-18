@@ -21,7 +21,13 @@ from fake_mongo import FakeDatabase  # noqa: E402
 server.db = FakeDatabase()
 # A fixed tester identity the journey can bring into a household to flip it
 # premium — exercising the household-level admin elevation end to end.
-server.ADMIN_EMAILS = set(server.ADMIN_EMAILS) | {"e2e-admin@sim.test"}
+server.ADMIN_EMAILS = set(server.ADMIN_EMAILS) | {
+    "e2e-admin@sim.test",
+    # The store capture registers one admin per language against one backend
+    # (store_capture.py); without these the seeded household sat on Free and
+    # every screenshot carried an upgrade banner.
+    "e2e-admin-en@sim.test", "e2e-admin-fr@sim.test",
+}
 
 # Every new household starts with the whole app for fourteen days. Most
 # harnesses test what a household on Free sees (a paywall, a locked kitchen),
