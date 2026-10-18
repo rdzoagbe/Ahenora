@@ -20400,7 +20400,7 @@ ALLOWED_EVENTS = {
     # positioned on, and until now nothing counted whether anyone answered yes.
     "onboarding_custody_set",
     # The new sign-up: who lives here was answered; a free trial was started.
-    "onboarding_household_set", "onboarding_trial_started",
+    "onboarding_household_set", "onboarding_trial_started", "onboarding_kids_seeded",
     # Visits to the vault, as opposed to saves into it. Every other tab counted
     # its opens and this one did not, so the only question anybody actually
     # asked about the vault — does anyone find it? — had no answer, and got

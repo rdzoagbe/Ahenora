@@ -5,6 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowRight, Check, Heart, Home, LayoutGrid, ListChecks, Lock, Minus, Plus, Sparkles, Star, User, UserPlus, Users, UtensilsCrossed, X } from 'lucide-react-native';
 
+import { glyphFor } from '../src/cardIcons';
+
 import { PressScale } from '../src/components/PressScale';
 import { useStore } from '../src/store';
 import { api, logEvent } from '../src/api';
@@ -15,6 +17,8 @@ import { isoWeek } from '../src/utils/date';
 import type { CustodyWeeks } from '../src/utils/date';
 import { PLAN_HIGHLIGHTS, PLAN_PRICE, recommendPlan, type Living } from '../src/planChange';
 import { useDuoOffered } from '../src/duoOffered';
+
+import { DEFAULT_CHORES, STARTER_CHORES } from '../src/starterChores';
 
 // Guided, account-seeding onboarding: by the time the user lands on the
 // dashboard it already has a task, a shopping list and (optionally) a co-parent
@@ -68,10 +72,20 @@ export default function Onboarding() {
   if (ready && setupDue && !askHousehold && step === 0) setAskHousehold(true);
   const [living, setLiving] = useState<Living | null>(null);
   const [children, setChildren] = useState(1);
+  // The kids' week, asked right after the plan: a name each and their first
+  // chores, seeded at finish so the Family tab is lived-in from the first open.
+  const [kidNames, setKidNames] = useState<string[]>(['']);
+  const [chorePicks, setChorePicks] = useState<string[]>(DEFAULT_CHORES);
+  // What finish() actually created, for the summary and the first thing to try.
+  const [seededKids, setSeededKids] = useState<string[]>([]);
+  const [seededChores, setSeededChores] = useState(0);
   const [planBusy, setPlanBusy] = useState(false);
   // Chose "Subscribe now": setup finishes on the Plans page, not on Home.
   const [subscribeAfter, setSubscribeAfter] = useState(false);
   const withChildren = living === 'family' || living === 'two_homes';
+  useEffect(() => {
+    setKidNames((prev) => Array.from({ length: children }, (_, i) => prev[i] ?? ''));
+  }, [children]);
   const recommended = living ? recommendPlan(living, withChildren ? children : 0) : 'duo';
   // The trial needs no store; buying does. Where Duo cannot be bought yet
   // (an iPhone before Apple approves it), "Subscribe now" is not offered for it.
@@ -79,6 +93,8 @@ export default function Onboarding() {
   const canSubscribeNow = recommended !== 'duo' || duoOffered;
 
   const firstName = (user?.name || '').split(' ')[0];
+  const kidsNamed = withChildren ? kidNames.map((n) => n.trim()).filter(Boolean) : [];
+  const firstKid = seededKids[0] ?? kidsNamed[0] ?? '';
   // Which ISO week it is right now, so the custody question can be answered by
   // looking at this week rather than remembering a court document.
   const thisWeek = useMemo(() => isoWeek(new Date()), []);
@@ -110,7 +126,15 @@ export default function Onboarding() {
     setShopDraft('');
   };
 
-  const goFeed = () => router.replace(subscribeAfter ? '/pricing' : '/(tabs)/feed');
+  // A household that just named its children lands on them, not on the feed:
+  // the chore chart is what they came for, and the feed is three taps away.
+  const goFeed = (toKids = false) =>
+    router.replace(subscribeAfter ? '/pricing' : toKids ? '/(tabs)/kids' : '/(tabs)/feed');
+
+  const setKidName = (index: number, value: string) =>
+    setKidNames((prev) => prev.map((n, i) => (i === index ? value : n)));
+  const toggleChore = (key: string) =>
+    setChorePicks((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
   /** Save the answer, optionally with the trial, and move on either way: a
    *  failed save costs the household nothing it cannot set in Settings. */
@@ -140,6 +164,32 @@ export default function Onboarding() {
 
     // Seed whatever the user left filled. Each is best-effort — one failure
     // never blocks the others or the flag.
+    //
+    // The children first, with their first chores: one chore per child per
+    // pick, nobody's turn to rotate. A name left blank is a child not added;
+    // a child that could not be added is said, not swallowed.
+    const kidsToAdd = withChildren ? kidNames.map((n) => n.trim()).filter(Boolean) : [];
+    const picks = STARTER_CHORES.filter((c) => chorePicks.includes(c.key));
+    const madeKids: string[] = [];
+    let madeChores = 0;
+    let kidFailed = false;
+    for (const name of kidsToAdd) {
+      try {
+        const member = await api.createFamilyMember({ name, starting_stars: 0 });
+        madeKids.push(member.name || name);
+        for (const c of picks) {
+          try {
+            await api.createChore({ title: t(c.labelKey), icon: c.icon, frequency: 'daily',
+              assigned_members: [member.member_id], rotate: false, star_reward: c.stars });
+            madeChores += 1;
+          } catch (e) { logger.warn('onboarding seed chore failed', e); }
+        }
+      } catch (e) { logger.warn('onboarding seed child failed', e); kidFailed = true; }
+    }
+    setSeededKids(madeKids);
+    setSeededChores(madeChores);
+    if (madeKids.length) logEvent('onboarding_kids_seeded');
+
     const title = taskTitle.trim();
     if (title) {
       try { await api.createCard({ type: 'TASK', title }); }
@@ -172,19 +222,20 @@ export default function Onboarding() {
       await api.completeOnboarding();
       logEvent('onboarding_done');
       await refreshUser().catch(() => undefined);
-      goFeed();
+      goFeed(madeKids.length > 0);
       // Don't claim the invite went out when it didn't — the co-parent would
       // never get it and the user would never know. Tell them where to retry.
       if (inviteFailed) {
         Alert.alert(t('ob_invite_fail_title'), t('ob_invite_fail_msg', { email }));
       }
+      if (kidFailed) Alert.alert(t('ob_add_fail'));
     } catch (e) {
       logger.warn('completeOnboarding failed', e);
       Alert.alert(
         t('ob_finish_fail_title'),
         t('ob_finish_fail_msg'),
         [
-          { text: t('ob_skip_for_now'), style: 'cancel', onPress: goFeed },
+          { text: t('ob_skip_for_now'), style: 'cancel', onPress: () => goFeed(madeKids.length > 0) },
           { text: t('ob_retry'), onPress: () => { setFinishing(false); finish(); } },
         ],
       );
@@ -211,8 +262,12 @@ export default function Onboarding() {
     }
   };
 
+  // The kids' step is added once a home with children is chosen. It sits
+  // after the plan, so the steps before it never move under the person.
   const steps: string[] = askHousehold
-    ? ['welcome', 'living', 'plan', 'setup', 'invite', 'ready']
+    ? (withChildren
+      ? ['welcome', 'living', 'plan', 'kids', 'setup', 'invite', 'ready']
+      : ['welcome', 'living', 'plan', 'setup', 'invite', 'ready'])
     : ['welcome', 'setup', 'invite', 'ready'];
   const current = steps[step];
   const totalSteps = steps.length;
@@ -403,6 +458,61 @@ export default function Onboarding() {
             </View>
           ) : null}
 
+          {/* The kids' week — a name each and their first chores. */}
+          {current === 'kids' ? (
+            <View>
+              <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                <Star color={theme.colors.accent} size={13} />
+                <Text style={[styles.badgeText, { color: theme.colors.text }]}>{t('ob_step_of', { n: step + 1, total: totalSteps })}</Text>
+              </View>
+              <Text testID="onboarding-kids-title" style={[styles.title, { color: theme.colors.text }]}>{t('ob_kids_title')}</Text>
+              <Text style={[styles.sub, { color: theme.colors.textMuted }]}>{t('ob_kids_hint')}</Text>
+
+              {kidNames.map((name, i) => (
+                <View key={i} style={[styles.inputRow, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
+                  <TextInput
+                    testID={`onboarding-child-${i}`}
+                    value={name}
+                    onChangeText={(v) => setKidName(i, v)}
+                    placeholder={t('ob_child_name')}
+                    placeholderTextColor={theme.colors.textSoft}
+                    autoCapitalize="words"
+                    style={[styles.input, { color: theme.colors.text }]}
+                  />
+                </View>
+              ))}
+              {kidNames.length < 10 ? (
+                <PressScale testID="onboarding-add-child" accessibilityRole="button"
+                  onPress={() => setKidNames((prev) => [...prev, ''])} style={styles.skipBtn}>
+                  <Text style={[styles.skipText, { color: theme.colors.accent }]}>+ {t('ob_add_another_child')}</Text>
+                </PressScale>
+              ) : null}
+
+              <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>{t('ob_kids_chores_label')}</Text>
+              <View style={styles.choreList}>
+                {STARTER_CHORES.map((c) => {
+                  const on = chorePicks.includes(c.key);
+                  return (
+                    <PressScale
+                      key={c.key}
+                      testID={`onboarding-chore-${c.key}`}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                      onPress={() => toggleChore(c.key)}
+                      style={[styles.choreRow, { backgroundColor: theme.colors.bgSoft, borderColor: on ? theme.colors.accent : theme.colors.cardBorder }]}
+                    >
+                      <Text style={styles.choreGlyph}>{glyphFor(c.icon)}</Text>
+                      <Text style={[styles.rowText, { color: theme.colors.text, flex: 1 }]}>{t(c.labelKey)}</Text>
+                      <Text style={[styles.choreStars, { color: on ? theme.colors.accent : theme.colors.textMuted }]}>+{c.stars} ★</Text>
+                      {on ? <Check color={theme.colors.accent} size={18} /> : null}
+                    </PressScale>
+                  );
+                })}
+              </View>
+              <Text style={[styles.subSmall, { color: theme.colors.textMuted, marginTop: 12 }]}>{t('ob_kids_stars_hint')}</Text>
+            </View>
+          ) : null}
+
           {current === 'setup' ? (
             <View>
               <View style={[styles.badge, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
@@ -536,9 +646,13 @@ export default function Onboarding() {
                   the person an empty feed and a guess. */}
               <View style={[styles.tryCard, { backgroundColor: theme.colors.bgSoft, borderColor: theme.colors.cardBorder }]}>
                 <Sparkles color={theme.colors.accent} size={15} />
-                <Text style={[styles.tryText, { color: theme.colors.text }]}>{t('ob_ready_try')}</Text>
+                <Text testID="onboarding-ready-try" style={[styles.tryText, { color: theme.colors.text }]}>
+                  {firstKid ? t('ob_ready_try_kids', { name: firstKid }) : t('ob_ready_try')}
+                </Text>
               </View>
               <View style={styles.chips}>
+                {kidsNamed.length ? <SummaryChip label={t('ob_chip_children', { n: kidsNamed.length })} c={theme.colors} /> : null}
+                {kidsNamed.length && chorePicks.length ? <SummaryChip label={t('ob_chip_chores', { n: seededChores || kidsNamed.length * chorePicks.length })} c={theme.colors} /> : null}
                 {taskTitle.trim() ? <SummaryChip label={t('ob_chip_task')} c={theme.colors} /> : null}
                 {shopItems.some((s) => s.trim()) ? <SummaryChip label={t('ob_chip_shopping')} c={theme.colors} /> : null}
                 {inviteEmail.trim() ? <SummaryChip label={t('ob_chip_invite')} c={theme.colors} /> : null}
@@ -630,6 +744,10 @@ const createStyles = (c: any) =>
     nextBtn: { flex: 1, height: 54, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
     nextText: { fontFamily: 'Figtree_700Bold', fontSize: 15 },
     livingRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, borderWidth: 1 },
+    choreList: { marginTop: 10, gap: 8 },
+    choreRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, borderWidth: 1 },
+    choreGlyph: { fontSize: 20, width: 28, textAlign: 'center' },
+    choreStars: { fontFamily: 'Figtree_700Bold', fontSize: 13 },
     countRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 20 },
     countBtn: { width: 40, height: 40, borderRadius: 9999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
     countText: { fontFamily: 'Figtree_700Bold', fontSize: 18, minWidth: 24, textAlign: 'center' },

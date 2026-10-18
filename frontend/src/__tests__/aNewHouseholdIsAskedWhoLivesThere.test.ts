@@ -38,6 +38,13 @@ describe('the setup steps', () => {
     expect(onboarding).toContain("['welcome', 'setup', 'invite', 'ready']");
   });
 
+  it('add the kids\' week right after the plan, only where there are children', () => {
+    expect(onboarding).toContain("['welcome', 'living', 'plan', 'kids', 'setup', 'invite', 'ready']");
+    expect(onboarding).toContain("const withChildren = living === 'family' || living === 'two_homes';");
+    expect(onboarding).toContain('testID={`onboarding-child-${i}`}');
+    expect(onboarding).toContain('testID={`onboarding-chore-${c.key}`}');
+  });
+
   it('offer the four ways a home is made up', () => {
     for (const k of ['solo', 'couple', 'family', 'two_homes']) expect(onboarding).toContain(`['${k}',`);
   });
@@ -59,6 +66,39 @@ describe('the setup steps', () => {
 
   it('only ask about custody where there are two homes', () => {
     expect(onboarding).toContain("const askCustody = !askHousehold || living === 'two_homes';");
+  });
+});
+
+describe('the kids\' week at setup', () => {
+  it('offers six first chores with the app\'s own icons, three ticked to start', () => {
+    const { STARTER_CHORES, DEFAULT_CHORES } = require('../starterChores');
+    const { glyphFor } = require('../cardIcons');
+    expect(STARTER_CHORES).toHaveLength(6);
+    for (const c of STARTER_CHORES) {
+      expect(glyphFor(c.icon)).toBeTruthy();
+      expect(c.stars).toBeGreaterThan(0);
+    }
+    expect(DEFAULT_CHORES).toHaveLength(3);
+    for (const k of DEFAULT_CHORES) expect(STARTER_CHORES.map((c: any) => c.key)).toContain(k);
+  });
+
+  it('seeds one chore per child per pick, nobody\'s turn to rotate, and lands on the kids', () => {
+    expect(onboarding).toContain("assigned_members: [member.member_id], rotate: false, star_reward: c.stars");
+    expect(onboarding).toContain('goFeed(madeKids.length > 0)');
+    expect(onboarding).toContain("toKids ? '/(tabs)/kids' : '/(tabs)/feed'");
+  });
+
+  it('says what to do first: give the first star', () => {
+    expect(onboarding).toContain("t('ob_ready_try_kids', { name: firstKid })");
+    for (const lang of LANGS) {
+      const table = TRANSLATIONS[lang] as Record<string, string>;
+      for (const k of ['ob_kids_title', 'ob_kids_hint', 'ob_kids_chores_label', 'ob_kids_stars_hint', 'ob_ready_try_kids',
+        'ob_chip_children', 'ob_chip_chores', 'ob_chore_tidy', 'ob_chore_bed', 'ob_chore_homework',
+        'ob_chore_table', 'ob_chore_pet', 'ob_chore_bins']) {
+        expect([lang, k, typeof table[k]]).toEqual([lang, k, 'string']);
+      }
+      expect(table.ob_ready_try_kids).toContain('{name}');
+    }
   });
 });
 
