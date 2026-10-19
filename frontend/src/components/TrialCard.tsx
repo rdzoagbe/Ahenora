@@ -15,6 +15,11 @@
  *
  * The recap lists only what the household actually did in the trial's own
  * dates; a family that did none of it sees the thank-you without a list.
+ *
+ * The kids come first (2026-10-19). Ahenora is sold on chores the kids want
+ * to finish, so when the household has children the recap opens with each
+ * child by name, their chores done and stars earned, and the household-wide
+ * chores and stars lines step aside so nothing is counted twice on screen.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
@@ -63,7 +68,10 @@ export function TrialCard() {
   const keep = (mode === 'ending' ? trial?.recommended_plan ?? trial?.plan : recap?.recommended_plan) ?? 'executive';
   const plan = t(`plan_${keep}`);
   const price = PLAN_PRICE[keep]?.monthly ?? '';
-  const items = recap?.items ?? [];
+  const kids = recap?.kids ?? [];
+  // Named lines already carry the children's chores and stars.
+  const items = (recap?.items ?? []).filter((it) => kids.length === 0 || (it.key !== 'chores' && it.key !== 'stars'));
+  const count = (key: string, n: number) => (n === 1 ? t(`${key}_one`) : t(key, { n }));
   const close = () => {
     setHidden(true);
     AsyncStorage.setItem(key, '1').catch(() => undefined);
@@ -84,9 +92,19 @@ export function TrialCard() {
                 ? t('trial_card_title_one')
                 : t('trial_card_title', { n: trial?.days_left ?? TRIAL_WARN_DAYS })}
           </Text>
-          {items.length > 0 ? (
+          {kids.length > 0 || items.length > 0 ? (
             <View testID="trial-recap" style={[styles.recap, { backgroundColor: ui.soft }]}>
               <Text style={[styles.recapTitle, { color: ui.muted }]}>{t('trial_recap_title')}</Text>
+              {kids.map((kid) => (
+                <View key={kid.member_id} testID={`trial-recap-kid-${kid.member_id}`} style={styles.recapRow}>
+                  <Text style={[styles.recapNum, styles.kidName, { color: ui.text }]} numberOfLines={1}>{kid.name}</Text>
+                  <Text style={[styles.recapLabel, styles.kidLine, { color: ui.text }]}>
+                    {[kid.chores > 0 ? count('trial_recap_kid_chores', kid.chores) : null,
+                      kid.stars > 0 ? count('trial_recap_kid_stars', kid.stars) : null]
+                      .filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+              ))}
               {items.map((it) => (
                 <View key={it.key} testID={`trial-recap-${it.key}`} style={styles.recapRow}>
                   <Text style={[styles.recapNum, { color: ui.text }]}>{it.count}</Text>
@@ -131,6 +149,8 @@ const styles = StyleSheet.create({
   recapTitle: { fontFamily: 'Figtree_700Bold', fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 2 },
   recapRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   recapNum: { fontFamily: 'Figtree_700Bold', fontSize: 16, minWidth: 24 },
+  kidName: { maxWidth: 120 },
+  kidLine: { flex: 1, flexShrink: 1 },
   recapLabel: { fontFamily: 'Figtree_400Regular', fontSize: 14 },
   actions: { flexDirection: 'row', gap: 10 },
   btn: { flex: 1, minHeight: 46, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

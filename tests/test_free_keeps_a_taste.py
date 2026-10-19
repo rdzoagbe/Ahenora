@@ -215,6 +215,46 @@ class TheTrialEndsInAThankYou(_Base):
         self.assertEqual(recap["items"], [])
         self.assertIsNone(recap["started_at"])
 
+    def test_the_recap_leads_with_the_kids_week(self):
+        """Ahenora is sold on the kids' chores, so the thank-you counts them
+        first: chores and stars head the list, and each child is named with
+        their own two weeks, busiest first. Nothing from before the trial,
+        after it, another household, or a grown-up is a child's."""
+        started, ends = self.now - timedelta(days=15), self.now - timedelta(days=1)
+        self.start_trial(started, ends)
+        members = self.db["family_members"]
+        for mid, name, role in (("m_ama", "Ama", "child"), ("m_leo", "Leo", "Teen"),
+                                ("m_idle", "Kofi", "child"), ("m_dad", "Dad", "Parent")):
+            run(members.insert_one({"family_id": "fam1", "member_id": mid, "name": name, "role": role}))
+        run(members.insert_one({"family_id": "other", "member_id": "m_x", "name": "Other", "role": "child"}))
+        logs, stars = self.db["chore_logs"], self.db["star_transactions"]
+        inside = started + timedelta(days=3)
+        for mid, n in (("m_ama", 2), ("m_leo", 5), ("m_dad", 1), ("m_x", 4)):
+            for i in range(n):
+                run(logs.insert_one({"family_id": "fam1" if mid != "m_x" else "other",
+                                     "member_id": mid, "completed_at": inside + timedelta(hours=i)}))
+        run(logs.insert_one({"family_id": "fam1", "member_id": "m_ama", "completed_at": started - timedelta(days=1)}))
+        run(logs.insert_one({"family_id": "fam1", "member_id": "m_ama", "completed_at": self.now}))
+        for mid, delta in (("m_ama", 3), ("m_ama", 4), ("m_ama", -2), ("m_leo", 6), ("m_dad", 9)):
+            run(stars.insert_one({"family_id": "fam1", "member_id": mid, "delta": delta, "created_at": inside}))
+        run(stars.insert_one({"family_id": "fam1", "member_id": "m_ama", "delta": 5, "created_at": ends + timedelta(hours=1)}))
+        run(self.db["meals"].insert_one({"family_id": "fam1", "meal_id": "m", "created_at": inside}))
+
+        recap = run(server.trial_recap(user=USER, database=self.db))
+        self.assertEqual([i["key"] for i in recap["items"]], ["chores", "stars", "meals"],
+                         "the kids' chores and stars come before everything else")
+        self.assertEqual({i["key"]: i["count"] for i in recap["items"]}, {"chores": 8, "stars": 4, "meals": 1})
+        self.assertEqual(recap["kids"], [
+            {"member_id": "m_leo", "name": "Leo", "chores": 5, "stars": 6},
+            {"member_id": "m_ama", "name": "Ama", "chores": 2, "stars": 7},
+        ], "busiest child first; Kofi did nothing and is not a zero; Dad is not a child")
+
+    def test_a_household_without_children_has_no_kids_lines(self):
+        started, ends = self.now - timedelta(days=15), self.now - timedelta(days=1)
+        self.start_trial(started, ends)
+        recap = run(server.trial_recap(user=USER, database=self.db))
+        self.assertEqual(recap["kids"], [])
+
 
 @unittest.skipUnless(HAVE, "backend deps not installed")
 class TheCountersGoWithTheHousehold(unittest.TestCase):

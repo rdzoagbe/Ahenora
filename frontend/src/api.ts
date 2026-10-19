@@ -1792,7 +1792,9 @@ export interface TrialRecap {
   started_at: string | null;
   ends_at: string | null;
   ended: boolean;
-  items: { key: 'meals' | 'pocket_money' | 'stars' | 'carpools' | 'gift_pots' | 'santa' | 'documents'; count: number }[];
+  items: { key: 'chores' | 'stars' | 'meals' | 'pocket_money' | 'carpools' | 'gift_pots' | 'santa' | 'documents'; count: number }[];
+  /** Each child's own trial, busiest first; empty for a household without children. */
+  kids?: { member_id: string; name: string; chores: number; stars: number }[];
   /** The plan that fits this household, as the trial card recommends it. */
   recommended_plan?: Plan;
 }
