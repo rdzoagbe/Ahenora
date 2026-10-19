@@ -9,7 +9,7 @@ Ahenora is a live family-coordination platform on three surfaces from one codeba
 | Layer | Technology | Size |
 | --- | --- | --- |
 | Mobile and web app | React Native with Expo (SDK 57), TypeScript, Expo Router | 36 screens, 53 dependencies |
-| Backend | Python, FastAPI, async | 252 API routes, 548 functions in the core service |
+| Backend | Python, FastAPI, async | 261 API routes, 609 functions in the core service |
 | Database | MongoDB Atlas (M10 dedicated), 35 collections, 66 indexes | |
 | AI | Google Gemini API (2.5 Flash, 2.0 Flash fallback) behind an input gate, an output validator and a health check | 11 AI-assisted routes |
 | Native | Document scanner, secure store, push, file system, image picker, sharing | 37 pinned native modules |

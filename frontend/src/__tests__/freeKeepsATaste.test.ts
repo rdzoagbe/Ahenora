@@ -62,6 +62,8 @@ describe('the end of a trial', () => {
     const keys = [
       'trial_recap_title', 'trial_recap_meals', 'trial_recap_pocket_money', 'trial_recap_stars',
       'trial_recap_carpools', 'trial_recap_gift_pots', 'trial_recap_santa', 'trial_recap_documents',
+      'trial_recap_chores', 'trial_recap_kid_chores', 'trial_recap_kid_chores_one',
+      'trial_recap_kid_stars', 'trial_recap_kid_stars_one',
       'trial_thanks_title', 'trial_thanks_msg', 'trial_thanks_children', 'trial_thanks_ok',
       'taste_meal_left', 'taste_meal_spent', 'taste_report_free', 'taste_report_used',
     ];
@@ -108,6 +110,21 @@ describe('the end of a trial', () => {
     const keys = [...block.matchAll(/\("([a-z_]+)", "[a-z_]+", "[a-z_]+"/g)].map((m) => m[1]);
     expect(keys.length).toBeGreaterThanOrEqual(5);
     for (const k of keys) expect([k, typeof table('en')[`trial_recap_${k}`]]).toEqual([k, 'string']);
+    // The kids' wedge: what the children did heads the list, on the server and on the card.
+    expect(keys.slice(0, 2)).toEqual(['chores', 'stars']);
+  });
+
+  it('opens the recap with each child by name, busiest first', () => {
+    expect(card).toContain("testID={`trial-recap-kid-${kid.member_id}`}");
+    expect(card).toContain("kids.length === 0 || (it.key !== 'chores' && it.key !== 'stars')");
+    expect(card).toContain("count('trial_recap_kid_chores', kid.chores)");
+    expect(card).toContain("count('trial_recap_kid_stars', kid.stars)");
+    const server = readFileSync(join(__dirname, '..', '..', '..', 'backend', 'server.py'), 'utf8');
+    expect(server).toContain('kids.sort(key=lambda k: (-k["chores"], -k["stars"], k["name"]))');
+    for (const lang of LANGS) {
+      expect([lang, table(lang).trial_recap_kid_chores.includes('{n}')]).toEqual([lang, true]);
+      expect([lang, table(lang).trial_recap_kid_stars.includes('{n}')]).toEqual([lang, true]);
+    }
   });
 });
 

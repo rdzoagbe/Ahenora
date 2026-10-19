@@ -20070,12 +20070,19 @@ async def set_vault_expiry(doc_id: str, expiry_date: str = Query(""), user: dict
 # rather than "your trial ends tomorrow". Counts only, of the household's own
 # rows; nothing is stored. Zero counts are left out, so the card never lists
 # things a family did not do.
+#
+# The kids come first (2026-10-19). Ahenora is sold on chores the kids want to
+# finish, so the recap leads with what the children did: chores done and stars
+# earned sit at the top of the list, and `kids` names each child with their own
+# two weeks. A household without children gets an empty `kids` and the same
+# list as before.
 # -----------------------------------------------------------------------------
 TRIAL_RECAP_SOURCES = (
     # (key, collection, timestamp field, extra filter)
+    ("chores", "chore_logs", "completed_at", {}),
+    ("stars", "star_transactions", "created_at", {"delta": {"$gt": 0}}),
     ("meals", "meals", "created_at", {}),
     ("pocket_money", "allowance_txns", "created_at", {}),
-    ("stars", "star_transactions", "created_at", {"delta": {"$gt": 0}}),
     ("carpools", "carpools", "created_at", {}),
     ("gift_pots", "gift_pots", "created_at", {}),
     ("santa", "santa_draws", "sent_at", {}),
@@ -20098,13 +20105,43 @@ async def trial_recap(user: dict = Depends(require_user), database=Depends(get_d
             {"family_id": user["family_id"], field: window, **extra})
         if count:
             items.append({"key": key, "count": count})
+    kids = await _trial_recap_kids(database, user["family_id"], window)
     # The plan to mention, worked out exactly as the trial card does while
     # the trial runs; after it ends the subscription no longer carries it.
     recommended = plan_for_household(
         family, await count_young_people(database, user["family_id"]),
         await count_duo_people(database, user["family_id"]))
     return {"started_at": iso(started), "ends_at": iso(ends),
-            "ended": now >= ends, "items": items, "recommended_plan": recommended}
+            "ended": now >= ends, "items": items, "kids": kids,
+            "recommended_plan": recommended}
+
+
+async def _trial_recap_kids(database, family_id: str, window: dict) -> list:
+    """Each child's own trial: chores done and stars earned, by name.
+
+    Only the household's children and teens, only inside the window, and only
+    those who did something; a child who did nothing is not listed as a zero.
+    The busiest child comes first, so the card's first line is the family's
+    best fortnight."""
+    young = await database["family_members"].find(
+        {"family_id": family_id, "role": {"$regex": "^(child|teen)$", "$options": "i"}},
+        {"_id": 0, "member_id": 1, "name": 1},
+    ).to_list(50)
+    kids = []
+    for m in young:
+        chores = await database["chore_logs"].count_documents(
+            {"family_id": family_id, "member_id": m["member_id"], "completed_at": window})
+        earned = await database["star_transactions"].find(
+            {"family_id": family_id, "member_id": m["member_id"],
+             "created_at": window, "delta": {"$gt": 0}},
+            {"_id": 0, "delta": 1},
+        ).to_list(1000)
+        stars = sum(int(t.get("delta", 0) or 0) for t in earned)
+        if chores or stars:
+            kids.append({"member_id": m["member_id"], "name": m.get("name") or "",
+                         "chores": chores, "stars": stars})
+    kids.sort(key=lambda k: (-k["chores"], -k["stars"], k["name"]))
+    return kids
 
 
 # -----------------------------------------------------------------------------

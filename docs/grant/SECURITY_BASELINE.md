@@ -4,7 +4,7 @@ _The controls in place as of 21 September 2026, each named with the code or work
 
 ## Access control
 
-- **Every route authenticates by default.** A test scans the source and fails if any route lacks an auth dependency or a written reason for being public (`tests/test_a_new_endpoint_cannot_be_public_by_accident.py`): 234 guarded, 18 deliberately public (health, legal pages, invite links, webhooks, store version).
+- **Every route authenticates by default.** A test scans the source and fails if any route lacks an auth dependency or a written reason for being public (`tests/test_a_new_endpoint_cannot_be_public_by_accident.py`): 243 guarded, 18 deliberately public (health, legal pages, invite links, webhooks, store version).
 - **Authorisation is server-side and role-based**: parent, helper, teen, child. Helpers are refused the vault, billing, member management, invites and expenses (`require_full_member`). Teens see only shared cards and their own (`_teen_can_see`). A child's PIN session reaches five routes. Tested end to end with a real kid token fired at every sensitive route, expecting 403 (`scripts/e2e_kid.py`).
 - **Per-item privacy is enforced in the database read**, not the interface: cards (`_card_visible_to`), vault documents (`_may_see_vault_doc`), and only the owner may change who sees a document or delete it.
 - **Admin routes** (metrics, error inbox, support) require an allow-listed email (`ADMIN_EMAILS`).
