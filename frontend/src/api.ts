@@ -1226,6 +1226,24 @@ export interface FunnelSummary {
 }
 
 /**
+ * The kids' wedge as a funnel: of the households created in the window, how
+ * many named a child, gave a first star, saw a chore finished, were still
+ * there in week two, and pay. Each step is a subset of the one before; week
+ * two carries its own denominator because a household under seven days old
+ * cannot have had one yet.
+ */
+export interface KidsFunnel {
+  window_days: number;
+  new_households: number;
+  with_children: number;
+  first_star: number;
+  chore_done: number;
+  week_two_eligible: number;
+  week_two_active: number;
+  paying: number;
+}
+
+/**
  * Retention, counted in ADULTS rather than members: a child profile is a
  * family_members row but not an account, so a household is shared here only
  * when a second person actually holds one. The funnel counts it the same way
@@ -2193,6 +2211,8 @@ export const api = {
     request<{ days: number; rows: MetricRow[] }>(`/metrics/summary?days=${days}`),
   getMetricsFunnel: (days = 30) =>
     request<FunnelSummary>(`/metrics/funnel?days=${days}`),
+  getKidsFunnel: (days = 30) =>
+    request<KidsFunnel>(`/metrics/kids_funnel?days=${days}`),
   /** Which upgrade walls households actually reach — the pricing read-out. */
   getMetricsPaywall: (days = 30) =>
     request<PaywallReport>(`/metrics/paywall?days=${days}`),

@@ -4766,6 +4766,8 @@ INDEXES = {
     "shopping_history": ["family_id", "history_id"],
     "shopping_list": ["family_id", "item_id"],
     "star_transactions": ["family_id"],
+    # Read per household by the trial recap and the kids' funnel (2026-10-20).
+    "chore_logs": ["family_id"],
     "support_tickets": ["ticket_id"],
     "vault": ["family_id", "doc_id"],
     "web_push_subscriptions": ["user_id", "endpoint"],
@@ -20746,6 +20748,92 @@ async def metrics_funnel(days: int = 30, user=Depends(require_user), database=De
         # Retention
         "active_1d": active_1d,
         "active_7d": active_7d,
+    }
+
+
+@app.get("/api/metrics/kids_funnel")
+async def metrics_kids_funnel(days: int = 30, user=Depends(require_user), database=Depends(get_db)):
+    """The kids' wedge, as a funnel. Admin only.
+
+    Ahenora is sold on chores the kids want to finish (store listings, setup
+    and the trial thank-you all lead with the children since October 2026),
+    and until this existed nothing could say whether that pitch works. Each
+    step is a subset of the one before, over households created in the window:
+
+      new households
+        -> named a child or teen (at setup, or later on the Family tab)
+        -> a parent gave a first star (the nudge at the end of setup)
+        -> a child finished a chore (the loop ran at least once)
+        -> an adult was still using the app in week two
+        -> paying
+
+    Week two needs the household to be at least seven days old, so that step
+    carries its own denominator (`week_two_eligible`); a household too young
+    to have a week two is neither a success nor a failure yet. Plain scans,
+    like the funnel above: small population, admin-only, and the test double
+    cannot run aggregations.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    days = max(1, min(days, 365))
+    now = utcnow()
+    cutoff = now - timedelta(days=days)
+
+    created: dict = {}
+    async for fam in database["families"].find(
+            {"created_at": {"$gte": cutoff}}, {"_id": 0, "family_id": 1, "created_at": 1, "plan": 1}):
+        if fam.get("family_id"):
+            created[fam["family_id"]] = fam
+    new_ids = list(created)
+    if not new_ids:
+        return {"window_days": days, "new_households": 0, "with_children": 0, "first_star": 0,
+                "chore_done": 0, "week_two_eligible": 0, "week_two_active": 0, "paying": 0}
+
+    kids: dict = {}
+    async for m in database["family_members"].find(
+            {"family_id": {"$in": new_ids},
+             "role": {"$regex": "^(child|teen)$", "$options": "i"}},
+            {"_id": 0, "family_id": 1, "member_id": 1}):
+        kids.setdefault(m["family_id"], set()).add(m.get("member_id"))
+    with_children = set(kids)
+
+    starred = set()
+    async for t in database["star_transactions"].find(
+            {"family_id": {"$in": list(with_children)}, "delta": {"$gt": 0}},
+            {"_id": 0, "family_id": 1, "member_id": 1}):
+        if t.get("member_id") in kids.get(t.get("family_id"), ()):
+            starred.add(t["family_id"])
+
+    chored = set()
+    async for log in database["chore_logs"].find(
+            {"family_id": {"$in": list(starred)}}, {"_id": 0, "family_id": 1, "member_id": 1}):
+        if log.get("member_id") in kids.get(log.get("family_id"), ()):
+            chored.add(log["family_id"])
+
+    week_two_eligible = {
+        fid for fid in chored
+        if (_coerce_dt(created[fid].get("created_at")) or now) <= now - timedelta(days=7)}
+    week_two_active = set()
+    if week_two_eligible:
+        async for row in database["users"].find(
+                {"family_id": {"$in": list(week_two_eligible)}},
+                {"_id": 0, "family_id": 1, "last_active_at": 1, "last_active_day": 1}):
+            fid = row.get("family_id")
+            start = _coerce_dt(created[fid].get("created_at")) or now
+            if account_active_since(row, start + timedelta(days=7)):
+                week_two_active.add(fid)
+
+    paying = {fid for fid in week_two_active if created[fid].get("plan") in PAID_PLANS}
+
+    return {
+        "window_days": days,
+        "new_households": len(new_ids),
+        "with_children": len(with_children),
+        "first_star": len(starred),
+        "chore_done": len(chored),
+        "week_two_eligible": len(week_two_eligible),
+        "week_two_active": len(week_two_active),
+        "paying": len(paying),
     }
 
 
