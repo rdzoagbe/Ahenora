@@ -8,7 +8,7 @@ import { PressScale } from '../src/components/PressScale';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, PushHealth,
+import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, KidsFunnel, PushHealth,
   RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox,
   TimingsReport,
   BillingEvent,
@@ -181,6 +181,7 @@ export default function MetricsScreen() {
   const [showAllSubs, setShowAllSubs] = useState(false);
   const [billing, setBilling] = useState<BillingEventLog | null>(null);
   const [funnel, setFunnel] = useState<FunnelSummary | null>(null);
+  const [kids, setKids] = useState<KidsFunnel | null>(null);
   const [paywall, setPaywall] = useState<PaywallReport | null>(null);
   const [retention, setRetention] = useState<RetentionSummary | null>(null);
   const [invites, setInvites] = useState<InviteBreakdown | null>(null);
@@ -216,6 +217,8 @@ export default function MetricsScreen() {
     api.getBillingEvents(40).then(setBilling).catch((e) => logger.warn('billing events load failed', e?.message || e));
     // The activation + growth funnel — the "make the launch stick" scoreboard.
     api.getMetricsFunnel(30).then(setFunnel).catch((e) => logger.warn('funnel load failed', e?.message || e));
+    // The kids' wedge — does "chores the kids want to finish" actually land?
+    api.getKidsFunnel(30).then(setKids).catch((e) => logger.warn('kids funnel load failed', e?.message || e));
     // Which upgrade walls households actually reach. Sixteen places in the
     // backend say "upgrade to do this" and until this existed none of them
     // left a trace, so every pricing decision was made blind.
@@ -360,6 +363,37 @@ export default function MetricsScreen() {
             </>
           ) : (
             <Text style={styles.muted}>No funnel data yet — fills in as people sign up and invite.</Text>
+          )}
+
+          {/* The kids' wedge — the pitch is "chores the kids want to finish";
+              this is whether households that name a child go on to use it and pay. */}
+          <Text style={styles.sectionTitle}>The kids&apos; wedge (30 days)</Text>
+          {kids ? (
+            <>
+              <View testID="kids-funnel" style={styles.card}>
+                {([
+                  ['New households', kids.new_households, null],
+                  ['Named a child', kids.with_children, kids.new_households],
+                  ['Gave a first star', kids.first_star, kids.with_children],
+                  ['A child finished a chore', kids.chore_done, kids.first_star],
+                  [`Still here in week two (of ${kids.week_two_eligible} old enough)`, kids.week_two_active, kids.week_two_eligible],
+                  ['Paying', kids.paying, kids.week_two_active],
+                ] as [string, number, number | null][])
+                  .map(([label, n, denom], i) => (
+                    <View key={label} style={[styles.eventRow, i === 0 && { borderTopWidth: 0 }]}>
+                      <Text style={[styles.eventLabel, { flex: 1, paddingRight: 8 }]}>{label}</Text>
+                      <Text style={styles.eventCount}>
+                        {n}{denom && denom > 0 ? ` · ${Math.round((100 * n) / denom)}%` : ''}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+              <Text style={styles.hint}>
+                Each line is a share of the one above. Households under a week old are left out of the week-two line, so a quiet week there means &quot;too soon&quot;, not &quot;gone&quot;. Only a child&apos;s star or chore counts, never a grown-up&apos;s.
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.muted}>No kids&apos; funnel yet — fills in as new households name their children.</Text>
           )}
 
           {/* Invites — the funnel says most are not accepted; this says why. */}
