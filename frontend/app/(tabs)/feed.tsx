@@ -62,13 +62,17 @@ import { CoParentBalance } from '../../src/components/CoParentBalance';
 import { streakLabel, useStreak } from '../../src/components/StreakChip';
 import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
 import { DoneCard, completedForHome } from '../../src/components/DoneCard';
+import { FamilyBand } from '../../src/components/FamilyBand';
+import { DinnerTonight } from '../../src/components/DinnerTonight';
+import { custodySentence, dinnerTonight, isChild } from '../../src/homeFamily';
+import { memberRoute } from '../../src/memberRoute';
 import { activityPhrase } from '../../src/activityPhrase';
 import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
 import { whereItWent } from '../../src/shoppingAisles';
-import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, SantaDraw, HandoffNote, WeeklyReport , Room } from '../../src/api';
+import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, MealPlan, SantaDraw, HandoffNote, WeeklyReport , Room } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
 import { logger } from '../../src/logger';
 import { refreshOutcome } from '../../src/refreshOutcome';
@@ -368,6 +372,8 @@ export default function Feed() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   // The shopping list, for its line in the Family pulse.
   const [shopItems, setShopItems] = useState<PulseShopItem[]>([]);
+  // The week's meals, for "Dinner tonight" under the day's list.
+  const [meals, setMeals] = useState<MealPlan[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
   // Someone this household invited who never made it in. Only the household
   // that sent an invitation can send it again, so the prompt belongs here.
@@ -571,6 +577,7 @@ export default function Feed() {
       // failed feed.
       api.listActivity(8).then(setActivity).catch(() => undefined);
       api.listShopping().then(setShopItems).catch(() => undefined);
+      api.listMeals().then(setMeals).catch(() => undefined);
 
       // What was handed to me. Same best-effort rule: this strip never gets
       // to take the feed down with it.
@@ -974,7 +981,9 @@ export default function Feed() {
     setRoomFilter((current) => keepRoomFilter(current, rooms));
   }, [rooms]);
 
-  const TASK_CAP = 5;
+  // Three, so the day, the family and tonight's dinner fit the first screen;
+  // "See all" opens the rest in place.
+  const TASK_CAP = 3;
   // What the Family pulse holds (rebrand Stage 2): overdue work, and work
   // somebody ELSE handed you whatever its date. The Today list below leaves
   // these out, so nothing is shown twice.
@@ -1048,9 +1057,15 @@ export default function Feed() {
   // One grey line under the greeting: the date, the week and its parity (for
   // a separated co-parent the parity IS the schedule), and the streak. These
   // were three lines in two places before, above and below the greeting.
+  // Whose week it is, as a sentence, on the family picture at the top. When
+  // that sentence shows, the day line keeps the week number and its parity but
+  // drops its own "· with you", so the schedule is said once.
+  const custodyLine = kidsHidden ? null : custodySentence(members, subscription?.custody, now, t);
+  const showFamilyPicture = !kidsHidden && members.some(isChild);
+  const tonight = dinnerTonight(meals, now);
   const dayLine = [
     feedDateLine(now, lang),
-    feedWeekLine(now, t, kidsHidden ? null : subscription?.custody),
+    feedWeekLine(now, t, kidsHidden || custodyLine ? null : subscription?.custody),
     streakLabel(streak, t),
   ].filter(Boolean).join(' · ');
   const alertCount = dashboard.priority.length;
@@ -1382,6 +1397,16 @@ export default function Feed() {
               </View>
             </View>
 
+            {/* The family first: a picture of a family on its way home, whose
+                week it is as a sentence, and everyone's face — each one opens
+                that person, as on the Family tab. */}
+            <FamilyBand
+              members={kidsHidden ? members.filter((m) => !isChild(m)) : members}
+              showPicture={showFamilyPicture}
+              custodyLine={custodyLine}
+              onOpenMember={(m) => router.push(memberRoute(m))}
+            />
+
             {/* Capture leads now, and the day follows it.
                 The bar used to sit UNDER the list, where a footer goes — and it
                 is the most capable control on the screen: a typed line goes to
@@ -1627,6 +1652,9 @@ export default function Feed() {
                 <Text style={styles.seeAllText}>{t('feed_show_less')}</Text>
               </PressScale>
             ) : null}
+
+            {/* What the family is eating tonight, from the week's plan. */}
+            <DinnerTonight meal={tonight} onOpen={() => router.navigate('/(tabs)/kitchen' as never)} />
 
             {/* What was ticked off, with Undo, and the door to the whole
                 record. It lived under Settings › More › Completed history —
