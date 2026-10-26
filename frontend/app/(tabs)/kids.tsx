@@ -52,6 +52,7 @@ import { PersonAvatar, avatarKind } from '../../src/components/PersonAvatar';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
+import { memberRoute } from '../../src/memberRoute';
 import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Reward, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -367,19 +368,10 @@ export default function Kids() {
       .sort((a, b) => (a.is_me ? -1 : b.is_me ? 1 : 0)),
     [members]);
 
-  // Open a member's profile. Parents share the adults thread; a teen has their
-  // own (keyed by user_id, which we recover from the thread list by name). A
-  // helper or named member has no chat — the server refuses them family chat —
-  // so we pass an empty thread and the profile shows who they are instead.
+  // Open a member's profile, with the chat thread it should open. The rule
+  // lives in memberRoute so the faces on Home open the same page.
   const openMember = useCallback((m: FamilyMember) => {
-    const roleLc = (m.role || '').toLowerCase();
-    let thread = '';
-    // Parents share the adults thread; a teen's thread is keyed by their own
-    // user_id (matched by id, never by display name — two teens named the same
-    // used to collide). A teen with no account yet has no thread.
-    if (roleLc === 'parent' || roleLc === 'co-parent') thread = 'adults';
-    else if (roleLc === 'teen') thread = m.user_id || '';
-    router.push({ pathname: '/member', params: { id: m.member_id, name: m.name, role: m.role, thread } });
+    router.push(memberRoute(m));
   }, [router]);
 
   // Messaging moved into the Hub, which put a co-parent's message three taps
