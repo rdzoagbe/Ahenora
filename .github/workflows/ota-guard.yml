@@ -117,6 +117,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+          check-latest: true
 
       # eas-cli reads the Expo app config, which resolves config plugins from
       # node_modules. Without this it fails with "Failed to resolve plugin for
