@@ -72,3 +72,32 @@ export function dinnerTonight(meals: MealPlan[], now: Date | null): MealPlan | n
   const todays = meals.filter((m) => (m.day || '').toLowerCase() === today);
   return todays.find((m) => m.meal_type === 'dinner') || todays[0] || null;
 }
+
+/**
+ * Each person's colour, so a row says whose it is before you read the
+ * initials: one of the brand's four tile hues, never the orange, which is how
+ * the app says "do this" and "overdue". Given in the order the faces sit on
+ * Home (you first), so the same person keeps the same colour on every row.
+ * A name nobody in the household carries (an old card, a typed name) still
+ * gets a steady colour, from the letters of the name.
+ */
+export const PERSON_TONES = [
+  { bg: 'blue', fg: 'blueText' },
+  { bg: 'lavender', fg: 'lavenderText' },
+  { bg: 'mint', fg: 'mintText' },
+  { bg: 'gold', fg: 'goldText' },
+] as const;
+export type PersonTone = (typeof PERSON_TONES)[number];
+
+export function personTone(name: string, members: FamilyMember[]): PersonTone {
+  const wanted = (name || '').trim().toLowerCase();
+  const faces = familyFaces(members);
+  const at = faces.findIndex((m) => {
+    const full = (m.name || '').trim().toLowerCase();
+    return full === wanted || firstName(full) === wanted;
+  });
+  if (at >= 0) return PERSON_TONES[at % PERSON_TONES.length];
+  let sum = 0;
+  for (const ch of wanted) sum += ch.charCodeAt(0);
+  return PERSON_TONES[sum % PERSON_TONES.length];
+}

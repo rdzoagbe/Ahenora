@@ -64,7 +64,7 @@ import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
 import { DoneCard, completedForHome } from '../../src/components/DoneCard';
 import { FamilyBand } from '../../src/components/FamilyBand';
 import { DinnerTonight } from '../../src/components/DinnerTonight';
-import { custodySentence, dinnerTonight, isChild } from '../../src/homeFamily';
+import { custodySentence, dinnerTonight, isChild, personTone, PersonTone } from '../../src/homeFamily';
 import { memberRoute } from '../../src/memberRoute';
 import { activityPhrase } from '../../src/activityPhrase';
 import { isSoloHousehold } from '../../src/household';
@@ -191,17 +191,25 @@ function relativeDue(date: string | null | undefined, t: (k: string, p?: Record<
   return t('feed_in_h', { n: Math.round(diffMin / 60) });
 }
 
-function statusCopy(type: CardType, ui: UIColors, t: TFunc, imported?: boolean) {
-  // Imported agenda items read as neutral gray — colored pills mean "added by
-  // the family", gray means "came from a connected calendar".
-  if (imported) return { label: t('feed_pill_imported'), bg: ui.soft, fg: ui.muted };
-  if (type === 'SIGN_SLIP') return { label: t('feed_status_sign'), bg: ui.orangeSoft, fg: ui.orangeText };
-  if (type === 'RSVP') return { label: t('feed_status_rsvp'), bg: ui.lavender, fg: ui.lavenderText };
-  if (type === 'BIRTHDAY') return { label: t('type_birthday'), bg: ui.gold, fg: ui.goldText };
-  if (type === 'SCHOOL') return { label: t('type_school'), bg: ui.lavender, fg: ui.lavenderText };
-  if (type === 'APPOINTMENT') return { label: t('type_appointment'), bg: ui.orangeSoft, fg: ui.orangeText };
-  if (type === 'VACATION') return { label: t('type_vacation'), bg: ui.mint, fg: ui.mintText };
-  return { label: t('feed_status_task'), bg: ui.mint, fg: ui.mintText };
+/**
+ * What kind of thing a row is, as the first words of its grey line.
+ *
+ * It was a coloured pill at the end of the row, and on a phone the pill took
+ * the width the title needed: "Soccer …", "Dentist…" on every row of the day.
+ * A word in the line underneath says the same and costs the title nothing.
+ * Colour is kept only where the kind changes what you do — a slip to sign, an
+ * invitation to answer; an appointment or a birthday is a fact, said quietly.
+ * "Task" on a task said nothing and is still not said.
+ */
+function rowKind(card: Card, ui: UIColors, t: TFunc): { label: string; color: string } | null {
+  if (card.source === 'CALENDAR') return { label: t('feed_pill_imported'), color: ui.muted };
+  if (card.type === 'SIGN_SLIP') return { label: t('feed_status_sign'), color: ui.orangeText };
+  if (card.type === 'RSVP') return { label: t('feed_status_rsvp'), color: ui.lavenderText };
+  if (card.type === 'BIRTHDAY') return { label: t('type_birthday'), color: ui.muted };
+  if (card.type === 'SCHOOL') return { label: t('type_school'), color: ui.muted };
+  if (card.type === 'APPOINTMENT') return { label: t('type_appointment'), color: ui.muted };
+  if (card.type === 'VACATION') return { label: t('type_vacation'), color: ui.muted };
+  return null;
 }
 
 // A name to a one- or two-letter badge: "Roland Dzoagbe" -> "RD", "Keigh" -> "K".
@@ -311,16 +319,16 @@ function todayTimeLabel(card: Card, t: TFunc, lang: string): string {
  * a row that is itself the button, the day on a row sitting under its time —
  * is drawn on either kind.
  */
-function TaskRow({ card, onOpen, onComplete, styles, compact = false }: {
-  card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles>; compact?: boolean;
+function TaskRow({ card, onOpen, onComplete, styles, tone, compact = false }: {
+  card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles>;
+  /** The assignee's own colour, or null when nobody is named. */
+  tone: PersonTone | null;
+  compact?: boolean;
 }) {
   const ui = useUI();
   const { t } = useStore();
   const imported = card.source === 'CALENDAR';
-  // A pill only where the kind changes what you do: a slip to sign, an
-  // invitation to answer, something a calendar put here. "TASK" on a task
-  // was true of nearly every row and so said nothing.
-  const status = imported || card.type !== 'TASK' ? statusCopy(card.type, ui, t, imported) : null;
+  const kind = rowKind(card, ui, t);
   // The badge on the right says whose it is and the time column says when,
   // so the line underneath carries only what nothing else on the row does.
   const meta = cardMeta(card, t, { withDay: false, withAssignee: false });
@@ -338,23 +346,26 @@ function TaskRow({ card, onOpen, onComplete, styles, compact = false }: {
       <View style={styles.taskBody}>
         <View style={styles.taskTitleRow}>
           {imported ? <CalendarDays color={ui.muted} size={13} /> : null}
-          <Text style={[styles.taskTitle, { flexShrink: 1 }]} numberOfLines={1}>{card.title}</Text>
+          {/* Two lines, so a title is read, not guessed at. */}
+          <Text style={[styles.taskTitle, { flexShrink: 1 }]} numberOfLines={2}>{card.title}</Text>
         </View>
-        {meta ? <Text style={styles.taskMeta} numberOfLines={1}>{meta}</Text> : null}
+        {kind || meta ? (
+          <Text style={styles.taskMeta} numberOfLines={1} testID={`feed-card-meta-${card.card_id}`}>
+            {kind ? <Text style={[styles.taskKind, { color: kind.color }]}>{kind.label}</Text> : null}
+            {kind && meta ? ' · ' : null}
+            {meta}
+          </Text>
+        ) : null}
       </View>
-      {card.assignee && card.assignee.trim() ? (
+      {card.assignee && card.assignee.trim() && tone ? (
         <View
-          style={[styles.assigneeBadge, { backgroundColor: ui.orangeSoft, borderColor: ui.orangeText }]}
+          style={[styles.assigneeBadge, { backgroundColor: ui[tone.bg], borderColor: ui[tone.fg] }]}
           accessibilityLabel={t('card_assigned_to', { name: card.assignee.trim() })}
+          testID={`feed-card-who-${card.card_id}`}
         >
-          <Text style={[styles.assigneeBadgeText, { color: ui.orangeText }]}>
+          <Text style={[styles.assigneeBadgeText, { color: ui[tone.fg] }]}>
             {initials(card.assignee)}
           </Text>
-        </View>
-      ) : null}
-      {status ? (
-        <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
-          <Text style={[styles.statusPillText, { color: status.fg }]}>{status.label}</Text>
         </View>
       ) : null}
     </PressScale>
@@ -1627,6 +1638,7 @@ export default function Feed() {
                           <View style={styles.todayRowBody}>
                             <TaskRow
                               card={card}
+                              tone={card.assignee?.trim() ? personTone(card.assignee, members) : null}
                               compact={undated}
                               onOpen={() => setSelectedCard(card)}
                               onComplete={() => toggle(card)}
@@ -2701,15 +2713,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 10.5,
     letterSpacing: 0.2,
   },
-  statusPill: {
-    borderRadius: 99,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  statusPillText: {
-    fontFamily: 'Figtree_800ExtraBold',
-    fontSize: 11,
-    letterSpacing: 0.5,
+  taskKind: {
+    fontFamily: 'Figtree_700Bold',
   },
   rowDivider: {
     height: 1,
