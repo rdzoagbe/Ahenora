@@ -9,7 +9,7 @@ import { AmbientBackground } from '../src/components/AmbientBackground';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, MetricRow, VersionAdoption, PlanAdoption, FunnelSummary, KidsFunnel, PushHealth,
-  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox,
+  RetentionSummary, InviteBreakdown, AiHealth, SubscriberList, SupportInbox, SupportTicket,
   TimingsReport,
   BillingEvent,
   BillingEventLog,
@@ -998,6 +998,17 @@ export default function MetricsScreen() {
                           <Text style={styles.subMeta}>{lastSeenLabel(tk.created_at)}</Text>
                         </View>
                         <Text style={styles.ticketBody}>{tk.message}</Text>
+                        {tk.kind && tk.kind !== 'support' && !(tk.replies || []).length ? null : (
+                          <TicketReplies
+                            ticket={tk}
+                            styles={styles}
+                            onUpdated={(next) => setSupport((cur) => cur ? {
+                              ...cur,
+                              open: cur.tickets.filter((x) => (x.ticket_id === next.ticket_id ? next : x).status === 'open').length,
+                              tickets: cur.tickets.map((x) => x.ticket_id === next.ticket_id ? next : x),
+                            } : cur)}
+                          />
+                        )}
                         <View style={styles.ticketFoot}>
                           <Text style={[styles.subMeta, tk.emailed === null && { color: ui.danger }]}>
                             {tk.emailed === null
@@ -1348,11 +1359,128 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   ticketBody: { color: ui.text, fontFamily: 'Figtree_400Regular', fontSize: 14, lineHeight: 20 },
   ticketFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   ticketBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: ui.soft },
+  replyBubble: { gap: 4, padding: 12, borderRadius: 14, backgroundColor: ui.soft },
+  replyInput: {
+    minHeight: 96, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: ui.line,
+    color: ui.text, fontFamily: 'Figtree_500Medium', fontSize: 14, lineHeight: 20, textAlignVertical: 'top',
+  },
+  replyActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
+  replyPrimary: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: ui.orangeDeep },
+  replyPrimaryText: { color: '#FFFFFF', fontFamily: 'Figtree_700Bold', fontSize: 13 },
   subMoreBtn: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: ui.line, alignItems: 'center' },
   subMoreText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 13 },
 });
 
+/**
+ * What was answered on a ticket, and the box to answer it.
+ *
+ * Roland, 2026-10-27: "I need to be able to respond to this too. If possible
+ * in the app." The reply is emailed to the person who wrote in, from the app,
+ * with replies coming back to the support inbox. The server writes it on the
+ * ticket only once the email has gone, so what is listed here was received;
+ * a failed send leaves the draft in the box to try again.
+ */
+function TicketReplies({ ticket, styles, onUpdated }: {
+  ticket: SupportTicket;
+  styles: Record<string, any>;
+  onUpdated: (ticket: SupportTicket) => void;
+}) {
+  const ui = useUI();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const replies = ticket.replies || [];
+  const canEmail = !!ticket.user_email;
+
+  const send = async (close: boolean) => {
+    const message = draft.trim();
+    if (!message || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      const out = await api.replySupportTicket(ticket.ticket_id, message, close);
+      onUpdated(out.ticket);
+      setDraft('');
+      setOpen(false);
+    } catch (e: any) {
+      // The server's words go to the log; the screen says what happened.
+      logger.warn('support reply failed', e?.message || e);
+      setError(!e?.status
+        ? 'Not sent: no connection. Your reply is still here.'
+        : e.status === 502
+          ? 'Not sent: the email did not go out. Your reply is still here.'
+          : 'Not sent. Your reply is still here.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <View style={{ gap: 8 }}>
+      {replies.map((r) => (
+        <View key={r.reply_id} style={styles.replyBubble} testID={`ticket-reply-${r.reply_id}`}>
+          <Text style={styles.subMeta}>{`${r.by_name || 'You'} replied · ${lastSeenLabel(r.at)}`}</Text>
+          <Text style={styles.ticketBody}>{r.message}</Text>
+        </View>
+      ))}
+      {!canEmail ? (
+        <Text style={styles.subMeta}>No email address on this message, so it cannot be answered from here.</Text>
+      ) : open ? (
+        <View style={{ gap: 8 }}>
+          <TextInput
+            testID={`ticket-reply-input-${ticket.ticket_id}`}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder={`Reply to ${ticket.user_name || ticket.user_email}`}
+            placeholderTextColor={ui.muted}
+            multiline
+            autoFocus
+            style={styles.replyInput}
+          />
+          {error ? <Text style={[styles.subMeta, { color: ui.danger }]}>{error}</Text> : null}
+          <View style={styles.replyActions}>
+            <PressScale onPress={() => { setOpen(false); setError(null); }} style={styles.ticketBtn}>
+              <Text style={[styles.subMoreText, { color: ui.muted }]}>Cancel</Text>
+            </PressScale>
+            <PressScale
+              testID={`ticket-reply-send-${ticket.ticket_id}`}
+              onPress={() => send(false)}
+              disabled={!draft.trim() || sending}
+              style={[styles.ticketBtn, (!draft.trim() || sending) && { opacity: 0.5 }]}
+            >
+              <Text style={styles.subMoreText}>{sending ? 'Sending…' : 'Send'}</Text>
+            </PressScale>
+            {ticket.status === 'open' ? (
+              <PressScale
+                testID={`ticket-reply-send-close-${ticket.ticket_id}`}
+                onPress={() => send(true)}
+                disabled={!draft.trim() || sending}
+                style={[styles.replyPrimary, (!draft.trim() || sending) && { opacity: 0.5 }]}
+              >
+                <Text style={styles.replyPrimaryText}>Send & mark handled</Text>
+              </PressScale>
+            ) : null}
+          </View>
+          <Text style={styles.subMeta}>
+            {`Emailed to ${ticket.user_email} from the app. Their answer comes to your support inbox.`}
+          </Text>
+        </View>
+      ) : (
+        <PressScale
+          testID={`ticket-reply-open-${ticket.ticket_id}`}
+          onPress={() => setOpen(true)}
+          style={[styles.ticketBtn, { alignSelf: 'flex-start' }]}
+        >
+          <Text style={styles.subMoreText}>{replies.length ? 'Reply again' : 'Reply'}</Text>
+        </PressScale>
+      )}
+    </View>
+  );
+}
+
 function FoundingFamilies({ styles }: { styles: Record<string, any> }) {
+  const ui = useUI();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -1397,7 +1525,9 @@ function FoundingFamilies({ styles }: { styles: Record<string, any> }) {
           </PressScale>
           <PressScale testID="founding-remove" onPress={() => set(false)}
             style={{ paddingHorizontal: 14, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#ECE4DA' }}>
-            <Text style={{ fontFamily: 'Figtree_700Bold' }}>Remove</Text>
+            {/* An explicit colour: without one the label was black on the
+                dark card, and "Remove" could not be read in dark mode. */}
+            <Text style={{ fontFamily: 'Figtree_700Bold', color: ui.text }}>Remove</Text>
           </PressScale>
         </View>
         {result ? <Text style={[styles.hint, { marginTop: 10 }]}>{result}</Text> : null}

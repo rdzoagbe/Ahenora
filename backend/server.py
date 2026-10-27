@@ -21675,6 +21675,17 @@ def public_support_ticket(ticket: dict) -> dict:
         "emailed": (bool(email.get("sent")) if email else None),
         "email_error": (email or {}).get("error"),
         "pushed_devices": ((push or {}).get("devices") or 0) + ((push or {}).get("web") or 0),
+        # What was answered from the admin screen, oldest first. Only replies
+        # that were actually emailed are ever written here.
+        "replies": [
+            {
+                "reply_id": r.get("reply_id"),
+                "message": r.get("message") or "",
+                "by_name": r.get("by_name") or "",
+                "at": iso(r.get("at")),
+            }
+            for r in (ticket.get("replies") or []) if isinstance(r, dict)
+        ],
     }
 
 
@@ -21722,6 +21733,106 @@ async def admin_close_support_ticket(ticket_id: str, user=Depends(require_user))
     if not getattr(res, "matched_count", 1):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return {"ok": True, "ticket_id": ticket_id, "status": "closed"}
+
+
+class SupportReplyIn(BaseModel):
+    message: str
+    # "Send and mark handled": most answers close the conversation.
+    close: bool = False
+
+
+async def send_support_reply_email(ticket: dict, message: str) -> dict:
+    """An answer from the admin screen, to the person who wrote in.
+
+    Until now an answer meant leaving the app for a mail client and finding
+    the right thread (Roland, 2026-10-27: "I need to be able to respond to
+    this too. If possible in the app"). It goes from the app's address with
+    reply-to set to the support inbox, so their answer lands where somebody
+    is looking, and it quotes what they wrote so they know what it answers.
+    Roland's words are sent as he typed them; the only words added are the
+    app's name and the reference, which read the same in every language.
+    """
+    to = (ticket.get("user_email") or "").strip()
+    if not to:
+        return {"sent": False, "error": "no email address on this ticket"}
+    if not RESEND_API_KEY or not INVITE_FROM_EMAIL:
+        return {"sent": False, "error": "email not configured"}
+    subject = f"Re: {ticket.get('subject') or APP_NAME}"
+    original = ticket.get("message") or ""
+    quoted = "\n".join(f"> {line}" for line in original.splitlines())
+    signoff = f"{APP_NAME} · {ticket.get('ticket_id')}"
+    text = f"{message}\n\n— {signoff}\n\n{quoted}"
+    html_body = (
+        "<div style=\"font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;"
+        "font-size:15px;line-height:1.55;color:#202323\">"
+        f"<p style=\"white-space:pre-wrap\">{html.escape(message)}</p>"
+        f"<p style=\"color:#6b7280;font-size:13px\">— {html.escape(signoff)}</p>"
+        "<blockquote style=\"margin:0;padding:10px 14px;border-left:3px solid #f26a1b;"
+        f"background:#faf7f4;white-space:pre-wrap\">{html.escape(original)}</blockquote></div>"
+    )
+    payload = {
+        "from": sender_as_app(INVITE_FROM_EMAIL),
+        "to": [to],
+        "subject": subject,
+        "text": text,
+        "html": html_body,
+    }
+    if SUPPORT_INBOX_EMAIL:
+        payload["reply_to"] = SUPPORT_INBOX_EMAIL
+    try:
+        return await _resend_send(payload)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("support reply email failed: %s", exc)
+        return {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+
+
+@app.post("/api/admin/support-tickets/{ticket_id}/reply")
+async def admin_reply_support_ticket(
+    ticket_id: str,
+    body: SupportReplyIn,
+    user: dict = Depends(require_user),
+    database=Depends(get_db),
+):
+    """Answer a support message from the admin screen. Admin-only.
+
+    The reply is written on the ticket only once the email has gone: a reply
+    the app shows as sent but nobody received is the failure this inbox was
+    built to end. A failed send is a 502 and changes nothing, so the draft is
+    still on the screen to try again.
+    """
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    message = (body.message or "").strip()[:5000]
+    if not message:
+        raise HTTPException(status_code=400, detail="Write a reply first")
+    ticket = await database["support_tickets"].find_one({"ticket_id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        sent = await asyncio.wait_for(send_support_reply_email(ticket, message), timeout=20.0)
+    except Exception as exc:  # noqa: BLE001
+        sent = {"sent": False, "error": f"{type(exc).__name__}: {exc}"[:160]}
+    if not sent.get("sent"):
+        raise HTTPException(status_code=502, detail=f"The reply was not sent: {sent.get('error') or 'unknown error'}")
+    now = utcnow()
+    provider = sent.get("response")
+    reply = {
+        "reply_id": new_id("rpl"),
+        "message": message,
+        "by_user_id": user["user_id"],
+        "by_name": user.get("name", ""),
+        "at": now,
+        # Resend's id for the message, so a "they never got it" can be looked up.
+        "email_id": provider.get("id") if isinstance(provider, dict) else None,
+    }
+    update: dict = {"$push": {"replies": reply}}
+    closed = {}
+    if body.close:
+        closed = {"status": "closed", "closed_at": now, "closed_by": user["user_id"]}
+        update["$set"] = closed
+    await database["support_tickets"].update_one({"ticket_id": ticket_id}, update)
+    return {"ok": True, "ticket": public_support_ticket(
+        {**ticket, **closed, "replies": list(ticket.get("replies") or []) + [reply]})}
 
 
 # -----------------------------------------------------------------------------
