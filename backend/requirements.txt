@@ -1,4 +1,4 @@
-fastapi==0.143.2
+fastapi==0.162.0
 uvicorn==0.54.0
 cryptography>=50.0.2  # hard dependency of google-auth (id-token verification)
 pymongo==4.19.0  # transitive via motor; pinned deliberately so deploys don't drift
@@ -11,12 +11,12 @@ isort>=9.0.2
 flake8>=7.4.1
 mypy>=2.4.0
 requests>=2.34.2
-certifi>=2026.10.19  # the CA bundle requests/httpx/google-auth trust; 2026.10.19 drops emSign ECC Root CA - G3 (eMudhra compromise). A floor in this file also changes the Dockerfile's pip layer, so a deploy cannot reuse an older cached bundle
-pandas>=3.0.6,<4  # the unbounded floor was already resolving 3.x on every deploy; now it says so, bounded against the next major
+certifi>=2026.10.23  # the CA bundle requests/httpx/google-auth trust; 2026.10.19 drops emSign ECC Root CA - G3 (eMudhra compromise). A floor in this file also changes the Dockerfile's pip layer, so a deploy cannot reuse an older cached bundle
+pandas>=3.1.0,<4  # the unbounded floor was already resolving 3.x on every deploy; now it says so, bounded against the next major
 numpy>=2.4.6  # transitive via pandas; floor pinned deliberately
 python-multipart>=0.0.32  # no import anywhere; FastAPI needs it for multipart uploads
-google-genai>=2.31.0,<3
-pillow>=12.3.0
+google-genai>=2.33.0,<3
+pillow>=13.0.0
 google-auth>=2.62.0
 openpyxl>=3.1.5  # looks unused, is not: pd.read_excel(engine="openpyxl") passes it as a string
 python-docx>=1.2.0
