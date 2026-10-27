@@ -1561,6 +1561,16 @@ export interface SupportTicket {
   emailed: boolean | null;
   email_error?: string | null;
   pushed_devices: number;
+  /** Answers sent from the admin screen, oldest first. Only replies that were
+   *  actually emailed are ever listed. Absent on servers from before replies. */
+  replies?: SupportReply[];
+}
+
+export interface SupportReply {
+  reply_id: string;
+  message: string;
+  by_name: string;
+  at: string | null;
 }
 
 export interface SupportInbox {
@@ -2254,6 +2264,12 @@ export const api = {
   closeSupportTicket: (ticketId: string) =>
     request<{ ok: boolean; ticket_id: string; status: string }>(
       `/admin/support-tickets/${encodeURIComponent(ticketId)}/close`, { method: 'POST' }),
+  /** Email an answer to the person who wrote in; `close` also marks it handled.
+   *  A 502 means the email did not go and nothing was saved. */
+  replySupportTicket: (ticketId: string, message: string, close = false) =>
+    request<{ ok: boolean; ticket: SupportTicket }>(
+      `/admin/support-tickets/${encodeURIComponent(ticketId)}/reply`,
+      { method: 'POST', body: { message, close } }),
   getBillingEvents: (limit = 40) =>
     request<BillingEventLog>(`/admin/billing-events?limit=${limit}`),
   listInvites: () => request<FamilyInvite[]>('/family/invites'),
