@@ -10,7 +10,7 @@ import { PersonAvatar, AvatarPicker } from '../src/components/PersonAvatar';
 import { PinPadModal } from '../src/components/PinPadModal';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, FamilyMember, Medicine, MemberRecord, Redemption, Reward, StarTransaction, Vaccination } from '../src/api';
+import { api, FamilyMember, Medicine, MemberJob, MemberJobsToday, MemberRecord, Redemption, Reward, StarTransaction, Vaccination } from '../src/api';
 import { KidPageTop } from '../src/components/KidPageTop';
 import { personTone } from '../src/homeFamily';
 import { localeFor } from '../src/utils/date';
@@ -170,6 +170,9 @@ export default function MemberProfile() {
   // owed — the rewards list and their pending redemptions.
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [owed, setOwed] = useState<Redemption[]>([]);
+  // Today's jobs, from the chore wheel, with what is done. Null until read
+  // (and after a failed read): no grid, rather than an empty "0 of 0".
+  const [jobs, setJobs] = useState<MemberJobsToday | null>(null);
   const [busy, setBusy] = useState(false);
   // Rename happens in place: a whole screen for one text field is the kind of
   // detour this redesign exists to remove.
@@ -198,6 +201,7 @@ export default function MemberProfile() {
         // not take the stars and the record down with it.
         api.listRewards().then(setRewards).catch(() => setRewards([]));
         api.listRedemptions('pending').then(setOwed).catch(() => setOwed([]));
+        api.memberJobs(id).then(setJobs).catch(() => setJobs(null));
       }
     } catch (e) {
       logger.warn('member load failed', e);
@@ -232,6 +236,23 @@ export default function MemberProfile() {
     } catch (e) {
       logger.warn('fulfil redemption failed', e);
       Alert.alert(t('hub_earned_ready'), apiErrorText(e, t, 'set_please_try_again'));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, loadMember, t]);
+
+  // A parent ticks a job for the child: the wheel pays what the job says and
+  // writes the log the grid reads, then everything (stars, goal, grid) is
+  // re-read from the server rather than guessed.
+  const doJob = useCallback(async (job: MemberJob) => {
+    if (busy || job.done) return;
+    setBusy(true);
+    try {
+      await api.completeChore(job.chore_id);
+      await loadMember();
+    } catch (e) {
+      logger.warn('complete chore failed', e);
+      Alert.alert(t('hub_todays_jobs'), apiErrorText(e, t, 'set_please_try_again'));
     } finally {
       setBusy(false);
     }
@@ -692,11 +713,13 @@ export default function MemberProfile() {
             tone={personTone(displayName, members)}
             rewards={rewards}
             owed={owed}
+            jobs={jobs?.jobs ?? []}
             busy={busy}
             onBack={goBack}
             onEditJobs={() => router.push('/(tabs)/kids')}
             onGive={giveStars}
             onUseIt={useReward}
+            onDoJob={doJob}
           />
         ) : null}
         <View style={kind === 'kid' ? styles.bodyKidInner : null}>

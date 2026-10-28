@@ -8165,6 +8165,55 @@ async def _pay_full_week_bonus(database, family_id: str, member_id: str, user: d
             "created_at": utcnow(), "awarded_for": utcnow()})
 
 
+@app.get("/api/family/members/{member_id}/jobs")
+async def member_jobs_today(member_id: str, timezone_name: Optional[str] = Query(default=None, alias="timezone"),
+                            user=Depends(require_user), database=Depends(get_db)):
+    """A child's jobs today, for the parent standing next to them.
+
+    The jobs are the chore wheel — the daily chores onboarding sets up for a
+    child (tidy, bed, homework) live there, not in the cards — read the way
+    the wheel pays them: a chore belongs to whoever it currently sits with.
+    One finished earlier today is still this child's job, done, even if the
+    wheel has since turned it to a sibling: "1 of 3 done" must not shrink to
+    "0 of 2" the moment a job is ticked. "Today" is the parent's today — the
+    zone sent with the request, else their device's, else the house default.
+    """
+    member = await database["family_members"].find_one(
+        {"family_id": user["family_id"], "member_id": member_id}, {"_id": 0})
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    now = utcnow()
+    zone = _valid_timezone(timezone_name) or await _zone_of(database, user["user_id"])
+    local = _local_now(zone, now)
+    day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+    done_today: dict = {}
+    async for log in database["chore_logs"].find(
+            {"family_id": user["family_id"], "member_id": member_id,
+             "completed_at": {"$gte": day_start}},
+            {"_id": 0, "chore_id": 1, "stars_awarded": 1}):
+        done_today[log["chore_id"]] = int(log.get("stars_awarded") or 0)
+
+    jobs = []
+    async for chore in database["chores"].find({"family_id": user["family_id"]}, {"_id": 0}):
+        mine = chore.get("current_assignee") == member_id
+        done = chore["chore_id"] in done_today
+        if not mine and not done:
+            continue
+        jobs.append({
+            "chore_id": chore["chore_id"],
+            "title": chore.get("title") or "",
+            "icon": chore.get("icon"),
+            "star_reward": int(chore.get("star_reward", 3) or 0),
+            "done": done,
+            "stars_awarded": done_today.get(chore["chore_id"], 0),
+        })
+    # Still to do first, in the order they were set up; done ones after.
+    jobs.sort(key=lambda j: (j["done"], j["title"].lower()))
+    return {"jobs": jobs, "done": sum(1 for j in jobs if j["done"]), "total": len(jobs)}
+
+
 @app.post("/api/family/members/{member_id}/stars")
 async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=Depends(require_full_member)):
     database = get_db()

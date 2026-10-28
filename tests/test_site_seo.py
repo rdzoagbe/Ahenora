@@ -123,6 +123,11 @@ class Sitemap(unittest.TestCase):
         for name in os.listdir(DOCS):
             if not name.endswith(".html") or name in ("404.html",):
                 continue
+            # Google's site-verification file (#716) is a token served at the
+            # root for Search Console, not a page: one line of text, nothing
+            # to crawl, and listing it would advertise a non-page.
+            if name.startswith("google") and name.endswith(".html"):
+                continue
             self.assertIn(name, listed, "%s is not in the sitemap" % name)
 
     def test_it_does_not_advertise_the_signed_in_app(self):

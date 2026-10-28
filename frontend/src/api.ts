@@ -1681,6 +1681,24 @@ export interface FamilyProfile {
 
 export interface KidChore { card_id: string; title: string; due_date: string | null; icon?: string | null }
 
+/** One of a child's jobs today, from GET /family/members/{id}/jobs. */
+export interface MemberJob {
+  chore_id: string;
+  title: string;
+  icon?: string | null;
+  /** What finishing it pays. */
+  star_reward: number;
+  done: boolean;
+  /** What it did pay, once done. */
+  stars_awarded: number;
+}
+
+export interface MemberJobsToday {
+  jobs: MemberJob[];
+  done: number;
+  total: number;
+}
+
 export interface KidHome {
   name: string;
   stars: number;
@@ -2444,6 +2462,12 @@ export const api = {
   },
   memberStarHistory: (member_id: string) =>
     request<StarTransaction[]>(`/family/members/${member_id}/star-history`),
+  /** A child's jobs today: the chore wheel as it sits with them, and what is
+   *  already done. "Today" is this device's today, so a job ticked at 23:30
+   *  does not move to tomorrow because Greenwich has turned over. */
+  memberJobs: (member_id: string) =>
+    request<MemberJobsToday>(
+      `/family/members/${member_id}/jobs?timezone=${encodeURIComponent(deviceTimeZone() || '')}`),
   updateFamilyMember: (
     member_id: string,
     // weekly_target: how many stars this child's week is measured against.
@@ -3236,10 +3260,13 @@ export const api = {
     request<Chore>('/chores', { method: 'POST', body: data }),
   rotateChore: (id: string) => request<Chore>(`/chores/${id}/rotate`, { method: 'POST' }),
   // "Done": pays the current assignee, then hands the chore on.
-  completeChore: (id: string) =>
-    request<{ ok: boolean; chore: Chore; stars_awarded: number; member_id?: string }>(
+  completeChore: (id: string) => {
+    // It pays the assignee, so the cached roster's star counts are stale.
+    cache.invalidate('familyMembers');
+    return request<{ ok: boolean; chore: Chore; stars_awarded: number; member_id?: string }>(
       `/chores/${id}/complete`, { method: 'POST' },
-    ),
+    );
+  },
   deleteChore: (id: string) => request<{ ok: boolean }>(`/chores/${id}`, { method: 'DELETE' }),
 };
 
