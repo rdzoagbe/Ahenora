@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
@@ -21,7 +21,10 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { Card as KitCard, IconTile, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { useKidsSectionsHidden } from '../../src/kidsSections';
-import { api, logEvent, CalendarImportResult, Card, Carpool, GiftPot } from '../../src/api';
+import { api, logEvent, CalendarImportResult, Card, Carpool, FamilyMember, GiftPot } from '../../src/api';
+import { PersonAvatar } from '../../src/components/PersonAvatar';
+import { personTone } from '../../src/homeFamily';
+import { calendarPeople, dayTones, firstNameOf, isTheirs, onlyTheirs } from '../../src/calendarPeople';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import AppToast from '../../src/components/AppToast';
@@ -34,16 +37,6 @@ import { sendLocalNotification, syncCalendarNightly } from '../../src/notificati
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
 
 WebBrowser.maybeCompleteAuthSession();
-
-const TYPE_COLOR: Record<string, string> = {
-  SIGN_SLIP: UI.orange,
-  RSVP: UI.lavenderText,
-  TASK: UI.mintText,
-  BIRTHDAY: UI.goldText,
-  SCHOOL: UI.lavenderText,
-  APPOINTMENT: UI.orange,
-  VACATION: UI.mintText,
-};
 
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
 
@@ -299,10 +292,16 @@ export default function Calendar() {
   // The set above is lowercased for matching. The carpool sheet offers the
   // children as chips, and a chip has to read the way the name was typed.
   const [kidNames, setKidNames] = useState<string[]>([]);
+  // Everyone in the household, for the row of faces above the month and for
+  // the colour each person's events wear — the same colour they have on Home.
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  // One person's calendar, or everyone's. A choice for this visit only: it
+  // narrows what is shown and never what is stored.
+  const [personId, setPersonId] = useState<string | null>(null);
   const [importPickerOpen, setImportPickerOpen] = useState(false);
   const [shareCounts, setShareCounts] = useState<{ shared_out: number; shared_in: number; private: number } | null>(null);
-  // Collapsed by default. The panel is above the calendar now, and a family
-  // sharing twenty items would otherwise bury the month grid under a list.
+  // Collapsed by default: a family sharing twenty items would otherwise put
+  // a list between the month and the carpools.
   const [shareExpanded, setShareExpanded] = useState(false);
   // The agenda panel: "My agenda" (my own events) vs "Shared agenda" (the whole
   // shared pool — what I shared and what a co-parent shared). Both derive from
@@ -420,6 +419,7 @@ export default function Calendar() {
       }
       if (carpoolRes.status === 'fulfilled') setCarpools(carpoolRes.value);
       if (membersRes.status === 'fulfilled') {
+        setMembers(membersRes.value);
         const children = membersRes.value.filter((m) => /^child$/i.test(m.role) && m.name);
         setChildNames(new Set(children.map((m) => m.name.trim().toLowerCase())));
         setKidNames(children.map((m) => m.name.trim()).filter(Boolean));
@@ -648,17 +648,51 @@ export default function Calendar() {
     }
     return rows;
   }, [monthDays]);
-  const countsByDay = useMemo(() => {
-    const counts: Record<string, number> = {};
-    cards.forEach((card) => {
+  // The row of faces: everyone on Home, in Home's order, the children only
+  // while the household shows that side. One person is nothing to narrow to,
+  // so the row appears from two.
+  const people = useMemo(() => calendarPeople(members, kidsHidden), [members, kidsHidden]);
+  const person = useMemo(
+    () => (personId ? people.find((m) => m.member_id === personId) || null : null),
+    [people, personId],
+  );
+  // What the month and the list below it are made of: everyone's events, or
+  // the chosen person's. The agenda panel keeps the whole list — it is about
+  // what is shared, not about who.
+  const visibleCards = useMemo(() => onlyTheirs(cards, person), [cards, person]);
+
+  // The dots under each day, one per person with something on it, in that
+  // person's colour; a card nobody is named on keeps the brand dot.
+  const tonesByDay = useMemo(() => {
+    const byDay: Record<string, Card[]> = {};
+    visibleCards.forEach((card) => {
       const key = cardDateKey(card);
       if (!key) return;
-      counts[key] = (counts[key] || 0) + 1;
+      (byDay[key] = byDay[key] || []).push(card);
     });
-    return counts;
-  }, [cards]);
+    const out: Record<string, ReturnType<typeof dayTones>> = {};
+    for (const key of Object.keys(byDay)) out[key] = dayTones(byDay[key], members);
+    return out;
+  }, [visibleCards, members]);
 
-  const groups = useMemo(() => groupByDay(cards, selectedDay), [cards, selectedDay]);
+  const todayKey = dateKey(new Date());
+  // Opening the calendar asks "what is coming?", and the answer is more than
+  // one day. So while today is the day — the one the screen opens on, not one
+  // anybody picked — the list below runs a week ahead, headed Today, Tomorrow,
+  // then the date. Picking any other day, today included once you have moved
+  // off it and back, still answers with that day alone.
+  const weekAhead = selectedDay === todayKey;
+  const horizonKey = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 6);
+    return dateKey(d);
+  }, [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const groups = useMemo(() => {
+    if (weekAhead) {
+      return groupByDay(visibleCards, null).filter((g) => g.day >= todayKey && g.day <= horizonKey);
+    }
+    return groupByDay(visibleCards, selectedDay);
+  }, [visibleCards, selectedDay, weekAhead, todayKey, horizonKey]);
 
   // Past days, held back.
   //
@@ -676,7 +710,6 @@ export default function Calendar() {
   // answer that quietly drops half of it would be a worse lie than the one this
   // fixes.
   const [showEarlier, setShowEarlier] = useState(false);
-  const todayKey = dateKey(new Date());
   const earlierGroups = useMemo(
     () => (selectedDay ? [] : groups.filter((g) => g.day < todayKey)),
     [groups, selectedDay, todayKey],
@@ -801,6 +834,17 @@ export default function Calendar() {
 
   const locale = localeFor(lang);
   const monthTitle = activeMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+
+  // The heading over a day's cards when the list runs over several days:
+  // "Today", "Tomorrow", then the date, the way a person would say it.
+  const dayHeading = (day: string) => {
+    const date = new Date(`${day}T00:00:00`);
+    const today = startOfLocalDay(new Date());
+    const diffDays = Math.round((startOfLocalDay(date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return t('feed_today');
+    if (diffDays === 1) return t('feed_tomorrow');
+    return date.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' });
+  };
 
   const formatDayFull = (day: string) => {
     const date = new Date(`${day}T00:00:00`);
@@ -1176,6 +1220,321 @@ export default function Calendar() {
             </View>
           ) : null}
 
+          {/* Whose calendar: everyone's, or one person's. The faces are the
+              household's, in Home's order and Home's colours, so the month
+              below can be read one person at a time. */}
+          {people.length > 1 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.peopleRow}
+              contentContainerStyle={styles.peopleRowInner}
+              testID="calendar-people"
+              accessibilityRole="tablist"
+            >
+              <PressScale
+                testID="calendar-person-all"
+                accessibilityRole="tab"
+                accessibilityState={{ selected: !person }}
+                onPress={() => setPersonId(null)}
+                style={[styles.chip, !person && styles.chipOn]}
+              >
+                <Text style={[styles.chipText, !person && styles.chipTextOn]}>{t('cal_everyone')}</Text>
+              </PressScale>
+              {people.map((m) => {
+                const on = person?.member_id === m.member_id;
+                return (
+                  <PressScale
+                    key={m.member_id}
+                    testID={`calendar-person-${m.member_id}`}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={m.name}
+                    onPress={() => setPersonId(on ? null : m.member_id)}
+                    style={[styles.chip, styles.chipFace, on && styles.chipOn]}
+                  >
+                    <PersonAvatar name={m.name} avatar={m.avatar} size={26} ring={false} />
+                    <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>
+                      {m.is_me ? t('home_you') : firstNameOf(m.name)}
+                    </Text>
+                  </PressScale>
+                );
+              })}
+            </ScrollView>
+          ) : null}
+
+          {/* Month / Week */}
+          <KitCard style={styles.calCard}>
+            <View style={styles.monthHeader}>
+              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={t('a11y_prev_month')} onPress={() => (viewMode === 'week' ? shiftWeek(-1) : shiftMonth(-1))} style={styles.monthNav}>
+                <ChevronLeft color={ui.text} size={20} />
+              </PressScale>
+              <Text style={styles.monthTitle}>{monthTitle}</Text>
+              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={t('a11y_next_month')} onPress={() => (viewMode === 'week' ? shiftWeek(1) : shiftMonth(1))} style={styles.monthNav}>
+                <ChevronRight color={ui.text} size={20} />
+              </PressScale>
+            </View>
+
+            <View style={styles.viewToggle}>
+              <PressScale testID="cal-view-month" onPress={() => setViewMode('month')} style={[styles.viewToggleBtn, viewMode === 'month' && styles.viewToggleOn]}>
+                <Text style={[styles.viewToggleText, viewMode === 'month' && styles.viewToggleTextOn]}>{t('cal_view_month')}</Text>
+              </PressScale>
+              <PressScale testID="cal-view-week" onPress={() => setViewMode('week')} style={[styles.viewToggleBtn, viewMode === 'week' && styles.viewToggleOn]}>
+                <Text style={[styles.viewToggleText, viewMode === 'week' && styles.viewToggleTextOn]}>{t('cal_view_week')}</Text>
+              </PressScale>
+            </View>
+
+            {/* Alternating-custody legend. When on, the two swatches name what the
+                mint/lavender week tints mean; when off, a parent gets a quiet way
+                in to set it up. Hidden entirely for helpers and non-custody kids. */}
+            {custodyOn ? (
+              <View style={styles.custodyLegend}>
+                <View style={styles.custodyLegendItem}>
+                  <View style={[styles.custodySwatch, { backgroundColor: ui.mint }]} />
+                  <Text style={styles.custodyLegendText} numberOfLines={1}>{t('custody_legend_ours')}</Text>
+                </View>
+                <View style={styles.custodyLegendItem}>
+                  <View style={[styles.custodySwatch, { backgroundColor: ui.lavender }]} />
+                  <Text style={styles.custodyLegendText} numberOfLines={1}>{custody?.away_label?.trim() || t('custody_legend_theirs')}</Text>
+                </View>
+                {isParent ? (
+                  <PressScale testID="custody-edit" accessibilityRole="button" accessibilityLabel={t('custody_title')} onPress={openCustody} style={styles.custodyEditBtn} hitSlop={8}>
+                    <Pencil color={ui.muted} size={16} />
+                  </PressScale>
+                ) : null}
+              </View>
+            ) : isParent && !kidsHidden ? (
+              <PressScale testID="custody-setup" accessibilityRole="button" onPress={openCustody} style={styles.custodySetupBtn}>
+                <Users color={ui.lavenderText} size={16} />
+                <Text style={styles.custodySetupText}>{t('custody_setup')}</Text>
+              </PressScale>
+            ) : null}
+
+            {viewMode === 'month' ? (
+              <>
+                <View style={[styles.weekHeader, { width: gridWidth }]}>
+                  <View style={{ width: WEEK_GUTTER }} />
+                  {['day_monday', 'day_tuesday', 'day_wednesday', 'day_thursday', 'day_friday', 'day_saturday', 'day_sunday'].map((k) => t(k).charAt(0).toUpperCase()).map((day, index) => (
+                    <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize }]}>{day}</Text>
+                  ))}
+                </View>
+
+                <View style={{ width: gridWidth, alignSelf: 'center' }}>
+                  {monthRows.map((row) => (
+                    <View key={row.key} style={styles.monthRow}>
+                      {/* S27, S28 — the number, not a decoration. Reading
+                          "semaines impaires" off a judgment and finding the
+                          same number here is the whole point. */}
+                      <View style={[styles.weekNumCell, { width: WEEK_GUTTER }]}>
+                        <Text style={styles.weekNumText}>S{row.week}</Text>
+                      </View>
+                      {row.days.map(({ date, inMonth }) => {
+                    const key = dateKey(date);
+                    const tones = tonesByDay[key] || [];
+                    const isToday = key === dateKey(new Date());
+                    const selected = selectedDay === key;
+                    const custTint = custodyOn ? (custodyIsOurs(date, custody!.our_weeks) ? ui.mint : ui.lavender) : null;
+                    return (
+                      <PressScale
+                        key={key}
+                        testID={`calendar-day-${key}`}
+                        onPress={() => onSelectDay(key, date)}
+                        style={[styles.dayCell, { width: daySize, height: daySize + 8 }, custTint && inMonth && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
+                      >
+                        <Text
+                          style={[
+                            styles.dayNumber,
+                            { color: selected ? '#FFFFFF' : !inMonth ? ui.muted : isToday ? ui.orangeText : ui.text },
+                          ]}
+                        >
+                          {date.getDate()}
+                        </Text>
+                        {/* One dot per person with something that day, in their
+                            colour, so a glance at the month says whose week it
+                            is going to be. */}
+                        <View style={styles.dayDots} testID={tones.length ? `calendar-dots-${key}` : undefined}>
+                          {tones.map((tone, i) => (
+                            <View key={i} style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : tone ? ui[tone.fg] : ui.orange }]} />
+                          ))}
+                        </View>
+                      </PressScale>
+                    );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <View style={[styles.weekStrip, { width: gridWidth }]}>
+                <View style={[styles.weekNumCell, { width: WEEK_GUTTER }]}>
+                  <Text style={styles.weekNumText}>S{isoWeek(weekDays[0]).week}</Text>
+                </View>
+                {weekDays.map((date) => {
+                  const key = dateKey(date);
+                  const tones = tonesByDay[key] || [];
+                  const isToday = key === dateKey(new Date());
+                  const selected = selectedDay === key;
+                  const custTint = custodyOn ? (custodyIsOurs(date, custody!.our_weeks) ? ui.mint : ui.lavender) : null;
+                  return (
+                    <PressScale
+                      key={key}
+                      testID={`calendar-day-${key}`}
+                      onPress={() => onSelectDay(key, date)}
+                      style={[styles.weekDayCell, { width: daySize + 2 }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
+                    >
+                      <Text style={[styles.weekDayLabel, { color: selected ? '#FFFFFF' : ui.muted }]}>
+                        {date.toLocaleDateString(locale, { weekday: 'short' }).charAt(0).toUpperCase()}
+                      </Text>
+                      <Text style={[styles.dayNumber, { color: selected ? '#FFFFFF' : isToday ? ui.orangeText : ui.text }]}>
+                        {date.getDate()}
+                      </Text>
+                      <View style={styles.dayDots} testID={tones.length ? `calendar-dots-${key}` : undefined}>
+                        {tones.map((tone, i) => (
+                          <View key={i} style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : tone ? ui[tone.fg] : ui.orange }]} />
+                        ))}
+                      </View>
+                    </PressScale>
+                  );
+                })}
+              </View>
+            )}
+          </KitCard>
+
+          {/* Day events */}
+          <View style={styles.dayHead}>
+            <Text style={[styles.dayHeadTitle, { flex: 1 }]} numberOfLines={2}>
+              {weekAhead ? t('cal_next_days') : selectedDay ? formatDayFull(selectedDay) : t('upcoming')}
+            </Text>
+            <View style={styles.dayHeadRight}>
+              {selectedDay && totalSelectedEvents > 0 ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} {totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}</Text> : null}
+              <PressScale testID="calendar-add-event" onPress={openAddEvent} style={styles.addEventBtn}>
+                <Plus color={ui.orangeText} size={15} />
+                <Text style={styles.addEventText}>{t('cal_add_event')}</Text>
+              </PressScale>
+            </View>
+          </View>
+
+          {loading ? (
+            <ActivityIndicator color={ui.orange} style={{ marginTop: 30 }} />
+          ) : shownGroups.length === 0 && earlierCount === 0 ? (
+            <KitCard style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <CalendarDays color={ui.muted} size={26} />
+              </View>
+              <Text style={styles.emptyText}>{weekAhead ? t('cal_week_empty') : selectedDay ? t('cal_no_events_date') : t('no_events')}</Text>
+              <Text style={styles.emptyHint}>{t('cal_empty_hint')}</Text>
+              <PressScale
+                testID="calendar-empty-sync"
+                onPress={openImportPicker}
+                disabled={syncDisabled}
+                style={[styles.emptySyncBtn, syncDisabled && { opacity: 0.55 }]}
+              >
+                <RefreshCw color={ui.orange} size={15} />
+                <Text style={styles.emptySyncText}>{syncing ? t('cal_syncing') : t('cal_import')}</Text>
+              </PressScale>
+            </KitCard>
+          ) : (
+            <View style={styles.timeline}>
+              {/* The way back to what has already been. Counted, so nobody has
+                  to wonder whether anything is behind it. */}
+              {earlierCount > 0 ? (
+                <PressScale
+                  testID="calendar-earlier-toggle"
+                  onPress={() => setShowEarlier((v) => !v)}
+                  style={styles.earlierRow}
+                >
+                  <Text style={styles.earlierText}>
+                    {showEarlier
+                      ? t('cal_hide_earlier')
+                      : t('cal_show_earlier', { n: earlierCount })}
+                  </Text>
+                </PressScale>
+              ) : null}
+              {shownGroups.length === 0 ? (
+                <Text style={styles.earlierEmpty}>{t('cal_nothing_ahead')}</Text>
+              ) : null}
+              {/* A card per event, in the colour of the person it is for, their
+                  face on it. Several days get a heading each — Today, Tomorrow,
+                  then the date — so a week reads as a week. One picked day has
+                  its name over the list already. */}
+              {shownGroups.map((group) => (
+                <View key={group.day} style={styles.dayGroup} testID={`calendar-day-group-${group.day}`}>
+                  {weekAhead || !selectedDay ? (
+                    <Text style={styles.dayGroupTitle}>{dayHeading(group.day)}</Text>
+                  ) : null}
+                  {group.items.map((card) => {
+                    const who = (card.assignee || '').trim();
+                    const member = who ? people.find((m) => isTheirs(card, m)) || members.find((m) => isTheirs(card, m)) || null : null;
+                    const tone = who ? personTone(who, members) : null;
+                    const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
+                    const { time, ampm } = timeParts(card.due_date, card.time_set);
+                    const when = time ? `${time} ${ampm}` : '';
+                    // Who, when, and only then what else there is to say.
+                    const sub = [who, when, cleanText(card.description) || (isGoogle ? t('cal_google_calendar') : '')]
+                      .filter(Boolean).join(' · ');
+                    const glyph = glyphFor(card.icon);
+                    return (
+                      <PressScale
+                        key={card.card_id}
+                        testID={`calendar-card-${card.card_id}`}
+                        onPress={() => setSelectedCard(card)}
+                        style={[styles.eventCard, tone ? { backgroundColor: ui[tone.bg] } : styles.eventCardPlain]}
+                      >
+                        {/* The person's face when the event is somebody's;
+                            the event's own picture rides on its corner. An
+                            event nobody is named on shows its picture alone. */}
+                        <View style={styles.eventFace}>
+                          {who ? (
+                            <PersonAvatar name={member?.name || who} avatar={member?.avatar} size={42} ring={false} />
+                          ) : (
+                            <View
+                              testID={glyph ? `calendar-icon-${card.card_id}` : undefined}
+                              accessibilityElementsHidden
+                              importantForAccessibility="no-hide-descendants"
+                              style={styles.eventIcon}
+                            >
+                              {glyph ? <Text style={styles.eventIconGlyph}>{glyph}</Text> : <CalendarDays color={ui.muted} size={20} />}
+                            </View>
+                          )}
+                          {glyph && who ? (
+                            <View
+                              testID={`calendar-icon-${card.card_id}`}
+                              accessibilityElementsHidden
+                              importantForAccessibility="no-hide-descendants"
+                              style={styles.eventBadge}
+                            >
+                              <Text style={styles.eventBadgeGlyph}>{glyph}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            {card.source === 'CALENDAR' ? <CalendarDays color={ui.muted} size={12} /> : null}
+                            <Text style={[styles.eventTitle, { flexShrink: 1 }]} numberOfLines={2}>{cleanText(card.title)}</Text>
+                          </View>
+                          {card.type === 'BIRTHDAY' && giftPotByCard[card.card_id] ? (
+                            <View style={styles.potChip}>
+                              <Gift color={ui.orangeText} size={11} />
+                              <Text style={styles.potChipText}>
+                                {t('gp_chip', {
+                                  total: String(giftPotByCard[card.card_id].total_pledged),
+                                  target: String(Math.round(giftPotByCard[card.card_id].target_total
+                                    ?? giftPotByCard[card.card_id].per_head * Math.max(giftPotByCard[card.card_id].contributor_count, 2))),
+                                })}
+                              </Text>
+                            </View>
+                          ) : sub ? (
+                            <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
+                          ) : null}
+                        </View>
+                      </PressScale>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          )}
+
           {/* Connection banner (tap to sync — keeps the sync card visible & functional) */}
           <PressScale testID="calendar-sync-card-button" onPress={() => { setMorningNotice(false); openImportPicker(); }} disabled={syncDisabled} style={[styles.bannerGap, syncDisabled && { opacity: 0.55 }]}>
             <KitCard style={styles.banner}>
@@ -1192,7 +1551,7 @@ export default function Calendar() {
             </KitCard>
           </PressScale>
 
-          {/* Agenda panel, above the calendar it describes. "My agenda" is your
+          {/* Agenda panel, under the month it describes. "My agenda" is your
               own events; "Shared agenda" is the whole shared pool — items you
               shared (with an inline way to pull each back private) and items a
               co-parent shared with you (read-only, tagged "shared by …"). Both
@@ -1223,7 +1582,7 @@ export default function Calendar() {
               const sharedEvents = ahead.filter((c) => c.shared || c.shared_by_name);
               const items = agendaTab === 'mine' ? myEvents : sharedEvents;
               const privateCount = shareCounts?.private ?? 0;
-              // Sits above the month grid, so cap the preview and offer the rest.
+              // A preview, with the rest a tap away.
               const shown = shareExpanded ? items : items.slice(0, 2);
               const hidden = items.length - shown.length;
               return (
@@ -1330,240 +1689,6 @@ export default function Calendar() {
               );
             })()}
           </KitCard>
-
-          {/* Month / Week */}
-          <KitCard style={styles.calCard}>
-            <View style={styles.monthHeader}>
-              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={t('a11y_prev_month')} onPress={() => (viewMode === 'week' ? shiftWeek(-1) : shiftMonth(-1))} style={styles.monthNav}>
-                <ChevronLeft color={ui.text} size={20} />
-              </PressScale>
-              <Text style={styles.monthTitle}>{monthTitle}</Text>
-              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={t('a11y_next_month')} onPress={() => (viewMode === 'week' ? shiftWeek(1) : shiftMonth(1))} style={styles.monthNav}>
-                <ChevronRight color={ui.text} size={20} />
-              </PressScale>
-            </View>
-
-            <View style={styles.viewToggle}>
-              <PressScale testID="cal-view-month" onPress={() => setViewMode('month')} style={[styles.viewToggleBtn, viewMode === 'month' && styles.viewToggleOn]}>
-                <Text style={[styles.viewToggleText, viewMode === 'month' && styles.viewToggleTextOn]}>{t('cal_view_month')}</Text>
-              </PressScale>
-              <PressScale testID="cal-view-week" onPress={() => setViewMode('week')} style={[styles.viewToggleBtn, viewMode === 'week' && styles.viewToggleOn]}>
-                <Text style={[styles.viewToggleText, viewMode === 'week' && styles.viewToggleTextOn]}>{t('cal_view_week')}</Text>
-              </PressScale>
-            </View>
-
-            {/* Alternating-custody legend. When on, the two swatches name what the
-                mint/lavender week tints mean; when off, a parent gets a quiet way
-                in to set it up. Hidden entirely for helpers and non-custody kids. */}
-            {custodyOn ? (
-              <View style={styles.custodyLegend}>
-                <View style={styles.custodyLegendItem}>
-                  <View style={[styles.custodySwatch, { backgroundColor: ui.mint }]} />
-                  <Text style={styles.custodyLegendText} numberOfLines={1}>{t('custody_legend_ours')}</Text>
-                </View>
-                <View style={styles.custodyLegendItem}>
-                  <View style={[styles.custodySwatch, { backgroundColor: ui.lavender }]} />
-                  <Text style={styles.custodyLegendText} numberOfLines={1}>{custody?.away_label?.trim() || t('custody_legend_theirs')}</Text>
-                </View>
-                {isParent ? (
-                  <PressScale testID="custody-edit" accessibilityRole="button" accessibilityLabel={t('custody_title')} onPress={openCustody} style={styles.custodyEditBtn} hitSlop={8}>
-                    <Pencil color={ui.muted} size={16} />
-                  </PressScale>
-                ) : null}
-              </View>
-            ) : isParent && !kidsHidden ? (
-              <PressScale testID="custody-setup" accessibilityRole="button" onPress={openCustody} style={styles.custodySetupBtn}>
-                <Users color={ui.lavenderText} size={16} />
-                <Text style={styles.custodySetupText}>{t('custody_setup')}</Text>
-              </PressScale>
-            ) : null}
-
-            {viewMode === 'month' ? (
-              <>
-                <View style={[styles.weekHeader, { width: gridWidth }]}>
-                  <View style={{ width: WEEK_GUTTER }} />
-                  {['day_monday', 'day_tuesday', 'day_wednesday', 'day_thursday', 'day_friday', 'day_saturday', 'day_sunday'].map((k) => t(k).charAt(0).toUpperCase()).map((day, index) => (
-                    <Text key={`${day}-${index}`} style={[styles.weekLabel, { width: daySize }]}>{day}</Text>
-                  ))}
-                </View>
-
-                <View style={{ width: gridWidth, alignSelf: 'center' }}>
-                  {monthRows.map((row) => (
-                    <View key={row.key} style={styles.monthRow}>
-                      {/* S27, S28 — the number, not a decoration. Reading
-                          "semaines impaires" off a judgment and finding the
-                          same number here is the whole point. */}
-                      <View style={[styles.weekNumCell, { width: WEEK_GUTTER }]}>
-                        <Text style={styles.weekNumText}>S{row.week}</Text>
-                      </View>
-                      {row.days.map(({ date, inMonth }) => {
-                    const key = dateKey(date);
-                    const count = countsByDay[key] || 0;
-                    const isToday = key === dateKey(new Date());
-                    const selected = selectedDay === key;
-                    const custTint = custodyOn ? (custodyIsOurs(date, custody!.our_weeks) ? ui.mint : ui.lavender) : null;
-                    return (
-                      <PressScale
-                        key={key}
-                        testID={`calendar-day-${key}`}
-                        onPress={() => onSelectDay(key, date)}
-                        style={[styles.dayCell, { width: daySize, height: daySize + 8 }, custTint && inMonth && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
-                      >
-                        <Text
-                          style={[
-                            styles.dayNumber,
-                            { color: selected ? '#FFFFFF' : !inMonth ? ui.muted : isToday ? ui.orangeText : ui.text },
-                          ]}
-                        >
-                          {date.getDate()}
-                        </Text>
-                        {count > 0 ? (
-                          <View style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : ui.orange }]} />
-                        ) : (
-                          <View style={styles.dayDotSpacer} />
-                        )}
-                      </PressScale>
-                    );
-                      })}
-                    </View>
-                  ))}
-                </View>
-              </>
-            ) : (
-              <View style={[styles.weekStrip, { width: gridWidth }]}>
-                <View style={[styles.weekNumCell, { width: WEEK_GUTTER }]}>
-                  <Text style={styles.weekNumText}>S{isoWeek(weekDays[0]).week}</Text>
-                </View>
-                {weekDays.map((date) => {
-                  const key = dateKey(date);
-                  const count = countsByDay[key] || 0;
-                  const isToday = key === dateKey(new Date());
-                  const selected = selectedDay === key;
-                  const custTint = custodyOn ? (custodyIsOurs(date, custody!.our_weeks) ? ui.mint : ui.lavender) : null;
-                  return (
-                    <PressScale
-                      key={key}
-                      testID={`calendar-day-${key}`}
-                      onPress={() => onSelectDay(key, date)}
-                      style={[styles.weekDayCell, { width: daySize + 2 }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
-                    >
-                      <Text style={[styles.weekDayLabel, { color: selected ? '#FFFFFF' : ui.muted }]}>
-                        {date.toLocaleDateString(locale, { weekday: 'short' }).charAt(0).toUpperCase()}
-                      </Text>
-                      <Text style={[styles.dayNumber, { color: selected ? '#FFFFFF' : isToday ? ui.orangeText : ui.text }]}>
-                        {date.getDate()}
-                      </Text>
-                      {count > 0 ? (
-                        <View style={[styles.dayDot, { backgroundColor: selected ? '#FFFFFF' : ui.orange }]} />
-                      ) : (
-                        <View style={styles.dayDotSpacer} />
-                      )}
-                    </PressScale>
-                  );
-                })}
-              </View>
-            )}
-          </KitCard>
-
-          {/* Day events */}
-          <View style={styles.dayHead}>
-            <Text style={[styles.dayHeadTitle, { flex: 1 }]} numberOfLines={2}>{selectedDay ? formatDayFull(selectedDay) : t('upcoming')}</Text>
-            <View style={styles.dayHeadRight}>
-              {selectedDay && totalSelectedEvents > 0 ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} {totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}</Text> : null}
-              <PressScale testID="calendar-add-event" onPress={openAddEvent} style={styles.addEventBtn}>
-                <Plus color={ui.orangeText} size={15} />
-                <Text style={styles.addEventText}>{t('cal_add_event')}</Text>
-              </PressScale>
-            </View>
-          </View>
-
-          {loading ? (
-            <ActivityIndicator color={ui.orange} style={{ marginTop: 30 }} />
-          ) : shownGroups.length === 0 && earlierCount === 0 ? (
-            <KitCard style={styles.empty}>
-              <View style={styles.emptyIcon}>
-                <CalendarDays color={ui.muted} size={26} />
-              </View>
-              <Text style={styles.emptyText}>{selectedDay ? t('cal_no_events_date') : t('no_events')}</Text>
-              <Text style={styles.emptyHint}>{t('cal_empty_hint')}</Text>
-              <PressScale
-                testID="calendar-empty-sync"
-                onPress={openImportPicker}
-                disabled={syncDisabled}
-                style={[styles.emptySyncBtn, syncDisabled && { opacity: 0.55 }]}
-              >
-                <RefreshCw color={ui.orange} size={15} />
-                <Text style={styles.emptySyncText}>{syncing ? t('cal_syncing') : t('cal_import')}</Text>
-              </PressScale>
-            </KitCard>
-          ) : (
-            <KitCard style={styles.timelineCard}>
-              {/* The way back to what has already been. Counted, so nobody has
-                  to wonder whether anything is behind it. */}
-              {earlierCount > 0 ? (
-                <PressScale
-                  testID="calendar-earlier-toggle"
-                  onPress={() => setShowEarlier((v) => !v)}
-                  style={styles.earlierRow}
-                >
-                  <Text style={styles.earlierText}>
-                    {showEarlier
-                      ? t('cal_hide_earlier')
-                      : t('cal_show_earlier', { n: earlierCount })}
-                  </Text>
-                </PressScale>
-              ) : null}
-              {shownGroups.length === 0 ? (
-                <Text style={styles.earlierEmpty}>{t('cal_nothing_ahead')}</Text>
-              ) : null}
-              {shownGroups.flatMap((group) => group.items).map((card, index, arr) => {
-                const color = TYPE_COLOR[card.type] || ui.mintText;
-                const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
-                const { time, ampm } = timeParts(card.due_date, card.time_set);
-                const sub = cleanText(card.description) || cleanText(card.assignee) || (isGoogle ? t('cal_google_calendar') : t('cal_family'));
-                const glyph = glyphFor(card.icon);
-                return (
-                  <PressScale key={card.card_id} testID={`calendar-card-${card.card_id}`} onPress={() => setSelectedCard(card)} style={[styles.eventRow, index < arr.length - 1 && styles.eventRowBorder]}>
-                    <View style={styles.timeBlock}>
-                      <Text style={styles.timeText}>{time}</Text>
-                      <Text style={styles.ampmText}>{ampm}</Text>
-                    </View>
-                    <View style={[styles.eventBar, { backgroundColor: color }]} />
-                    {glyph ? (
-                      <View
-                        testID={`calendar-icon-${card.card_id}`}
-                        accessibilityElementsHidden
-                        importantForAccessibility="no-hide-descendants"
-                        style={styles.eventIcon}
-                      >
-                        <Text style={styles.eventIconGlyph}>{glyph}</Text>
-                      </View>
-                    ) : null}
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        {card.source === 'CALENDAR' ? <CalendarDays color={ui.muted} size={12} /> : null}
-                        <Text style={[styles.eventTitle, { flexShrink: 1 }]} numberOfLines={1}>{cleanText(card.title)}</Text>
-                      </View>
-                      {card.type === 'BIRTHDAY' && giftPotByCard[card.card_id] ? (
-                        <View style={styles.potChip}>
-                          <Gift color={ui.orangeText} size={11} />
-                          <Text style={styles.potChipText}>
-                            {t('gp_chip', {
-                              total: String(giftPotByCard[card.card_id].total_pledged),
-                              target: String(Math.round(giftPotByCard[card.card_id].target_total
-                                ?? giftPotByCard[card.card_id].per_head * Math.max(giftPotByCard[card.card_id].contributor_count, 2))),
-                            })}
-                          </Text>
-                        </View>
-                      ) : (
-                        <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
-                      )}
-                    </View>
-                  </PressScale>
-                );
-              })}
-            </KitCard>
-          )}
 
           {/* Carpool Coordinator */}
           {!carpoolLocked && !kidsHidden ? <View style={{ marginTop: 18 }}><PremiumPreviewBanner /></View> : null}
@@ -2137,8 +2262,21 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   addEventBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 9999, paddingHorizontal: 11, paddingVertical: 6 },
   addEventText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
   dayNumber: { fontFamily: 'Figtree_700Bold', fontSize: 15.5, includeFontPadding: false, textAlign: 'center' },
-  dayDot: { marginTop: 5, width: 5, height: 5, borderRadius: 99 },
-  dayDotSpacer: { marginTop: 5, width: 5, height: 5 },
+  // A fixed-height row, so a day with nothing on it stands as tall as one
+  // with three people's dots.
+  dayDots: { flexDirection: 'row', gap: 3, height: 5, marginTop: 5 },
+  dayDot: { width: 5, height: 5, borderRadius: 99 },
+
+  // The row of faces above the month.
+  peopleRow: { marginTop: 16, marginHorizontal: -20 },
+  peopleRowInner: { paddingHorizontal: 20, gap: 8 },
+  chip: { height: 38, paddingHorizontal: 14, borderRadius: 19, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
+  chipFace: { paddingLeft: 5 },
+  // The chosen one is ink on the page's own colour: readable in both themes
+  // without a third colour to keep in step.
+  chipOn: { backgroundColor: ui.text, borderColor: ui.text },
+  chipText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14 },
+  chipTextOn: { color: ui.bg },
 
   // flex-start, not baseline: a day name that wraps to two lines would drag
   // "Add event" down to sit beside the second line.
@@ -2153,30 +2291,35 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   emptySyncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 99, borderWidth: 1, borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft },
   emptySyncText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
 
-  timelineCard: { paddingHorizontal: 16 },
+  timeline: { gap: 8 },
   earlierRow: {
-    alignItems: 'center', paddingVertical: 11,
-    borderBottomWidth: 1, borderBottomColor: ui.line,
+    alignItems: 'center', paddingVertical: 11, borderRadius: 14,
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
   },
   earlierText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, color: ui.muted },
   earlierEmpty: {
     fontFamily: 'Figtree_500Medium', fontSize: 13, color: ui.muted,
     paddingVertical: 18, textAlign: 'center',
   },
-  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
-  eventRowBorder: { borderBottomWidth: 1, borderBottomColor: ui.line },
-  timeBlock: { width: 50, alignItems: 'flex-start' },
-  timeText: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15, lineHeight: 18 },
-  ampmText: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 11 },
-  eventBar: { width: 4, alignSelf: 'stretch', borderRadius: 99, minHeight: 34 },
-  // Time, colour, picture, words: a day scans left to right.
+  dayGroup: { gap: 8 },
+  dayGroupTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17, letterSpacing: -0.2, marginTop: 8, marginBottom: 2 },
+  // Face, words: a card in the person's colour, the way the mockup drew it.
+  eventCard: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 20 },
+  eventCardPlain: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
+  eventFace: { width: 42, height: 42 },
   eventIcon: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
+    width: 42, height: 42, borderRadius: 21, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
     alignItems: 'center', justifyContent: 'center',
   },
   eventIconGlyph: { fontSize: 22, lineHeight: 27, textAlign: 'center' },
+  // The event's own picture, on the corner of the face it belongs to.
+  eventBadge: {
+    position: 'absolute', right: -6, bottom: -4, width: 22, height: 22, borderRadius: 11,
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center',
+  },
+  eventBadgeGlyph: { fontSize: 12, lineHeight: 15, textAlign: 'center' },
   eventTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15, lineHeight: 20 },
-  eventSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 2 },
+  eventSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13, marginTop: 2 },
   potChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 },
   potChipText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 11 },
 

@@ -63,14 +63,18 @@ describe('where the icon shows', () => {
     expect(card).toMatch(/\{glyph \? \(/);
   });
 
-  it('sits between the colour bar and the title in the calendar day list', () => {
+  it('rides on the corner of the face in the calendar day list, before the title', () => {
+    // The calendar's cards open on the person (their face, their colour),
+    // and the event's own picture sits on that face's corner. An event
+    // nobody is named on shows the picture in the face's place instead.
     const calendar = app('(tabs)', 'calendar.tsx');
     expect(calendar).toContain('testID={`calendar-icon-${card.card_id}`}');
-    const bar = calendar.indexOf('styles.eventBar, { backgroundColor: color }');
-    const icon = calendar.indexOf('calendar-icon-');
+    expect(calendar).toContain('testID={glyph ? `calendar-icon-${card.card_id}` : undefined}');
+    const face = calendar.indexOf('<PersonAvatar name={member?.name || who}');
+    const icon = calendar.indexOf('testID={`calendar-icon-${card.card_id}`}');
     const title = calendar.indexOf('styles.eventTitle, { flexShrink: 1 }');
-    expect(bar).toBeGreaterThan(0);
-    expect(icon).toBeGreaterThan(bar);
+    expect(face).toBeGreaterThan(0);
+    expect(icon).toBeGreaterThan(face);
     expect(title).toBeGreaterThan(icon);
   });
 
