@@ -118,9 +118,42 @@ describe('the page', () => {
   });
 });
 
+describe("today's jobs", () => {
+  const api = read('src', 'api.ts');
+
+  it('are read for this device\'s today', () => {
+    expect(api).toMatch(/memberJobs: \(member_id: string\) =>/);
+    expect(api).toContain("`/family/members/${member_id}/jobs?timezone=${encodeURIComponent(deviceTimeZone() || '')}`");
+  });
+
+  it('are on the page, and absent rather than "0 of 0" when the read failed', () => {
+    expect(page).toContain('api.memberJobs(id).then(setJobs).catch(() => setJobs(null));');
+    expect(page).toContain('jobs={jobs?.jobs ?? []}');
+    expect(top).toContain('{jobs.length > 0 ? (');
+  });
+
+  it('a tick pays through the wheel, then re-reads everything', () => {
+    const fn = page.slice(page.indexOf('const doJob = useCallback'), page.indexOf('// The picture is one PATCH away'));
+    expect(fn).toContain('if (busy || job.done) return;');
+    expect(fn).toContain('await api.completeChore(job.chore_id);');
+    expect(fn.indexOf('completeChore')).toBeLessThan(fn.indexOf('await loadMember()'));
+  });
+
+  it('a tick drops the cached roster, so the star count re-reads', () => {
+    const fn = api.slice(api.indexOf('completeChore: (id: string) => {'), api.indexOf('deleteChore:'));
+    expect(fn).toContain("cache.invalidate('familyMembers');");
+  });
+
+  it('a done tile cannot be ticked twice', () => {
+    expect(top).toContain('disabled={j.done || busy}');
+    expect(top).toContain('accessibilityState={{ checked: j.done, disabled: j.done || busy }}');
+  });
+});
+
 describe('every new string exists in all four languages', () => {
   const keys = ['hub_edit_jobs', 'hub_saving_for', 'hub_this_week', 'hub_stars_to_go', 'hub_week_done',
-    'hub_earned_ready', 'hub_use_it', 'hub_say_well_done', 'hub_well_done'];
+    'hub_earned_ready', 'hub_use_it', 'hub_say_well_done', 'hub_well_done',
+    'hub_todays_jobs', 'hub_jobs_done', 'hub_job_done', 'hub_star_to_go'];
 
   it.each(keys)('%s', (key) => {
     for (const lang of LANGS) {
@@ -132,5 +165,18 @@ describe('every new string exists in all four languages', () => {
 
   it('says how many stars are left, in each language', () => {
     for (const lang of LANGS) expect(translate(lang, 'hub_stars_to_go', { n: 6 })).toContain('6');
+  });
+
+  it('says "1 more star", not "1 more stars"', () => {
+    expect(top).toContain("left === 1 ? t('hub_star_to_go')");
+    expect(translate('en', 'hub_star_to_go')).toBe('Only 1 more star to go');
+  });
+
+  it('counts the jobs done, in each language', () => {
+    for (const lang of LANGS) {
+      const text = translate(lang, 'hub_jobs_done', { done: 1, total: 3 });
+      expect(text).toContain('1');
+      expect(text).toContain('3');
+    }
   });
 });
