@@ -114,10 +114,21 @@ def oldest_unpublished_app_commit(repo: str, tag_sha: str,
 
     Not the oldest commit on main either: a backend-only afternoon publishes
     nothing and must not start a clock.
+
+    And not the date the change was WRITTEN: the date it LANDED on main. The
+    schedule owes an update to work that is on main, and a commit made on a
+    branch keeps its own stamp when the branch is merged. On 2026-10-28 a
+    Dependabot commit from the 26th was merged at 04:00; read from the commit,
+    it had "waited 46 hours" and missed a window that closed before it was
+    even on main — a false alarm, at 05:50, about a pipeline that had not yet
+    had its first chance. --first-parent walks main's own line, so a merge
+    commit is read in place of the branch it brought in, and its stamp is the
+    merge. Direct commits (the web rebuild, a push to main) are their own
+    first parent and read as before.
     """
     # --reverse and -1 do not combine dependably (the limit is applied before
     # the reversal), so take the whole list and read the far end.
-    stamps = _git(repo, "log", "--format=%cI",
+    stamps = _git(repo, "log", "--first-parent", "--format=%cI",
                   f"{tag_sha}..{head_sha}", "--", *OTA_PATHS)
     if not stamps:
         return None
