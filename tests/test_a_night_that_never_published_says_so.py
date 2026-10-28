@@ -324,6 +324,61 @@ class AgainstARealRepository(unittest.TestCase):
     def test_a_repository_git_cannot_read_returns_nothing_rather_than_guessing(self):
         self.assertIsNone(stall.oldest_unpublished_app_commit(self.dir, "nope", "alsonope"))
 
+    def merge(self, branch, when):
+        env = dict(os.environ, GIT_COMMITTER_DATE=when, GIT_AUTHOR_DATE=when)
+        subprocess.run(("git", "merge", "-q", "--no-ff", "-m", f"Merge {branch}", branch),
+                       cwd=self.dir, check=True, capture_output=True, text=True, env=env)
+
+    def test_a_merged_branch_waits_from_the_merge_not_from_its_commit(self):
+        """The 2026-10-28 false alarm. Dependabot wrote its commit on the 26th
+        at 08:12; it was merged on the 28th at 04:00. Read from the commit it
+        had waited 46 hours and missed the window of the 27th — a window
+        that closed before the work was on main at all. The schedule owes an
+        update to what is ON main, from when it got there."""
+        base = self.commit("frontend/app.tsx", "shipped", "2026-10-26T08:00:00+00:00")
+        self.git("git", "checkout", "-q", "-b", "bump")
+        self.commit("frontend/package.json", "Bump lucide-react-native",
+                    "2026-10-26T08:12:08+00:00")
+        self.git("git", "checkout", "-q", "main")
+        self.merge("bump", "2026-10-28T04:00:10+00:00")
+        when = stall.oldest_unpublished_app_commit(self.dir, base, self.head())
+        self.assertEqual(when, datetime(2026, 10, 28, 4, 0, 10, tzinfo=timezone.utc))
+
+    def test_and_so_the_guard_at_05_50_that_morning_stays_quiet(self):
+        # The run that actually alarmed: 05:50 UTC, the merge's own window
+        # still open. It speaks at 10:01 if that window has also gone by.
+        base = self.commit("frontend/app.tsx", "shipped", "2026-10-26T08:00:00+00:00")
+        self.git("git", "checkout", "-q", "-b", "bump")
+        self.commit("frontend/package.json", "Bump", "2026-10-26T08:12:08+00:00")
+        self.git("git", "checkout", "-q", "main")
+        self.merge("bump", "2026-10-28T04:00:10+00:00")
+        when = stall.oldest_unpublished_app_commit(self.dir, base, self.head())
+        self.assertEqual(stall.verdict(base, self.head(), when,
+                                       at("2026-10-28T05:50:00+00:00"))["action"], "none")
+        self.assertEqual(stall.verdict(base, self.head(), when,
+                                       at("2026-10-29T10:01:00+00:00"))["action"], "alarm")
+
+    def test_a_merged_backend_branch_starts_no_clock_either(self):
+        # --first-parent must still ask what the merge brought in, not merely
+        # that it is a merge.
+        base = self.commit("frontend/app.tsx", "shipped", "2026-10-26T08:00:00+00:00")
+        self.git("git", "checkout", "-q", "-b", "server")
+        self.commit("backend/server.py", "server only", "2026-10-26T09:00:00+00:00")
+        self.git("git", "checkout", "-q", "main")
+        self.merge("server", "2026-10-28T04:00:10+00:00")
+        self.assertIsNone(stall.oldest_unpublished_app_commit(self.dir, base, self.head()))
+
+    def test_the_oldest_of_several_merges_is_read_from_its_merge(self):
+        base = self.commit("frontend/app.tsx", "shipped", "2026-10-20T08:00:00+00:00")
+        for name, written, merged in (("one", "2026-10-19T08:00:00+00:00", "2026-10-22T10:00:00+00:00"),
+                                      ("two", "2026-10-18T08:00:00+00:00", "2026-10-24T10:00:00+00:00")):
+            self.git("git", "checkout", "-q", "-b", name)
+            self.commit(f"frontend/{name}.tsx", name, written)
+            self.git("git", "checkout", "-q", "main")
+            self.merge(name, merged)
+        when = stall.oldest_unpublished_app_commit(self.dir, base, self.head())
+        self.assertEqual(when, datetime(2026, 10, 22, 10, 0, tzinfo=timezone.utc))
+
 
 if __name__ == "__main__":
     unittest.main()
