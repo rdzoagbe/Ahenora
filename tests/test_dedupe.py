@@ -70,7 +70,11 @@ class DedupeTests(unittest.TestCase):
         return DB(
             users=[
                 {"user_id": "u_pw", "email": "wife@x.com", "password_hash": "h", "family_id": "fam_A"},
-                {"user_id": "u_g", "email": "WIFE@x.com", "google_sub": "g1", "family_id": "fam_B"},
+                # email_verified: Google vouched for the address. Without that
+                # stamp the identity is never copied onto the keeper (see
+                # test_a_duplicate_cannot_borrow_a_sign_in.py).
+                {"user_id": "u_g", "email": "WIFE@x.com", "google_sub": "g1", "family_id": "fam_B",
+                 "email_verified": True},
             ],
             family_members=[
                 {"family_id": "fam_A", "user_id": "u_pw", "role": "parent"},

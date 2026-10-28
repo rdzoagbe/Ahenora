@@ -104,7 +104,9 @@ async def run(db, apply=False, log=print):
     for email in sorted(dup_groups):
         rows = sorted(dup_groups[email], key=_keeper_sort_key)
         keeper, dups = rows[0], rows[1:]
-        log(f"{email}: {len(rows)} rows — keep {keeper['user_id']} "
+        # !r: the address is whatever somebody typed at sign-up, and this line
+        # reaches an operator's terminal through the CLI.
+        log(f"{email!r}: {len(rows)} rows — keep {keeper['user_id']} "
             f"(password={bool(keeper.get('password_hash'))}, family={keeper.get('family_id')})")
         for d in dups:
             same_family = d.get("family_id") == keeper.get("family_id")
@@ -136,12 +138,27 @@ async def run(db, apply=False, log=print):
                 continue
 
             if gs and not keeper.get("google_sub"):
-                log(f"  - link google_sub {gs} -> keeper {keeper['user_id']}")
-                summary["linked"] += 1
-                if apply:
-                    await db["users"].update_one(
-                        {"user_id": keeper["user_id"]}, {"$set": {"google_sub": gs}})
-                keeper["google_sub"] = gs
+                # Only when Google vouched for the duplicate's address. The
+                # sign-in handler refuses to link an UNVERIFIED Google email
+                # into an existing account, because a token bearing someone
+                # else's address could otherwise graft its identity onto their
+                # account and take it over; it mints a separate row instead,
+                # stamped email_verified=False. Copying that row's google_sub
+                # here would finish the attack the handler stopped. A row with
+                # no stamp at all predates it and is not vouched for either.
+                if d.get("email_verified") is not True:
+                    log(f"  - MANUAL REVIEW: duplicate {d['user_id']} carries a Google "
+                        f"identity whose email Google did not vouch for — not linked. "
+                        f"(If this is really the same person, have them sign in with "
+                        f"Google once more: a verified address links on its own.)")
+                    summary["manual"] += 1
+                else:
+                    log(f"  - link google_sub {gs} -> keeper {keeper['user_id']}")
+                    summary["linked"] += 1
+                    if apply:
+                        await db["users"].update_one(
+                            {"user_id": keeper["user_id"]}, {"$set": {"google_sub": gs}})
+                    keeper["google_sub"] = gs
 
             if removable:
                 log(f"  - remove duplicate {d['user_id']}"

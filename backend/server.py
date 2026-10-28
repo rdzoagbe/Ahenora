@@ -696,7 +696,11 @@ def sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-PASSWORD_ITERATIONS = 200_000
+# OWASP's 2023 figure for PBKDF2-HMAC-SHA256 (it was 200,000). The stored
+# string carries its own round count, so every older hash keeps verifying at
+# the rounds it was made with; only new and changed passwords pay the higher
+# price, about a third of a second on the server, once per sign-in.
+PASSWORD_ITERATIONS = 600_000
 
 
 def hash_password(password: str) -> str:
@@ -6818,6 +6822,12 @@ async def exchange_session(payload: SessionIn):
             "user_id": new_id("user"),
             "google_sub": google_sub,
             "email": email,
+            # Whether Google vouched for the address, kept on the row: the
+            # duplicate-account cleanup reads it before it will ever copy this
+            # row's google_sub onto another account with the same address. A
+            # row minted from an unverified email is a fresh account of its
+            # own; it is never evidence that its holder owns the inbox.
+            "email_verified": email_verified,
             "name": name,
             "picture": picture,
             "family_id": family_id,
@@ -7247,7 +7257,12 @@ async def register_email(payload: EmailRegisterIn):
     if len(password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
-    existing = await database["users"].find_one({"email": email}, {"_id": 0})
+    # Case-insensitively, the way login looks the address up: a legacy row
+    # stored with different casing must block a second sign-up for the same
+    # inbox, or the two rows later meet in the duplicate-account cleanup with
+    # the newer, password-carrying one chosen as the keeper.
+    existing = await database["users"].find_one(
+        {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0})
     if existing:
         raise HTTPException(
             status_code=409,
