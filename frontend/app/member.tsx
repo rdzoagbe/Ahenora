@@ -10,7 +10,9 @@ import { PersonAvatar, AvatarPicker } from '../src/components/PersonAvatar';
 import { PinPadModal } from '../src/components/PinPadModal';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
-import { api, FamilyMember, Medicine, MemberRecord, StarTransaction, Vaccination } from '../src/api';
+import { api, FamilyMember, Medicine, MemberRecord, Redemption, Reward, StarTransaction, Vaccination } from '../src/api';
+import { KidPageTop } from '../src/components/KidPageTop';
+import { personTone } from '../src/homeFamily';
 import { localeFor } from '../src/utils/date';
 import { dueState } from '../src/vaccinations';
 import { logger } from '../src/logger';
@@ -160,7 +162,14 @@ export default function MemberProfile() {
   const showsStars = kind === 'teen' || kind === 'kid';
 
   const [member, setMember] = useState<FamilyMember | null>(null);
+  // The whole household too: a child's colour is their place among the
+  // faces on Home, so it has to be worked out from the same list.
+  const [members, setMembers] = useState<FamilyMember[]>([]);
   const [history, setHistory] = useState<StarTransaction[]>([]);
+  // A child's page also shows what they are saving for and what they are
+  // owed — the rewards list and their pending redemptions.
+  const [rewards, setRewards] = useState<Reward[]>([]);
+  const [owed, setOwed] = useState<Redemption[]>([]);
   const [busy, setBusy] = useState(false);
   // Rename happens in place: a whole screen for one text field is the kind of
   // detour this redesign exists to remove.
@@ -178,23 +187,30 @@ export default function MemberProfile() {
   const loadMember = useCallback(async () => {
     if (!id) return;
     try {
-      const members = await api.familyMembers();
-      setMember(members.find((m) => m.member_id === id) || null);
+      const all = await api.familyMembers();
+      setMembers(all);
+      setMember(all.find((m) => m.member_id === id) || null);
       if (!showsStars) return;
       const h = await api.memberStarHistory(id).catch(() => [] as StarTransaction[]);
       setHistory(h.slice(0, 6));
+      if (kind === 'kid') {
+        // Best effort, each on its own: a rewards list that fails to load must
+        // not take the stars and the record down with it.
+        api.listRewards().then(setRewards).catch(() => setRewards([]));
+        api.listRedemptions('pending').then(setOwed).catch(() => setOwed([]));
+      }
     } catch (e) {
       logger.warn('member load failed', e);
     }
-  }, [id, showsStars]);
+  }, [id, showsStars, kind]);
 
   useEffect(() => { loadMember(); }, [loadMember]);
 
-  const giveStars = useCallback(async (delta: number) => {
+  const giveStars = useCallback(async (delta: number, reason?: string) => {
     if (!id || busy) return;
     setBusy(true);
     try {
-      await api.adjustMemberStars(id, { delta, reason: t('kids_parent_added_stars') });
+      await api.adjustMemberStars(id, { delta, reason: reason || t('kids_parent_added_stars') });
       await loadMember();
     } catch (e) {
       logger.warn('give stars failed', e);
@@ -203,6 +219,23 @@ export default function MemberProfile() {
       setBusy(false);
     }
   }, [id, busy, loadMember, t]);
+
+  // "Use it": the treat has been handed over. The server marks it fulfilled;
+  // the card goes only once it says so, so a tap that did not reach it leaves
+  // the treat still owed on screen rather than quietly forgotten.
+  const useReward = useCallback(async (r: Redemption) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.fulfilRedemption(r.redemption_id);
+      await loadMember();
+    } catch (e) {
+      logger.warn('fulfil redemption failed', e);
+      Alert.alert(t('hub_earned_ready'), apiErrorText(e, t, 'set_please_try_again'));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, loadMember, t]);
 
   // The picture is one PATCH away and there are five choices, so it saves on
   // tap rather than behind a Save button. Optimistic: the row you just tapped
@@ -545,35 +578,41 @@ export default function MemberProfile() {
   const weekEarned = member?.week_earned ?? 0;
   const weeklyTarget = member?.weekly_target ?? 0;
 
+  // A child's stars, the goal and the well-done buttons are in the page's top
+  // (KidPageTop); a teen keeps the plain card. The recent-stars list is for both.
   const renderStars = () => (
     <>
-      <View style={styles.starCard}>
-        <View style={styles.starBig}>
-          <Star color={ui.mintText} size={30} fill={ui.mintText} />
-          <Text style={styles.starBigNum}>{stars}</Text>
-        </View>
-        <Text style={styles.starLbl}>
-          {weeklyTarget > 0
-            ? t('hub_stars_week', { earned: weekEarned, target: weeklyTarget })
-            : t('hub_stars_saved')}
-        </Text>
-      </View>
+      {kind !== 'kid' ? (
+        <>
+          <View style={styles.starCard}>
+            <View style={styles.starBig}>
+              <Star color={ui.mintText} size={30} fill={ui.mintText} />
+              <Text style={styles.starBigNum}>{stars}</Text>
+            </View>
+            <Text style={styles.starLbl}>
+              {weeklyTarget > 0
+                ? t('hub_stars_week', { earned: weekEarned, target: weeklyTarget })
+                : t('hub_stars_saved')}
+            </Text>
+          </View>
 
-      <Text style={styles.sec}>{t('hub_give_stars')}</Text>
-      <View style={styles.giveRow}>
-        {[1, 3, 5].map((n) => (
-          <PressScale
-            key={n}
-            testID={`member-give-${n}`}
-            disabled={busy}
-            onPress={() => giveStars(n)}
-            style={[styles.giveBtn, busy && { opacity: 0.5 }]}
-          >
-            <Star color="#fff" size={15} fill="#fff" />
-            <Text style={styles.giveBtnText}>+{n}</Text>
-          </PressScale>
-        ))}
-      </View>
+          <Text style={styles.sec}>{t('hub_give_stars')}</Text>
+          <View style={styles.giveRow}>
+            {[1, 3, 5].map((n) => (
+              <PressScale
+                key={n}
+                testID={`member-give-${n}`}
+                disabled={busy}
+                onPress={() => giveStars(n)}
+                style={[styles.giveBtn, busy && { opacity: 0.5 }]}
+              >
+                <Star color="#fff" size={15} fill="#fff" />
+                <Text style={styles.giveBtnText}>+{n}</Text>
+              </PressScale>
+            ))}
+          </View>
+        </>
+      ) : null}
 
       {history.length > 0 ? (
         <>
@@ -594,10 +633,6 @@ export default function MemberProfile() {
             </View>
           ))}
         </>
-      ) : null}
-
-      {kind === 'kid' ? (
-        <Text style={styles.footNote}>{t('hub_kid_tools_hint')}</Text>
       ) : null}
     </>
   );
@@ -626,22 +661,45 @@ export default function MemberProfile() {
   useEffect(() => setReady(true), []);
   if (!ready) return <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']} />;
 
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/kids'));
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
-      <View style={styles.header}>
-        <PressScale testID="member-back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/kids'))} style={styles.backBtn} accessibilityLabel={t('back')}>
-          <ChevronLeft color={ui.text} size={22} />
-        </PressScale>
-        <View style={styles.headMid}>
-          <Text style={styles.headName} numberOfLines={1}>{displayName}</Text>
-          <View style={[styles.headBadge, { backgroundColor: badgeTone.bg }]}>
-            <Text style={[styles.headBadgeText, { color: badgeTone.fg }]}>{roleLabel}</Text>
+      {kind !== 'kid' ? (
+        <View style={styles.header}>
+          <PressScale testID="member-back" onPress={goBack} style={styles.backBtn} accessibilityLabel={t('back')}>
+            <ChevronLeft color={ui.text} size={22} />
+          </PressScale>
+          <View style={styles.headMid}>
+            <Text style={styles.headName} numberOfLines={1}>{displayName}</Text>
+            <View style={[styles.headBadge, { backgroundColor: badgeTone.bg }]}>
+              <Text style={[styles.headBadgeText, { color: badgeTone.fg }]}>{roleLabel}</Text>
+            </View>
           </View>
+          <View style={{ width: 36 }} />
         </View>
-        <View style={{ width: 36 }} />
-      </View>
+      ) : null}
 
-      <KeyboardAwareScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView contentContainerStyle={kind === 'kid' ? styles.bodyKid : styles.body} keyboardShouldPersistTaps="handled">
+        {/* A child's page opens on the child — their colour, their stars,
+            what they are saving for — rather than on a grey header. The
+            chores and treats themselves are edited on the Family tab. */}
+        {kind === 'kid' ? (
+          <KidPageTop
+            member={member}
+            name={displayName}
+            avatar={avatar}
+            tone={personTone(displayName, members)}
+            rewards={rewards}
+            owed={owed}
+            busy={busy}
+            onBack={goBack}
+            onEditJobs={() => router.push('/(tabs)/kids')}
+            onGive={giveStars}
+            onUseIt={useReward}
+          />
+        ) : null}
+        <View style={kind === 'kid' ? styles.bodyKidInner : null}>
         {/* The conversation is a door, not the page: it opens as its own screen,
             the same one the Hub opens, so there is a single chat surface. Not on
             your OWN profile — you cannot message yourself, and offering
@@ -1134,6 +1192,7 @@ export default function MemberProfile() {
             <Text style={[styles.actText, { color: ui.danger }]}>{t('hub_remove')}</Text>
           </PressScale>
         ) : null}
+        </View>
       </KeyboardAwareScrollView>
 
 
@@ -1181,6 +1240,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   segTextOn: { color: ui.text },
 
   body: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 40 },
+  // The child's tinted top runs edge to edge; the rest of the page keeps the
+  // usual gutter underneath it.
+  bodyKid: { paddingBottom: 40 },
+  bodyKidInner: { paddingHorizontal: 20, paddingTop: 22 },
 
   starCard: {
     alignItems: 'center', backgroundColor: ui.mint, borderRadius: 20, paddingVertical: 22,
