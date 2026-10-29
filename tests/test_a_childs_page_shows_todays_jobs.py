@@ -60,6 +60,19 @@ class AChildsJobsToday(unittest.TestCase):
             "rotate": rotate, "star_reward": stars, "icon": "bed",
             "created_at": datetime(2026, 10, 1, tzinfo=timezone.utc)}))
 
+    def earlier_today(self, hours=0, minutes=0, zone="UTC"):
+        """A moment already past that is still today in the request's zone.
+
+        "Two hours ago" is yesterday when the suite runs just after midnight,
+        which is not what these tests mean by "this morning". Clamped to the
+        start of today, which the endpoint counts as today.
+        """
+        now = server.utcnow()
+        day_start = (server._local_now(zone, now)
+                     .replace(hour=0, minute=0, second=0, microsecond=0)
+                     .astimezone(timezone.utc))
+        return max(now - timedelta(hours=hours, minutes=minutes), day_start)
+
     def log(self, chore_id, member_id, when, stars=2):
         self.go(self.db["chore_logs"].insert_one({
             "log_id": f"clog_{chore_id}_{member_id}", "chore_id": chore_id, "family_id": "fam",
@@ -81,7 +94,7 @@ class AChildsJobsToday(unittest.TestCase):
     def test_a_chore_finished_today_is_done_with_what_it_paid(self):
         self.chore("c_bed", "Make bed", "m_ama")
         self.chore("c_read", "Read 20 min", "m_ama", stars=3)
-        self.log("c_bed", "m_ama", server.utcnow() - timedelta(minutes=5))
+        self.log("c_bed", "m_ama", self.earlier_today(minutes=5))
         out = self.jobs()
         done = [j for j in out["jobs"] if j["done"]]
         self.assertEqual([j["title"] for j in done], ["Make bed"])
@@ -92,7 +105,7 @@ class AChildsJobsToday(unittest.TestCase):
         # Finished by Ama this morning; the wheel has moved it to Leo since.
         self.chore("c_bed", "Make bed", "m_leo", members=["m_ama", "m_leo"])
         self.chore("c_read", "Read 20 min", "m_ama")
-        self.log("c_bed", "m_ama", server.utcnow() - timedelta(hours=2))
+        self.log("c_bed", "m_ama", self.earlier_today(hours=2))
         out = self.jobs()
         self.assertEqual(sorted(j["title"] for j in out["jobs"]), ["Make bed", "Read 20 min"])
         self.assertEqual((out["done"], out["total"]), (1, 2))
@@ -108,7 +121,7 @@ class AChildsJobsToday(unittest.TestCase):
 
     def test_a_siblings_completion_does_not_count_for_this_child(self):
         self.chore("c_bed", "Make bed", "m_ama")
-        self.log("c_bed", "m_leo", server.utcnow() - timedelta(minutes=5))
+        self.log("c_bed", "m_leo", self.earlier_today(minutes=5))
         out = self.jobs()
         self.assertEqual((out["done"], out["total"]), (0, 1))
 
@@ -129,7 +142,7 @@ class AChildsJobsToday(unittest.TestCase):
         self.chore("c_bed", "Make bed", "m_ama")
         self.chore("c_read", "Read 20 min", "m_ama")
         self.chore("c_table", "Set table", "m_ama")
-        self.log("c_bed", "m_ama", server.utcnow() - timedelta(minutes=5))
+        self.log("c_bed", "m_ama", self.earlier_today(minutes=5))
         self.assertEqual([j["title"] for j in self.jobs()["jobs"]], ["Read 20 min", "Set table", "Make bed"])
 
     def test_another_households_child_is_not_found(self):
