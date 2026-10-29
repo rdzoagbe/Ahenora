@@ -2465,6 +2465,9 @@ export const api = {
   /** A child's jobs today: the chore wheel as it sits with them, and what is
    *  already done. "Today" is this device's today, so a job ticked at 23:30
    *  does not move to tomorrow because Greenwich has turned over. */
+  /** How the household's chore wheel is going this week: done so far, and
+   *  what the wheel asks for in a week. The Family tab's "This week" card. */
+  familyJobsWeek: () => request<{ done: number; total: number }>('/family/jobs/week'),
   memberJobs: (member_id: string) =>
     request<MemberJobsToday>(
       `/family/members/${member_id}/jobs?timezone=${encodeURIComponent(deviceTimeZone() || '')}`),

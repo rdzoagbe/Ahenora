@@ -8229,6 +8229,29 @@ async def member_jobs_today(member_id: str, timezone_name: Optional[str] = Query
     return {"jobs": jobs, "done": sum(1 for j in jobs if j["done"]), "total": len(jobs)}
 
 
+@app.get("/api/family/jobs/week")
+async def family_jobs_week(user=Depends(require_user), database=Depends(get_db)):
+    """How the household's jobs are going this week, for the Family tab.
+
+    Done is every chore-wheel completion since the week began. The week
+    begins where the weekly star meter resets (current_week_start, Monday
+    00:00 UTC), so "jobs done" and "stars earned" on the same card count the
+    same days. Total is what the wheel asks for in a week: a daily chore
+    seven times, a weekly one once. A family that does more than asked reads
+    over the total, which is true and worth seeing.
+    """
+    week_start = current_week_start()
+    done = 0
+    async for _ in database["chore_logs"].find(
+            {"family_id": user["family_id"], "completed_at": {"$gte": week_start}},
+            {"_id": 0, "log_id": 1}):
+        done += 1
+    total = 0
+    async for chore in database["chores"].find({"family_id": user["family_id"]}, {"_id": 0, "frequency": 1}):
+        total += 7 if (chore.get("frequency") or "daily") == "daily" else 1
+    return {"done": done, "total": total}
+
+
 @app.post("/api/family/members/{member_id}/stars")
 async def adjust_member_stars(member_id: str, payload: StarAdjustmentIn, user=Depends(require_full_member)):
     database = get_db()

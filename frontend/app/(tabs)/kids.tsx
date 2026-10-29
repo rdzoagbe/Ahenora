@@ -8,6 +8,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
@@ -31,6 +32,8 @@ import {
   Play,
   UserPlus,
   MessageCircle,
+  CircleCheck,
+  Coins,
 } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
@@ -53,7 +56,10 @@ import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '
 
 import { useStore } from '../../src/store';
 import { memberRoute } from '../../src/memberRoute';
-import { api, logEvent, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Reward, Routine, StarTransaction } from '../../src/api';
+import { personTone } from '../../src/homeFamily';
+import { activityPhrase } from '../../src/activityPhrase';
+import { allowanceDue, childLine, peopleCount, starsEarnedThisWeek } from '../../src/familyScreen';
+import { api, logEvent, ActivityEntry, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Reward, Routine, StarTransaction } from '../../src/api';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logger } from '../../src/logger';
@@ -179,10 +185,21 @@ const QUICK_ADD_DAY = QUICK_ADDS.reduce((sum, q) => sum + q.amount, 0);
 // Each child's initial is set in WHITE on their tint, so every entry has to be
 // dark enough to carry it — orangeDeep rather than the brand orange, which
 // reads at 3.1:1 under white.
-const CHILD_TINTS = [UI.orangeDeep, UI.lavenderText, UI.mintText, UI.goldText];
 
 function cleanNumber(value: string) {
   return value.replace(/[^0-9]/g, '');
+}
+
+/** "1 h ago" under the latest thing that happened — Home's own wording. */
+function shortWhen(iso: string, t: (key: string, params?: Record<string, string | number>) => string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return t('when_now');
+  if (mins < 60) return t('when_minutes', { n: String(mins) });
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return t('when_hours', { n: String(hours) });
+  return t('when_days', { n: String(Math.round(hours / 24)) });
 }
 
 function formatActivityDate(value: string | null | undefined, locale: string) {
@@ -210,6 +227,14 @@ export default function Kids() {
   // count and open the right thread. Best-effort: a household with no chat yet
   // just shows no badges.
   const [threads, setThreads] = useState<ChatThreadSummary[]>([]);
+  // The "This week" card and the "Latest" rows under the people. Best-effort,
+  // like the chat badges: a failure shows no card rather than a wrong one.
+  const [weekJobs, setWeekJobs] = useState<{ done: number; total: number } | null>(null);
+  const [latest, setLatest] = useState<ActivityEntry[]>([]);
+  // Two tiles across, measured rather than a percentage: a percentage of a
+  // wrapping row resolved to a sliver on the web build.
+  const { width: windowWidth } = useWindowDimensions();
+  const tileWidth = Math.floor((Math.min(windowWidth, 640) - 40 - 10) / 2);
   // Teen-finished tasks waiting for a parent to award the star.
   // Teens AND young children in kid mode: both finish a task and wait for a
   // parent to say what it was worth. One queue, one screen, one rule.
@@ -454,14 +479,16 @@ export default function Kids() {
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
-  // One row, two groups. A parent and a helper look the same here on purpose -
-  // what differs is the badge, the subtitle, and whether the server gave us a
-  // conversation with them. Rendering both from one function means the groups
-  // cannot quietly drift apart.
-  const renderPerson = useCallback((m: FamilyMember) => {
+  // One tile, every role. A parent and a helper look the same here on purpose -
+  // what differs is the line under the name, and whether the server gave us a
+  // conversation with them. A child's tile carries their age and their stars,
+  // and anything a parent still owes them. Rendering every role from one
+  // function means the groups cannot quietly drift apart.
+  const renderTile = useCallback((m: FamilyMember) => {
               const roleLc = (m.role || '').toLowerCase();
               const isParent = roleLc === 'parent' || roleLc === 'co-parent';
               const isHelper = roleLc === 'helper';
+              const isKid = roleLc === 'child' || roleLc === 'teen';
               // Invited, but never actually signed in. The server has always
               // known — has_account is false on a row with no login — and the
               // app has never shown it, so a co-parent who joined and one who
@@ -480,51 +507,56 @@ export default function Kids() {
                 ? t('hub_role_invited')
                 : isParent
                 ? (m.is_founder ? t('hub_role_owner') : t('hub_role_coparent'))
-                : isHelper ? t('hub_role_helper') : m.role;
+                : isHelper ? t('hub_role_helper') : roleLc === 'teen' ? t('hub_role_teen') : isKid ? t('hub_role_kid') : m.role;
               // Anyone the server gave us a conversation with can be messaged
-              // from the roster — a co-parent, and now a helper too.
+              // from the tile — a co-parent, and a helper too. A child's note
+              // thread opens from their own page, not from here.
               const memberThread = threads.find((x) => x.member_id === m.member_id);
-              const hasThread = Boolean(memberThread);
+              const hasThread = Boolean(memberThread) && !isKid;
               const unread = memberThread?.unread || 0;
+              // The line under the name: what it costs the household when a
+              // grown-up never joined; a child's age and stars; else who they
+              // are to the house, with "You" in front of your own.
               const sub = notJoined
                 ? t('hub_not_joined_sub')
-                : isParent
-                ? (memberThread?.last_text || t('hub_coparent_sub'))
-                : isHelper ? t('hub_helper_sub') : t('hub_member_sub');
+                : isKid
+                ? childLine(m, t)
+                : m.is_me && !m.is_founder
+                ? `${t('hub_you')} · ${badgeLabel}`
+                : badgeLabel;
+              const tone = personTone(m.name, members);
+              const owed = isKid ? owedByChild[m.member_id] || 0 : 0;
               return (
                 <PressScale
                   key={m.member_id}
-                  testID={`hub-member-${m.member_id}`}
-                  onPress={() => openMember(m)}
-                  style={styles.hubRow}
+                  testID={isKid ? `child-${m.member_id}` : `hub-member-${m.member_id}`}
+                  onPress={() => (isKid ? openChild(m) : openMember(m))}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${m.name} · ${sub}`}
+                  style={[styles.tile, { width: tileWidth, backgroundColor: ui[tone.bg] }]}
                 >
-                  {/* Fixed deep tints so the white initial always clears
-                      4.5:1. Deep orange (#CA470A) beats ui.orange's 3.11:1;
-                      a fixed slate beats ui.muted, which is a *light* slate in
-                      dark mode (#CBD5E1) where white would be unreadable. */}
-                  {avatarKind(m.avatar) ? (
-                    <View style={styles.hubAvatarIllus}>
-                      <PersonAvatar name={m.name} avatar={m.avatar} size={44} ring={false} />
-                    </View>
-                  ) : (
-                    <View style={[styles.hubAvatar, { backgroundColor: isParent ? UI.orangeDeep : '#5F656E' }]}>
-                      <Text style={styles.hubAvatarText}>{m.name[0]?.toUpperCase()}</Text>
-                    </View>
-                  )}
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <View style={styles.hubNameRow}>
-                      <Text style={styles.hubName} numberOfLines={1}>
-                        {m.name}
-                      </Text>
-                      <View style={[styles.hubBadge, { backgroundColor: notJoined ? ui.soft : isParent ? ui.orangeSoft : ui.soft }]}>
-                        <Text
-                          testID={notJoined ? `hub-not-joined-${m.member_id}` : undefined}
-                          style={[styles.hubBadgeText, { color: notJoined ? ui.muted : isParent ? ui.orangeText : ui.muted }]}
-                        >{badgeLabel}</Text>
+                  <View style={styles.tileFace}>
+                    <PersonAvatar name={m.name} avatar={m.avatar} size={54} ring={false} />
+                    {m.has_pin ? <View style={styles.lockBadge}><Lock color={ui.bg} size={8} /></View> : null}
+                    {/* Outstanding rewards live under one child's page, so
+                        without a mark here a parent with three children would
+                        never learn they still owe the one they aren't looking at. */}
+                    {owed > 0 ? (
+                      <View
+                        testID={`child-owed-${m.member_id}`}
+                        accessibilityLabel={t('kids_redemption_owed_badge', { n: owed })}
+                        style={styles.owedBadge}
+                      >
+                        <Text style={styles.owedBadgeText}>{owed}</Text>
                       </View>
-                    </View>
-                    <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text>
+                    ) : null}
                   </View>
+                  <Text style={styles.tileName} numberOfLines={1}>{m.name}</Text>
+                  <Text
+                    testID={notJoined ? `hub-not-joined-${m.member_id}` : undefined}
+                    style={[styles.tileSub, notJoined && { color: ui.orangeText }]}
+                    numberOfLines={notJoined ? 2 : 1}
+                  >{sub}</Text>
                   {hasThread ? (
                     <PressScale
                       testID={`hub-message-${m.member_id}`}
@@ -538,12 +570,18 @@ export default function Kids() {
                         <View style={styles.hubUnread}><Text style={styles.hubUnreadText}>{unread}</Text></View>
                       ) : null}
                     </PressScale>
-                  ) : (
-                    <ChevronRight color={ui.muted} size={18} />
-                  )}
+                  ) : null}
                 </PressScale>
               );
-  }, [threads, openMember, openThread, t, ui, styles]);
+  }, [threads, members, owedByChild, tileWidth, openMember, openThread, openChild, t, ui, styles]);
+
+  // Everyone as tiles, in Home's order: you, the other grown-ups, the
+  // children, the people who help. The children stay off while the household
+  // has put that side away.
+  const people = useMemo(
+    () => [...parents, ...(kidsHidden ? [] : children), ...helpers],
+    [parents, children, helpers, kidsHidden],
+  );
 
   const memberName = useCallback((memberId: string) => {
     const m = members.find((x) => x.member_id === memberId);
@@ -607,6 +645,8 @@ export default function Kids() {
       // that anything failing below still reports the roster it did load.
       loaded = { items: m.length };
       api.chatThreads().then((r) => setThreads(r.threads)).catch(() => setThreads([]));
+      api.familyJobsWeek().then(setWeekJobs).catch(() => setWeekJobs(null));
+      api.listActivity(3).then(setLatest).catch(() => setLatest([]));
 
       const currentChildStillExists = selectedChild && m.some((x) => x.member_id === selectedChild);
       const firstChild = m.find((x) => x.role?.toLowerCase() === 'child');
@@ -1745,8 +1785,8 @@ export default function Kids() {
             </View>
           ) : (
             <ScreenHeader
-              eyebrow={t('kids_eyebrow_family')}
-              title={t('kids_title')}
+              eyebrow={peopleCount(members) === 1 ? t('fam_person_one') : t('fam_people_count', { n: peopleCount(members) })}
+              title={t('fam_our_family')}
               right={
                 <PressScale
                   testID="family-manage-members"
@@ -1761,16 +1801,49 @@ export default function Kids() {
             />
           )}
 
-          {/* The grown-ups half of the Family Hub. Everyone who runs the house —
-              you, a co-parent (who had no face in the app before this), a helper,
-              a named family member — each badged, each a tap from their profile.
-              Parents open the shared conversation; a helper opens who-they-are
-              (the server refuses them family chat, so no chat door is offered). */}
-          {!isFocused && parents.length > 0 ? (
-            <View style={styles.hubGrownups}>
-              <Text style={styles.hubLabel}>{t('hub_parents')}</Text>
-              {parents.map(renderPerson)}
-              {children.length > 0 && !kidsHidden ? <Text style={styles.hubLabel}>{t('hub_kids_teens')}</Text> : null}
+          {/* People, or the jobs and treats: the two halves of the tab, the
+              way the final design drew them. "Jobs & treats" is the child's
+              page below (chores, rewards, routines, pocket money), opened on
+              the child last looked at; the back arrow on it comes here. */}
+          {!kidsHidden && children.length > 0 && activeChild ? (
+            <View style={styles.seg} accessibilityRole="tablist">
+              <PressScale
+                testID="family-tab-people"
+                accessibilityRole="tab"
+                accessibilityState={{ selected: !isFocused }}
+                onPress={() => setFocusedChild(null)}
+                style={[styles.segBtn, !isFocused && styles.segOn]}
+              >
+                <Text style={[styles.segText, !isFocused && styles.segTextOn]}>{t('fam_tab_people')}</Text>
+              </PressScale>
+              <PressScale
+                testID="family-tab-jobs"
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isFocused }}
+                onPress={() => openChild(activeChild)}
+                style={[styles.segBtn, isFocused && styles.segOn]}
+              >
+                <Text style={[styles.segText, isFocused && styles.segTextOn]}>{t('fam_tab_jobs')}</Text>
+              </PressScale>
+            </View>
+          ) : null}
+
+          {/* Everyone, each a tile in their own colour — you, the other
+              grown-ups, the children, the people who help. A grown-up opens
+              their profile; a child opens Jobs & treats for them. The colours
+              are the ones Home gives everyone, so a parent moving between the
+              two screens sees the same person. */}
+          {!isFocused && people.length > 0 ? (
+            <View style={styles.grid} testID="family-grid">
+              {people.map(renderTile)}
+              {!kidsHidden && children.length > 0 ? (
+                <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.tile, styles.tileAdd, { width: tileWidth }]}>
+                  <View style={[styles.tileFace, styles.tileAddFace]}>
+                    <Plus color={ui.orange} size={24} />
+                  </View>
+                  <Text style={styles.tileName} numberOfLines={1}>{t('kids_add_child')}</Text>
+                </PressScale>
+              ) : null}
             </View>
           ) : null}
 
@@ -1797,70 +1870,6 @@ export default function Kids() {
             <EmptyState title={t('kids_no_children')} message={t('kids_no_children_msg')} actionLabel={t('kids_add_child')} onAction={openChildSheet} />
           ) : (
             <>
-              {/* Kids & teens — roster cards, one per young person. Tapping a
-                  card selects them and reveals their stars / chores / rewards
-                  in the detail below (a teen also carries a Message entry
-                  inside that detail). The old horizontal chip strip hid the
-                  role and the balance behind a tap; a card shows both at rest. */}
-              {!isFocused ? (
-              <View style={styles.hubKids}>
-                {children.map((child, index) => {
-                  const active = child.member_id === activeChild?.member_id;
-                  const tint = CHILD_TINTS[index % CHILD_TINTS.length];
-                  // Outstanding rewards live under one child's card, so without
-                  // a mark here a parent with three children would never learn
-                  // they still owe the one they aren't looking at.
-                  const owed = owedByChild[child.member_id] || 0;
-                  const isTeen = child.role?.toLowerCase() === 'teen';
-                  return (
-                    <PressScale
-                      key={child.member_id}
-                      testID={`child-${child.member_id}`}
-                      onPress={() => openChild(child)}
-                      style={[styles.hubRow, active && styles.hubRowActive]}
-                    >
-                      <View style={[styles.hubAvatar, avatarKind(child.avatar) ? styles.hubAvatarIllus : { backgroundColor: tint }]}>
-                        {avatarKind(child.avatar)
-                          ? <PersonAvatar name={child.name} avatar={child.avatar} size={44} ring={false} />
-                          : <Text style={styles.hubAvatarText}>{child.name[0]?.toUpperCase()}</Text>}
-                        {child.has_pin ? <View style={styles.lockBadge}><Lock color={ui.bg} size={8} /></View> : null}
-                        {owed > 0 ? (
-                          <View
-                            testID={`child-owed-${child.member_id}`}
-                            accessibilityLabel={t('kids_redemption_owed_badge', { n: owed })}
-                            style={styles.owedBadge}
-                          >
-                            <Text style={styles.owedBadgeText}>{owed}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <View style={styles.hubNameRow}>
-                          <Text style={styles.hubName} numberOfLines={1}>{child.name}</Text>
-                          <View style={[styles.hubBadge, { backgroundColor: isTeen ? ui.lavender : ui.mint }]}>
-                            <Text style={[styles.hubBadgeText, { color: isTeen ? ui.lavenderText : ui.mintText }]}>
-                              {isTeen ? t('hub_role_teen') : t('hub_role_kid')}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text style={styles.hubSub} numberOfLines={1}>{t('hub_week_earned', { n: child.week_earned || 0 })}</Text>
-                      </View>
-                      <View style={styles.hubStarChip}>
-                        <Star color={ui.mintText} size={13} fill={ui.mintText} />
-                        <Text style={styles.hubStarChipText}>{child.stars || 0}</Text>
-                      </View>
-                    </PressScale>
-                  );
-                })}
-                <PressScale testID="kids-add-child" onPress={openChildSheet} style={[styles.hubRow, styles.hubAddRow]}>
-                  <View style={[styles.hubAvatar, { backgroundColor: ui.orangeSoft }]}>
-                    <Plus color={ui.orange} size={20} />
-                  </View>
-                  <Text style={styles.hubAddText}>{t('kids_add_child')}</Text>
-                </PressScale>
-              </View>
-              ) : null}
-
               {/* New-feature nudge: teens get their own account. Shown once
                   per device and then remembered; showTeenHint already carries
                   the !isFocused gate. */}
@@ -1903,6 +1912,52 @@ export default function Kids() {
                   ))}
                 </Card>
               ) : null}
+
+              {/* How the week is going, under the people: jobs done against
+                  what the wheel asks, stars earned since Monday, and the next
+                  pocket money to hand over. A line only when there is a number
+                  to show; no card when there is none. */}
+              {!isFocused ? (() => {
+                const earned = starsEarnedThisWeek(members);
+                const due = viewerIsHelper || allowanceLocked ? null : allowanceDue(allowances, new Date());
+                const jobs = weekJobs && weekJobs.total > 0 ? weekJobs : null;
+                if (!jobs && earned === 0 && !due) return null;
+                return (
+                  <View testID="family-week"><Card style={styles.famWeekCard}>
+                    <Text style={styles.weekTitle}>{t('kids_this_week')}</Text>
+                    {jobs ? (
+                      <View style={styles.weekRow}>
+                        <IconTile bg={ui.mint} size={40} radius={12}><CircleCheck color={ui.mintText} size={20} /></IconTile>
+                        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+                          <View style={styles.weekBetween}>
+                            <Text style={styles.famWeekLabel}>{t('fam_jobs_done')}</Text>
+                            <Text style={styles.weekVal} testID="family-week-jobs">{t('fam_n_of_m', { done: jobs.done, total: jobs.total })}</Text>
+                          </View>
+                          <ProgressBar pct={(jobs.done / jobs.total) * 100} color={ui.mintText} />
+                        </View>
+                      </View>
+                    ) : null}
+                    {earned > 0 ? (
+                      <View style={styles.weekRow}>
+                        <IconTile bg={ui.gold} size={40} radius={12}><Star color={ui.goldText} fill={ui.goldText} size={20} /></IconTile>
+                        <Text style={[styles.famWeekLabel, { flex: 1 }]}>{t('fam_stars_earned')}</Text>
+                        <Text style={styles.weekVal} testID="family-week-stars">{earned}</Text>
+                      </View>
+                    ) : null}
+                    {due ? (
+                      <View style={styles.weekRow}>
+                        <IconTile bg={ui.blue} size={40} radius={12}><Coins color={ui.blueText} size={20} /></IconTile>
+                        <Text style={[styles.famWeekLabel, { flex: 1 }]} numberOfLines={1}>
+                          {due.isDue
+                            ? t('fam_allowance_due_now')
+                            : t('fam_allowance_due', { day: due.dueAt.toLocaleDateString(localeFor(lang), { weekday: 'long' }) })}
+                        </Text>
+                        <Text style={styles.weekVal} testID="family-week-allowance">{t('currency_symbol')}{due.amount.toFixed(2)}</Text>
+                      </View>
+                    ) : null}
+                  </Card></View>
+                );
+              })() : null}
 
               {isFocused && activeChild ? (
                 <>
@@ -2431,15 +2486,27 @@ export default function Kids() {
             </>
           )}
 
-          {/* Helpers — grandparents, childminders, carers. Last on the page and
-              in their own group, because a person who helps with the school run
-              is not a co-parent and should not read as one. A sibling of the
-              children block rather than inside it, so a household with no
-              children still shows the people who help with it. */}
-          {!isFocused && helpers.length > 0 ? (
-            <View style={styles.hubGrownups}>
-              <Text style={styles.hubLabel}>{t('hub_helpers')}</Text>
-              {helpers.map(renderPerson)}
+          {/* The latest thing that happened, with the face it happened to:
+              the same lines Home keeps under its list, three of them. */}
+          {!isFocused && latest.length > 0 ? (
+            <View style={styles.latest} testID="family-latest">
+              <Text style={styles.weekTitle}>{t('fam_latest')}</Text>
+              {latest.map((entry) => {
+                const who = members.find((x) => x.name === entry.actor_name) || null;
+                return (
+                  <View key={entry.activity_id} style={styles.latestRow}>
+                    <PersonAvatar name={entry.actor_name || '?'} avatar={who?.avatar} size={32} ring={false} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.latestText} numberOfLines={2}>
+                        <Text style={styles.latestActor}>{entry.actor_name || t('feed_activity_someone')}</Text>
+                        {' '}
+                        {activityPhrase(entry, t)}
+                      </Text>
+                      <Text style={styles.latestWhen}>{shortWhen(entry.created_at, t)}</Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           ) : null}
 
@@ -3372,6 +3439,36 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   manageBtnText: { fontFamily: 'Figtree_700Bold', fontSize: 12.5, color: ui.orangeText },
 
+  // The two halves of the tab.
+  seg: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: 14, backgroundColor: ui.soft, marginTop: 14, marginBottom: 12 },
+  segBtn: { flex: 1, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  segOn: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
+  segText: { fontFamily: 'Figtree_700Bold', fontSize: 14, color: ui.muted },
+  segTextOn: { color: ui.text, fontFamily: 'Figtree_800ExtraBold' },
+
+  // Everyone, two tiles across, each in their own colour.
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 2, marginBottom: 6 },
+  tile: { minHeight: 124, borderRadius: 22, paddingVertical: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', gap: 6 },
+  tileAdd: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderStyle: 'dashed' },
+  // A white ring, so a face reads as a face on its own tint.
+  tileFace: { width: 60, height: 60, borderRadius: 30, borderWidth: 3, borderColor: ui.card, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.card },
+  tileAddFace: { backgroundColor: ui.orangeSoft, borderColor: ui.orangeSoft },
+  tileName: { fontFamily: 'Figtree_800ExtraBold', fontSize: 16, color: ui.text, maxWidth: '100%' },
+  tileSub: { fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, color: ui.muted, textAlign: 'center', marginTop: -3 },
+
+  // This week, and the latest.
+  famWeekCard: { padding: 14, gap: 12, marginTop: 8 },
+  weekTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 17, letterSpacing: -0.2, color: ui.text },
+  weekRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  weekBetween: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
+  famWeekLabel: { fontFamily: 'Figtree_700Bold', fontSize: 15, color: ui.text },
+  weekVal: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15, color: ui.text },
+  latest: { marginTop: 18, gap: 2 },
+  latestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: ui.line },
+  latestText: { fontFamily: 'Figtree_500Medium', fontSize: 14.5, lineHeight: 20, color: ui.text },
+  latestActor: { fontFamily: 'Figtree_800ExtraBold' },
+  latestWhen: { fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, color: ui.muted, marginTop: 1 },
+
   // Family Hub — the grown-ups roster
   hubGrownups: { marginTop: 4, marginBottom: 4 },
   hubLabel: { fontFamily: 'Figtree_800ExtraBold', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', color: ui.muted, marginLeft: 4, marginBottom: 8, marginTop: 8 },
@@ -3388,7 +3485,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   hubSub: { fontFamily: 'Figtree_400Regular', fontSize: 12.5, color: ui.muted, marginTop: 2 },
   stopAlwBtn: { marginTop: 14, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: ui.danger + '55' },
   stopAlwText: { color: ui.danger, fontFamily: 'Figtree_700Bold', fontSize: 13.5 },
-  hubMsgBtn: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.soft },
+  // On the corner of a grown-up's tile.
+  hubMsgBtn: { position: 'absolute', top: 8, right: 8, width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.card },
   // The white icon belongs on the orange tile. They were written apart: the
   // icon turned white when there was something to read and the tile never
   // did, so the button disappeared at exactly the moment it mattered.
