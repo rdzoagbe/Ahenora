@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ChevronDown, ChevronRight} from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
@@ -32,6 +32,7 @@ import { categoriseShoppingItem, shoppingLabel } from '../../src/shoppingCategor
 import { groupByAisle, Aisle, AISLE_EMOJI, splitQuantity, whereItWent } from '../../src/shoppingAisles';
 import { AislePickerSheet } from '../../src/components/AislePickerSheet';
 import { recipeMethod } from '../../src/recipeSteps';
+import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '../../src/kitchenWeek';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
 
@@ -1330,6 +1331,27 @@ export default function Kitchen() {
   }, [showToast, t]);
 
   const selectView = (v: KitchenView) => setView(v);
+  // A tile for a day with nothing on it opens the add sheet on that day, so
+  // the sheet does not have to be told twice which day was meant.
+  const planDay = (day: string) => { setMealDay(day); setShowMealAdd(true); };
+  // A dish's picture, from its name. The map is in kitchenWeek.ts; this only
+  // turns a key into the icon component.
+  const MealGlyph = ({ icon, color, size }: { icon: MealIcon; color: string; size: number }) => {
+    const Icon = { pizza: Pizza, chicken: Drumstick, fish: Fish, soup: Soup, salad: Salad, sandwich: Sandwich, egg: Egg, pasta: Utensils, pot: CookingPot }[icon];
+    return <Icon color={color} size={size} />;
+  };
+  // Tonight's card opens the dish the way its row does: a dish with its own
+  // recipe (captured or written) is cooked as itself; a library dish opens
+  // its method; one with neither is offered a written one.
+  const cookFromCard = (meal: MealPlan) => {
+    const hasOwn = !!meal.ai_recipe && Object.keys(meal.ai_recipe).length > 0;
+    const libraryId = hasOwn ? null : resolveRecipeId(meal.recipe_id, meal.title);
+    if (!hasOwn && libraryId && recipeMethod(libraryId, suggestLang)) {
+      openRecipe({ recipeId: libraryId, title: localizedMealTitle(meal.recipe_id, meal.title, suggestLang) });
+      return;
+    }
+    generateRecipe(meal);
+  };
 
 
   return (
@@ -1341,8 +1363,8 @@ export default function Kitchen() {
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
         <ScreenHeader
-          eyebrow={t('kitchen_eyebrow')}
-          title={t('kitchen')}
+          eyebrow={t('kitchen')}
+          title={t('kitchen_whats_cooking')}
         />
 
         {/* Three ways in, all visible.
@@ -1705,6 +1727,138 @@ export default function Kitchen() {
                 <Text style={styles.plannerAllergenText}>{allergenNote()}</Text>
               </View>
             ) : null}
+
+            {/* Tonight, then the days after it, then what still has to be
+                bought — the three things a kitchen is asked, in the order the
+                final design drew them. The planner, the ideas, the camera and
+                the recipes stay below, as they were. */}
+            {(() => {
+              const now = new Date();
+              const today = dayKey(now);
+              const tonight = mealOn(meals, today);
+              const dayName = (day: string) => t(`day_${day}`);
+              const titleOf = (m: MealPlan) => {
+                const own = !!m.ai_recipe && Object.keys(m.ai_recipe).length > 0;
+                return own ? m.title : localizedMealTitle(m.recipe_id, m.title, suggestLang);
+              };
+              const minutesOf = (m: MealPlan): number | null => {
+                const own = m.ai_recipe?.[suggestLang]?.minutes;
+                if (own) return own;
+                const method = recipeMethod(resolveRecipeId(m.recipe_id, m.title), suggestLang);
+                return method?.minutes ?? null;
+              };
+              const toBuy = stillToBuy(shopItems);
+              return (
+                <>
+                  {tonight ? (
+                    <PressScale
+                      testID="kitchen-tonight"
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t('kitchen_tonight', { day: dayName(today) })}: ${titleOf(tonight)}`}
+                      onPress={() => cookFromCard(tonight)}
+                      style={styles.tonightCard}
+                    >
+                      <View style={styles.tonightTile}>
+                        <MealGlyph icon={mealIcon(tonight.title)} color={ui.goldText} size={30} />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.tonightEyebrow}>{t('kitchen_tonight', { day: dayName(today) })}</Text>
+                        <Text style={styles.tonightTitle} numberOfLines={2}>{titleOf(tonight)}</Text>
+                        {(() => {
+                          const mins = minutesOf(tonight);
+                          const sub = mins ? t('kitchen_min', { n: mins }) : tonight.ingredients.slice(0, 3).join(' · ');
+                          return sub ? <Text style={styles.tonightSub} numberOfLines={1}>{sub}</Text> : null;
+                        })()}
+                      </View>
+                      <ChevronRight color={ui.goldText} size={20} />
+                    </PressScale>
+                  ) : (
+                    <PressScale
+                      testID="kitchen-tonight"
+                      accessibilityRole="button"
+                      onPress={() => (canPlanMeal ? planDay(today) : promptUpgrade('meal_planner'))}
+                      style={[styles.tonightCard, styles.tonightEmpty]}
+                    >
+                      <View style={[styles.tonightTile, { backgroundColor: ui.soft }]}>
+                        <CookingPot color={ui.muted} size={30} />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.tonightEyebrow, { color: ui.muted }]}>{t('kitchen_tonight', { day: dayName(today) })}</Text>
+                        <Text style={styles.tonightTitle} numberOfLines={2}>{t('kitchen_nothing_tonight')}</Text>
+                      </View>
+                      <View style={styles.planPill}><Plus color={ui.orangeText} size={14} /><Text style={styles.planPillText}>{t('kitchen_plan')}</Text></View>
+                    </PressScale>
+                  )}
+
+                  <Text style={styles.h2}>{t('kids_this_week')}</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.weekStrip} contentContainerStyle={styles.weekStripInner} testID="kitchen-week">
+                    {daysAfter(now, 6).map((day) => {
+                      const planned = mealOn(meals, day);
+                      return planned ? (
+                        <PressScale
+                          key={day}
+                          testID={`kitchen-day-${day}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${dayName(day)}: ${titleOf(planned)}`}
+                          onPress={() => cookFromCard(planned)}
+                          style={styles.dayTile}
+                        >
+                          <Text style={styles.dayLabel}>{dayName(day).slice(0, 3)}</Text>
+                          <MealGlyph icon={mealIcon(planned.title)} color={ui.text} size={26} />
+                          <Text style={styles.dayTitle} numberOfLines={2}>{titleOf(planned)}</Text>
+                        </PressScale>
+                      ) : (
+                        <PressScale
+                          key={day}
+                          testID={`kitchen-plan-${day}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${dayName(day)}: ${t('kitchen_plan')}`}
+                          onPress={() => (canPlanMeal ? planDay(day) : promptUpgrade('meal_planner'))}
+                          style={[styles.dayTile, styles.dayTileEmpty]}
+                        >
+                          <Text style={styles.dayLabel}>{dayName(day).slice(0, 3)}</Text>
+                          <Plus color={ui.muted} size={24} />
+                          <Text style={[styles.dayTitle, { color: ui.muted }]}>{t('kitchen_plan')}</Text>
+                        </PressScale>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {toBuy.length > 0 ? (
+                    <View testID="kitchen-to-buy">
+                      <View style={styles.between}>
+                        <Text style={styles.h2}>{t('vault_shopping_list')}</Text>
+                        <Text style={styles.toBuyCount}>{toBuy.length === 1 ? t('kitchen_to_buy_one') : t('kitchen_to_buy', { n: toBuy.length })}</Text>
+                      </View>
+                      <View style={styles.previewList}>
+                        {stillToBuy(shopItems).slice(0, 4).map((item) => {
+                          const { label, qty } = splitQuantity(item.name);
+                          return (
+                            <PressScale
+                              key={item.item_id}
+                              testID={`kitchen-buy-${item.item_id}`}
+                              accessibilityRole="button"
+                              onPress={() => toggleShopItem(item)}
+                              style={styles.previewRow}
+                            >
+                              <View style={styles.shopCircle} />
+                              <View style={{ flex: 1, minWidth: 0 }}>
+                                <Text style={styles.rowText} numberOfLines={1}>{label}{qty ? ` · ${qty}` : ''}</Text>
+                                {item.added_by ? <Text style={styles.rowCat} numberOfLines={1}>{t('shop_added_by', { name: item.added_by })}</Text> : null}
+                              </View>
+                            </PressScale>
+                          );
+                        })}
+                      </View>
+                      <PressScale testID="kitchen-to-buy-all" accessibilityRole="button" onPress={() => selectView('shop')} style={styles.seeAll}>
+                        <Text style={styles.seeAllText}>{t('kitchen_see_all')}</Text>
+                        <ChevronRight color={ui.orangeText} size={16} />
+                      </PressScale>
+                    </View>
+                  ) : null}
+                </>
+              );
+            })()}
 
             {/* Free peek: locked families can still OPEN the suggestions sheet —
                 seeing 7 concrete dinners sells Premium far better than a lock
@@ -2858,13 +3012,37 @@ export default function Kitchen() {
 const createStyles = (ui: UIColors) => StyleSheet.create({
   tabs: {
     // No horizontal margin: styles.scroll already pads this content by 20.
-    flexDirection: 'row', gap: 4, padding: 3, marginTop: 4, marginBottom: 10,
-    backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line, borderRadius: 12,
+    // The same control the Family tab wears: a soft track, a card pill.
+    flexDirection: 'row', gap: 2, padding: 3, marginTop: 14, marginBottom: 12,
+    backgroundColor: ui.soft, borderRadius: 14,
   },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 8, paddingHorizontal: 2, borderRadius: 9 },
-  tabOn: { backgroundColor: ui.card },
-  tabText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.muted },
-  tabTextOn: { color: ui.text },
+  tab: { flex: 1, height: 36, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderRadius: 11 },
+  tabOn: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
+  tabText: { fontFamily: 'Figtree_700Bold', fontSize: 14, color: ui.muted },
+  tabTextOn: { color: ui.text, fontFamily: 'Figtree_800ExtraBold' },
+
+  // Tonight, the days after it, what still has to be bought.
+  h2: { fontFamily: 'Figtree_800ExtraBold', fontSize: 17, letterSpacing: -0.2, color: ui.text, marginTop: 16, marginBottom: 8 },
+  between: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
+  tonightCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 20, backgroundColor: ui.gold, marginTop: 12 },
+  tonightEmpty: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderStyle: 'dashed' },
+  tonightTile: { width: 56, height: 56, borderRadius: 16, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  tonightEyebrow: { color: ui.goldText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
+  tonightTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 19, lineHeight: 24 },
+  tonightSub: { color: ui.goldText, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5, marginTop: 2 },
+  planPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
+  planPillText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
+  weekStrip: { marginHorizontal: -20 },
+  weekStripInner: { paddingHorizontal: 20, gap: 8 },
+  dayTile: { width: 92, height: 96, borderRadius: 18, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: 6 },
+  dayTileEmpty: { backgroundColor: 'transparent', borderWidth: 2, borderStyle: 'dashed' },
+  dayLabel: { fontFamily: 'Figtree_800ExtraBold', fontSize: 13, color: ui.muted },
+  dayTitle: { fontFamily: 'Figtree_700Bold', fontSize: 12.5, lineHeight: 15, color: ui.text, textAlign: 'center' },
+  toBuyCount: { fontFamily: 'Figtree_600SemiBold', fontSize: 14, color: ui.muted, marginTop: 16 },
+  previewList: { borderRadius: 16, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14 },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: ui.line },
+  seeAll: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10 },
+  seeAllText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
   container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
