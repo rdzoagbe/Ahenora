@@ -9,16 +9,23 @@ import {
   CalendarDays,
   ChevronRight,
   Crown,
+  FileText,
   Globe,
+  Home,
+  LifeBuoy,
   Link2,
+  Lock,
   LogOut,
   Mail,
+  MessageCircle,
   MessageSquare,
+  Moon,
   PenLine,
   RotateCcw,
   Search as SearchIcon,
   Send,
   Share2,
+  ShieldCheck,
   Sparkles,
   Star,
   Trash2,
@@ -43,6 +50,8 @@ import { openReview } from '../../src/reviewPrompt';
 import { api, reportPushFailure, Card as CardType, Entitlements, FamilyInvite, FamilyMember, NotificationSettings } from '../../src/api';
 import { joinUrl } from '../../src/inviteShare';
 import { LANG_NAMES } from '../../src/i18n';
+import { personTone } from '../../src/homeFamily';
+import { coParentLine, custodyValue } from '../../src/settingsHub';
 import { appVersionInfo, ensureNotificationPermissions, registerForPushNotificationsAsync, sendLocalNotification, sendTestScheduledReminderNotification, syncCardReminderNotifications } from '../../src/notifications';
 import { BUILD_TAG } from '../../src/buildInfo';
 import { requestWebPush } from '../../src/webpush';
@@ -94,8 +103,30 @@ const YOUNG_ROLES = ['child', 'teen'];
 const isYoung = (m: { role?: string }) =>
   YOUNG_ROLES.includes(m.role?.toLowerCase() || '');
 
+/**
+ * One row of a Settings panel: a small tile, the title, its value on the
+ * right, and a chevron — pointing down when the row is open in place, right
+ * when it goes somewhere.
+ */
+function HubRow({ styles, ui, testID, icon, title, sub, value, open, onPress }: {
+  styles: ReturnType<typeof createStyles>; ui: UIColors; testID: string; icon: React.ReactNode;
+  title: string; sub?: string; value?: string | null; open?: boolean; onPress: () => void;
+}) {
+  return (
+    <PressScale testID={testID} onPress={onPress} style={styles.hubRow}>
+      {icon}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.hubTitle} numberOfLines={1}>{title}</Text>
+        {sub ? <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text> : null}
+      </View>
+      {value ? <Text style={styles.hubValue} numberOfLines={1}>{value}</Text> : null}
+      {open === undefined ? <ChevronRight color={ui.muted} size={18} /> : <Chevron open={open} />}
+    </PressScale>
+  );
+}
+
 export default function Settings() {
-  const { user, t, lang, logout, subscription, refreshSubscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest } = useStore();
+  const { user, t, lang, logout, subscription, refreshSubscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest, requestCustody, requestSupport } = useStore();
   const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
@@ -297,7 +328,6 @@ export default function Settings() {
     }),
     [members],
   );
-  const isCoParented = coParents.length >= 2;
   // What this group actually contains, in its own words. It used to read
   // "N slots" from member_slots_used, which is every family_members row plus
   // every pending invite — children included. So a household of two adults and
@@ -352,6 +382,8 @@ export default function Settings() {
   // is the door, put where the claim is made.
   const [showSundayBrief, setShowSundayBrief] = useState(false);
   const initial = (user?.name?.[0] || 'C').toUpperCase();
+  // The same colour this person wears on Home, the Calendar and the Family tab.
+  const myTone = personTone(user?.name || '', members);
 
 
 
@@ -746,40 +778,38 @@ export default function Settings() {
     subscription: 'subscription plan plans upgrade premium billing pay payment manage cancel tier household family price pricing',
     notifications: 'notifications push sign slip weekly digest email alert reminder',
     appearance: 'appearance theme light dark system display',
-    household: 'household members co-parent co parent children child pin invite family',
+    household: 'household members co-parent co parent children child pin invite family custody weeks',
     preferences: 'preferences language translation locale',
-    more: 'more history completed cards replay setup onboarding usage limits version update metrics',
+    more: 'more history completed cards usage limits version update metrics',
+    help: 'help support contact replay setup onboarding rate review',
+    privacy: 'privacy security terms policy sign out devices sessions',
   };
-  // Everything is shown at once now — no tap to reveal a setting. Only "More"
-  // (the rarely-used overflow: history, usage, version, dev tools) stays behind
-  // a menu. A search still hides the groups it does not match, so "pin" leaves
-  // only Household on screen; the matched group is always open.
-  const COLLAPSIBLE = 'more';
-  const groupOpen = (id: string, keywords: string) =>
-    id !== COLLAPSIBLE || !!openGroups[id] || (q.length > 0 && keywords.includes(q));
+  // Settings is a short list again — the final design Roland chose
+  // (2026-10-26): the profile, then Family, App, and Help and privacy as
+  // three panels of rows, each row saying its value before it is opened. A
+  // row opens in place (the household, notifications, appearance, the
+  // history, privacy, help) or goes somewhere (custody, an invitation, the
+  // plan, the language). A search still hides the rows it does not match,
+  // and the matched row is always open.
+  const groupOpen = (id: string, keywords: string) => !!openGroups[id] || (q.length > 0 && keywords.includes(q));
   const groupVisible = (keywords: string) => q.length === 0 || keywords.includes(q);
-  const groupHead = (id: string, icon: React.ReactNode, title: string, subtitle: string, keywords: string) => {
-    const collapsible = id === COLLAPSIBLE;
-    const inner = (
-      <>
-        {icon}
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.groupTitle}>{title}</Text>
-          {subtitle ? <Text style={styles.groupSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
-        </View>
-        {collapsible ? <Chevron open={groupOpen(id, keywords)} /> : null}
-      </>
-    );
-    // An always-open section is a plain label, not a button — no chevron, not
-    // pressable, so nothing invites a tap that would do nothing.
-    return collapsible ? (
-      <PressScale testID={`settings-group-${id}`} onPress={() => toggleGroup(id)} style={styles.groupHead}>
-        {inner}
-      </PressScale>
-    ) : (
-      <View testID={`settings-group-${id}`} style={styles.groupHead}>{inner}</View>
+  const sectionVisible = (ids: (keyof typeof GK)[]) => ids.some((id) => groupVisible(GK[id]));
+  const tile = (bg: string, child: React.ReactNode) => <IconTile bg={bg} size={34} radius={10}>{child}</IconTile>;
+  const groupHead = (id: string, icon: React.ReactNode, title: string, value: string, keywords: string) => (
+    <HubRow styles={styles} ui={ui} testID={`settings-group-${id}`} icon={icon} title={title} value={value} open={groupOpen(id, keywords)} onPress={() => toggleGroup(id)} />
+  );
+  // The rows of a panel, with a line between each pair and none after the last.
+  const panel = (rows: React.ReactNode[]) => {
+    const shown = rows.filter(Boolean);
+    return (
+      <Card style={styles.panel}>
+        {shown.map((row, i) => <React.Fragment key={i}>{i > 0 ? <Divider /> : null}{row}</React.Fragment>)}
+      </Card>
     );
   };
+  // Parents set custody, never helpers or teens (the server's write gate), and
+  // only while the children's side of the app is shown at all.
+  const canSetCustody = !!user && !user.is_helper && !user.is_teen && kidsShown;
 
   return (
     <SwipeableTabView style={styles.container}>
@@ -792,17 +822,19 @@ export default function Settings() {
           <ScreenHeader
           showAdd={false} eyebrow={t('set_manage')} title={t('set_settings')} />
 
-          {/* Profile */}
+          {/* Profile: who is signed in, in their own colour, and the door to
+              their account. */}
           <PressScale testID="settings-open-account" onPress={() => router.push('/account')} style={styles.headerGap}>
             <Card style={styles.profileCard}>
               {user?.picture ? (
                 <Image source={{ uri: user.picture }} style={styles.avatarImg} />
               ) : (
-                <View style={styles.avatar}><Text style={styles.avatarText}>{initial}</Text></View>
+                <View style={[styles.avatar, { backgroundColor: ui[myTone.fg] }]}><Text style={styles.avatarText}>{initial}</Text></View>
               )}
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.profileName} numberOfLines={1}>{user?.name || t('set_household_member')}</Text>
                 <Text style={styles.profileEmail} numberOfLines={1}>{user?.email || t('set_not_signed_in')}</Text>
+                <Text style={styles.profileLink}>{t('set_manage_account')}</Text>
                 {user?.is_admin ? (
                   <View style={styles.adminBadge}>
                     <Crown color={ui.orange} size={13} />
@@ -810,24 +842,7 @@ export default function Settings() {
                   </View>
                 ) : null}
               </View>
-              <ChevronRight color={ui.muted} size={22} />
-            </Card>
-          </PressScale>
-
-          {/* Family plan */}
-          <PressScale testID="open-pricing" onPress={() => router.push('/pricing')} style={{ marginTop: 14 }}>
-            <Card style={styles.planCard}>
-              <View style={styles.planCol}>
-                <Text style={styles.planTitle}>{user?.is_admin ? t('set_admin_tester') : t('set_plan_named', { plan: planLabel })}</Text>
-                <Text style={styles.planSub}>{memberLimit ? `${memberSlotsUsed}/${memberLimit} ${t('set_slots')}` : t('set_tap_view_plans')}</Text>
-              </View>
-              <View style={styles.planDivider} />
-              <View style={styles.planCol}>
-                {/* Was hard-coded English — the one card on Settings a French household read in the wrong language. */}
-                <Text style={styles.planTitle}>{t(memberSlotsUsed === 1 ? 'set_members_count_one' : 'set_members_count', { count: memberSlotsUsed })}</Text>
-                <Text style={styles.planSub}>{t(adultCount === 1 ? 'set_adults_count_one' : 'set_adults_count', { count: adultCount })}, {t(childMembers.length === 1 ? 'set_young_count_one' : 'set_young_count', { count: childMembers.length })}</Text>
-              </View>
-              <ChevronRight color={ui.muted} size={20} />
+              <ChevronRight color={ui.muted} size={18} />
             </Card>
           </PressScale>
 
@@ -861,447 +876,487 @@ export default function Settings() {
             ) : null}
           </View>
 
-          {/* Subscription — a first-class, labelled section so plans & billing
-              are easy to find rather than buried under "More". */}
-          {groupVisible(GK.subscription) ? (<>
-          {groupHead('subscription',
-            <IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>,
-            t('subscription'),
-            user?.is_admin ? t('set_admin_tester') : t('set_plan_named', { plan: planLabel }),
-            GK.subscription)}
-          {groupOpen('subscription', GK.subscription) ? (
-          <Card style={styles.cardPad}>
-            <NavRow
-              testID="settings-view-plans"
-              tile={<IconTile bg={ui.orangeSoft}><Crown color={ui.orange} size={18} /></IconTile>}
-              title={t('set_view_all_plans')}
-              subtitle={`${t('set_youre_on')} ${user?.is_admin ? t('set_admin_tester') : `${planLabel}`} · ${t('set_compare_tiers')}`}
-              onPress={() => router.push('/pricing')}
-              divider={false}
-            />
-          </Card>
-          ) : null}
-          </>) : null}
-
-          {/* Notifications */}
-          {groupVisible(GK.notifications) ? (<>
-          {groupHead('notifications',
-            <IconTile bg={ui.orangeSoft}><Bell color={ui.orange} size={18} /></IconTile>,
-            t('set_notifications'),
-            `${t('set_push_notifications')}: ${notificationPrefs.card_reminders ? t('set_on') : t('set_off')}`,
-            GK.notifications)}
-          {groupOpen('notifications', GK.notifications) ? (<>
-          <Card style={styles.cardPad}>
-            <ToggleRow
-              testID="notif-push"
-              tile={<IconTile bg={ui.orangeSoft}><Bell color={ui.orange} size={18} /></IconTile>}
-              title={t('set_push_notifications')}
-              subtitle={t('set_push_notifications_sub')}
-              on={notificationPrefs.card_reminders}
-              disabled={savingNotifications}
-              onPress={() => updateNotificationPrefs({ card_reminders: !notificationPrefs.card_reminders })}
-            />
-            {/* Its own row, because it is not a daily nudge. Everything the
-                push toggle above gates is about today; this is a passport
-                expiring and a vaccination falling due — a deadline with money
-                and a cancelled holiday behind it. Somebody switching off chore
-                reminders has not asked to stop hearing about that, and until
-                now it was the same switch. */}
-            <ToggleRow
-              testID="notif-deadlines"
-              tile={<IconTile bg={ui.gold}><ShieldAlert color={ui.goldText} size={18} /></IconTile>}
-              title={t('set_deadline_alerts')}
-              subtitle={t('set_deadline_alerts_sub')}
-              on={notificationPrefs.deadline_alerts}
-              disabled={savingNotifications}
-              onPress={() => updateNotificationPrefs({ deadline_alerts: !notificationPrefs.deadline_alerts })}
-            />
-            <ToggleRow
-              testID="notif-sign"
-              tile={<IconTile bg={ui.lavender}><PenLine color={ui.lavenderText} size={18} /></IconTile>}
-              title={t('set_sign_slip_alerts')}
-              subtitle={t('set_sign_slip_alerts_sub')}
-              on={notificationPrefs.new_card_alerts}
-              disabled={savingNotifications}
-              onPress={() => updateNotificationPrefs({ new_card_alerts: !notificationPrefs.new_card_alerts })}
-            />
-            <ToggleRow
-              testID="notif-chat"
-              tile={<IconTile bg={ui.mint}><MessageSquare color={ui.mintText} size={18} /></IconTile>}
-              title={t('set_chat_alerts')}
-              subtitle={t('set_chat_alerts_sub')}
-              on={notificationPrefs.chat_messages}
-              disabled={savingNotifications}
-              onPress={() => updateNotificationPrefs({ chat_messages: !notificationPrefs.chat_messages })}
-            />
-            <ToggleRow
-              testID="notif-digest"
-              tile={<IconTile bg={ui.soft}><Mail color={ui.muted} size={18} /></IconTile>}
-              title={t('set_weekly_digest')}
-              subtitle={weeklyBrief ? t('set_weekly_digest_sub') : t('set_upgrade_to_unlock')}
-              on={weeklyBrief}
-              onPress={() => router.push('/pricing')}
-            />
-            {/* The server has had a test endpoint the whole time and the app
-                never offered a way to reach it. So "did I get no notifications
-                because there was nothing to say, or because they are broken?"
-                had no answer short of reading the code — which is exactly the
-                question that came back from a real morning. One tap settles
-                it, and it settles it on the phone that is actually in doubt. */}
-            <NavRow
-              testID="notif-send-test"
-              tile={<IconTile bg={ui.mint}><Bell color={ui.mintText} size={18} /></IconTile>}
-              title={t('set_notif_test')}
-              subtitle={t('set_notif_test_sub')}
-              right={<ChevronRight color={ui.muted} size={18} />}
-              onPress={sendTestNotification}
-              divider={false}
-            />
-          </Card>
-          {notificationStatus ? <Text style={styles.note}>{notificationStatus}</Text> : null}
-          </>) : null}
-          </>) : null}
-
-          {/* Appearance */}
-          {groupVisible(GK.appearance) ? (<>
-          {groupHead('appearance',
-            <IconTile bg={ui.lavender}><Sparkles color={ui.lavenderText} size={18} /></IconTile>,
-            t('set_appearance'),
-            t('set_appearance_' + appearanceMode),
-            GK.appearance)}
-          {groupOpen('appearance', GK.appearance) ? (
-          <Card style={styles.segmentCard}>
-            <View style={styles.segmentWrap}>
-              {(['light', 'dark', 'system'] as const).map((mode) => {
-                const active = appearanceMode === mode;
-                return (
-                  <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segmentBtn, active && { borderBottomColor: ui.orange }]}>
-                    <Text style={[styles.segmentText, { color: active ? ui.text : ui.muted, fontFamily: active ? 'Figtree_800ExtraBold' : 'Figtree_600SemiBold' }]}>
-                      {t('set_appearance_' + mode)}
-                    </Text>
-                  </PressScale>
-                );
-              })}
-            </View>
-          </Card>
-          ) : null}
-          </>) : null}
-
-          {/* Household — members, children and invites */}
-          {groupVisible(GK.household) ? (<>
-          {groupHead('household',
-            <IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>,
-            t('set_household'),
-            isCoParented ? `${t('set_co_parents')}: ${coParents.map((m) => m.name).join(' & ')}` : householdSummary,
-            GK.household)}
-          {groupOpen('household', GK.household) ? (<>
-          <Card style={styles.cardPad}>
-            <NavRow
-              testID="settings-household-toggle"
-              tile={<IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>}
-              title={t('set_invites')}
-              subtitle={t('set_invites_sub')}
-              right={<Chevron open={expandMembers} />}
-              onPress={() => setExpandMembers((v) => !v)}
-            />
-            {expandMembers ? (
-              <View style={styles.expandBox}>
-                {invites.filter((i) => i.status === 'pending').map((invite) => (
-                  <View key={invite.invite_id} style={styles.inviteRow}>
-                    <MiniRow
-                      initial={((invite.email || invite.label)?.[0] || '?').toUpperCase()}
-                      name={invite.email || invite.label || t('set_invite_link')}
-                      sub={`${invite.relationship ? `${invite.relationship} · ` : ''}${t('set_invite')} · ${invite.status}`}
-                    />
-                    {invite.email ? (
-                      <PressScale
-                        testID={`complete-invite-${invite.invite_id}`}
-                        onPress={() => completeInvite(invite)}
-                        style={[styles.ghostBtn, { backgroundColor: ui.orangeSoft }]}
-                      >
-                        <UserPlus color={ui.orange} size={14} />
-                        <Text style={[styles.ghostBtnText, { color: ui.orangeText }]}>{t('set_invite_add_now')}</Text>
-                      </PressScale>
+          {/* Family: the household, custody, an invitation, the plan. */}
+          {sectionVisible(['household', 'subscription']) ? (
+            <View testID="settings-section-family" style={styles.section}>
+              <Text style={styles.sectionLabel}>{t('set_section_family')}</Text>
+              {panel([
+                groupVisible(GK.household) ? (
+                  <View key="household">
+                    {groupHead('household',
+                      tile(ui.blue, <Users color={ui.blueText} size={18} />),
+                      t('set_household_coparents'),
+                      coParentLine(coParents) || householdSummary,
+                      GK.household)}
+                    {groupOpen('household', GK.household) ? (
+                      <View style={styles.inset}>
+                        <NavRow
+                          testID="settings-household-toggle"
+                          tile={<IconTile bg={ui.orangeSoft}><Users color={ui.orange} size={18} /></IconTile>}
+                          title={t('set_invites')}
+                          subtitle={t('set_invites_sub')}
+                          right={<Chevron open={expandMembers} />}
+                          onPress={() => setExpandMembers((v) => !v)}
+                          divider={!user?.is_helper}
+                        />
+                        {expandMembers ? (
+                          <View style={styles.expandBox}>
+                            {invites.filter((i) => i.status === 'pending').map((invite) => (
+                              <View key={invite.invite_id} style={styles.inviteRow}>
+                                <MiniRow
+                                  initial={((invite.email || invite.label)?.[0] || '?').toUpperCase()}
+                                  name={invite.email || invite.label || t('set_invite_link')}
+                                  sub={`${invite.relationship ? `${invite.relationship} · ` : ''}${t('set_invite')} · ${invite.status}`}
+                                />
+                                {invite.email ? (
+                                  <PressScale
+                                    testID={`complete-invite-${invite.invite_id}`}
+                                    onPress={() => completeInvite(invite)}
+                                    style={[styles.ghostBtn, { backgroundColor: ui.orangeSoft }]}
+                                  >
+                                    <UserPlus color={ui.orange} size={14} />
+                                    <Text style={[styles.ghostBtnText, { color: ui.orangeText }]}>{t('set_invite_add_now')}</Text>
+                                  </PressScale>
+                                ) : null}
+                                {invite.invite_url ? (
+                                  <PressScale
+                                    onPress={async () => {
+                                      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+                                        try {
+                                          await navigator.clipboard.writeText(invite.invite_url!);
+                                          showToast(t('set_link_copied'), 'success');
+                                          return;
+                                        } catch { /* fall through to share */ }
+                                      }
+                                      await shareInviteLink(invite.invite_url, invite.email);
+                                    }}
+                                    style={styles.ghostBtn}
+                                  >
+                                    <Share2 color={ui.text} size={14} />
+                                    <Text style={styles.ghostBtnText}>{Platform.OS === 'web' ? t('set_copy') : t('set_share')}</Text>
+                                  </PressScale>
+                                ) : null}
+                                <PressScale
+                              accessibilityRole="button"
+                              accessibilityLabel={t('a11y_delete')} testID={`revoke-invite-${invite.invite_id}`} onPress={() => revokeInvite(invite)} style={styles.iconGhostBtn}>
+                                  <Trash2 color={ui.danger} size={16} />
+                                </PressScale>
+                              </View>
+                            ))}
+                            <PressScale testID="invite-coparent" onPress={tryInviteCoparent} style={styles.expandAction}>
+                              <UserPlus color={ui.text} size={18} />
+                              <Text style={styles.expandActionText}>{t('set_invite_coparent')}</Text>
+                            </PressScale>
+                            <PressScale testID="invite-helper" onPress={() => openInvite('', 'helper')} style={styles.expandAction}>
+                              <UserPlus color={ui.text} size={18} />
+                              <Text style={styles.expandActionText}>{t('set_invite_helper')}</Text>
+                            </PressScale>
+                          </View>
+                        ) : null}
+                        {/* A couple, or flatmates, can put the children's side away.
+                            Hidden, never deleted; on Duo it is always hidden. */}
+                        {!user?.is_helper ? (
+                          <ToggleRow
+                            testID="settings-kids-sections"
+                            tile={<IconTile bg={ui.mint}><Star color={ui.mintText} size={18} /></IconTile>}
+                            title={t('set_kids_sections')}
+                            subtitle={kidsOnDuo ? t('set_kids_sections_duo')
+                              : kidsShown ? t('set_kids_sections_on') : t('set_kids_sections_off')}
+                            on={kidsShown}
+                            onPress={toggleKidsSections}
+                            disabled={kidsOnDuo || kidsSaving}
+                            divider={false}
+                          />
+                        ) : null}
+                      </View>
                     ) : null}
-                    {invite.invite_url ? (
-                      <PressScale
-                        onPress={async () => {
-                          if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-                            try {
-                              await navigator.clipboard.writeText(invite.invite_url!);
-                              showToast(t('set_link_copied'), 'success');
-                              return;
-                            } catch { /* fall through to share */ }
-                          }
-                          await shareInviteLink(invite.invite_url, invite.email);
-                        }}
-                        style={styles.ghostBtn}
-                      >
-                        <Share2 color={ui.text} size={14} />
-                        <Text style={styles.ghostBtnText}>{Platform.OS === 'web' ? t('set_copy') : t('set_share')}</Text>
-                      </PressScale>
-                    ) : null}
-                    <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} testID={`revoke-invite-${invite.invite_id}`} onPress={() => revokeInvite(invite)} style={styles.iconGhostBtn}>
-                      <Trash2 color={ui.danger} size={16} />
-                    </PressScale>
                   </View>
-                ))}
-                <PressScale testID="invite-coparent" onPress={tryInviteCoparent} style={styles.expandAction}>
-                  <UserPlus color={ui.text} size={18} />
-                  <Text style={styles.expandActionText}>{t('set_invite_coparent')}</Text>
-                </PressScale>
-                <PressScale testID="invite-helper" onPress={() => openInvite('', 'helper')} style={styles.expandAction}>
-                  <UserPlus color={ui.text} size={18} />
-                  <Text style={styles.expandActionText}>{t('set_invite_helper')}</Text>
-                </PressScale>
-              </View>
-            ) : null}
-            <Divider />
+                ) : null,
+                // Custody is set up on the Calendar, where its weeks are drawn;
+                // this row says what it is set to and takes you there.
+                groupVisible(GK.household) && canSetCustody ? (
+                  <HubRow key="custody" styles={styles} ui={ui} testID="settings-custody"
+                    icon={tile(ui.soft, <Home color={ui.orangeText} size={18} />)}
+                    title={t('set_custody_weeks')}
+                    value={custodyValue(subscription?.custody, t)}
+                    onPress={() => { requestCustody(); router.push('/(tabs)/calendar'); }} />
+                ) : null,
+                groupVisible(GK.household) ? (
+                  <HubRow key="invite" styles={styles} ui={ui} testID="settings-invite"
+                    icon={tile(ui.mint, <Mail color={ui.mintText} size={18} />)}
+                    title={t('set_invite_someone')}
+                    onPress={() => openInvite('', 'family')} />
+                ) : null,
+                groupVisible(GK.subscription) ? (
+                  <HubRow key="plan" styles={styles} ui={ui} testID="open-pricing"
+                    icon={tile(ui.orangeSoft, <Crown color={ui.orange} size={18} />)}
+                    title={t('subscription')}
+                    value={user?.is_admin ? t('set_admin_tester') : planLabel}
+                    onPress={() => router.push('/pricing')} />
+                ) : null,
+              ])}
+            </View>
+          ) : null}
 
-            <NavRow
-              tile={<IconTile bg={ui.mint}><Link2 color={ui.mintText} size={18} /></IconTile>}
-              title={t('set_invite_family_member')}
-              subtitle={t('set_invite_family_member_sub')}
-              onPress={() => openInvite('', 'family')}
-              right={<ChevronRight color={ui.muted} size={18} />}
-              divider={!user?.is_helper}
-            />
-            {/* A couple, or flatmates, can put the children's side away.
-                Hidden, never deleted; on Duo it is always hidden. */}
-            {!user?.is_helper ? (
-              <ToggleRow
-                testID="settings-kids-sections"
-                tile={<IconTile bg={ui.mint}><Star color={ui.mintText} size={18} /></IconTile>}
-                title={t('set_kids_sections')}
-                subtitle={kidsOnDuo ? t('set_kids_sections_duo')
-                  : kidsShown ? t('set_kids_sections_on') : t('set_kids_sections_off')}
-                on={kidsShown}
-                onPress={toggleKidsSections}
-                disabled={kidsOnDuo || kidsSaving}
-                divider={false}
-              />
-            ) : null}
-          </Card>
+          {/* App: notifications, appearance, language, history and usage. */}
+          {sectionVisible(['notifications', 'appearance', 'preferences', 'more']) ? (
+            <View testID="settings-section-app" style={styles.section}>
+              <Text style={styles.sectionLabel}>{t('set_section_app')}</Text>
+              {panel([
+                groupVisible(GK.notifications) ? (
+                  <View key="notifications">
+                    {groupHead('notifications',
+                      tile(ui.gold, <Bell color={ui.goldText} size={18} />),
+                      t('set_notifications'),
+                      notificationPrefs.card_reminders ? t('set_on') : t('set_off'),
+                      GK.notifications)}
+                    {groupOpen('notifications', GK.notifications) ? (
+                      <View style={styles.inset}>
+                        <ToggleRow
+                          testID="notif-push"
+                          tile={<IconTile bg={ui.orangeSoft}><Bell color={ui.orange} size={18} /></IconTile>}
+                          title={t('set_push_notifications')}
+                          subtitle={t('set_push_notifications_sub')}
+                          on={notificationPrefs.card_reminders}
+                          disabled={savingNotifications}
+                          onPress={() => updateNotificationPrefs({ card_reminders: !notificationPrefs.card_reminders })}
+                        />
+                        {/* Its own row, because it is not a daily nudge. Everything the
+                            push toggle above gates is about today; this is a passport
+                            expiring and a vaccination falling due — a deadline with money
+                            and a cancelled holiday behind it. Somebody switching off chore
+                            reminders has not asked to stop hearing about that, and until
+                            now it was the same switch. */}
+                        <ToggleRow
+                          testID="notif-deadlines"
+                          tile={<IconTile bg={ui.gold}><ShieldAlert color={ui.goldText} size={18} /></IconTile>}
+                          title={t('set_deadline_alerts')}
+                          subtitle={t('set_deadline_alerts_sub')}
+                          on={notificationPrefs.deadline_alerts}
+                          disabled={savingNotifications}
+                          onPress={() => updateNotificationPrefs({ deadline_alerts: !notificationPrefs.deadline_alerts })}
+                        />
+                        <ToggleRow
+                          testID="notif-sign"
+                          tile={<IconTile bg={ui.lavender}><PenLine color={ui.lavenderText} size={18} /></IconTile>}
+                          title={t('set_sign_slip_alerts')}
+                          subtitle={t('set_sign_slip_alerts_sub')}
+                          on={notificationPrefs.new_card_alerts}
+                          disabled={savingNotifications}
+                          onPress={() => updateNotificationPrefs({ new_card_alerts: !notificationPrefs.new_card_alerts })}
+                        />
+                        <ToggleRow
+                          testID="notif-chat"
+                          tile={<IconTile bg={ui.mint}><MessageSquare color={ui.mintText} size={18} /></IconTile>}
+                          title={t('set_chat_alerts')}
+                          subtitle={t('set_chat_alerts_sub')}
+                          on={notificationPrefs.chat_messages}
+                          disabled={savingNotifications}
+                          onPress={() => updateNotificationPrefs({ chat_messages: !notificationPrefs.chat_messages })}
+                        />
+                        <ToggleRow
+                          testID="notif-digest"
+                          tile={<IconTile bg={ui.soft}><Mail color={ui.muted} size={18} /></IconTile>}
+                          title={t('set_weekly_digest')}
+                          subtitle={weeklyBrief ? t('set_weekly_digest_sub') : t('set_upgrade_to_unlock')}
+                          on={weeklyBrief}
+                          onPress={() => router.push('/pricing')}
+                        />
+                        {/* The server has had a test endpoint the whole time and the app
+                            never offered a way to reach it. So "did I get no notifications
+                            because there was nothing to say, or because they are broken?"
+                            had no answer short of reading the code — which is exactly the
+                            question that came back from a real morning. One tap settles
+                            it, and it settles it on the phone that is actually in doubt. */}
+                        <NavRow
+                          testID="notif-send-test"
+                          tile={<IconTile bg={ui.mint}><Bell color={ui.mintText} size={18} /></IconTile>}
+                          title={t('set_notif_test')}
+                          subtitle={t('set_notif_test_sub')}
+                          right={<ChevronRight color={ui.muted} size={18} />}
+                          onPress={sendTestNotification}
+                          divider={false}
+                        />
+                        {notificationStatus ? <Text style={styles.note}>{notificationStatus}</Text> : null}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null,
+                groupVisible(GK.appearance) ? (
+                  <View key="appearance">
+                    {groupHead('appearance',
+                      tile(ui.lavender, <Moon color={ui.lavenderText} size={18} />),
+                      t('set_appearance'),
+                      t('set_appearance_' + appearanceMode),
+                      GK.appearance)}
+                    {groupOpen('appearance', GK.appearance) ? (
+                      <View style={[styles.inset, styles.seg]}>
+                        {(['light', 'dark', 'system'] as const).map((mode) => {
+                          const active = appearanceMode === mode;
+                          return (
+                            <PressScale key={mode} testID={`appearance-${mode}`} onPress={() => setAppearance(mode)} style={[styles.segBtn, active && styles.segOn]}>
+                              <Text style={[styles.segText, active && styles.segTextOn]}>{t('set_appearance_' + mode)}</Text>
+                            </PressScale>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null,
+                // One row, no heading over it, the value shown once.
+                groupVisible(GK.preferences) ? (
+                  <HubRow key="lang" styles={styles} ui={ui} testID="settings-lang"
+                    icon={tile(ui.mint, <Globe color={ui.mintText} size={18} />)}
+                    title={t('language')}
+                    value={LANG_NAMES[lang]}
+                    onPress={() => setShowLang(true)} />
+                ) : null,
+                groupVisible(GK.more) ? (
+                  <View key="more">
+                    {/* "More · 1.1.0" — the least descriptive label in the app, on the
+                        group holding Usage analytics, which is where the billing screen
+                        lives. It also collided with the More in the tab bar: same word,
+                        a different destination, one nested inside the other. A version
+                        number as a subtitle says nothing about what is behind the row,
+                        and the version is shown properly on the App version row inside. */}
+                    <HubRow styles={styles} ui={ui} testID="settings-group-more"
+                      icon={tile(ui.soft, <BarChart3 color={ui.text} size={18} />)}
+                      title={t('set_tools')}
+                      sub={t('set_tools_sub')}
+                      open={groupOpen('more', GK.more)}
+                      onPress={() => toggleGroup('more')} />
+                    {groupOpen('more', GK.more) ? (
+                      <View style={styles.inset}>
+                        {/* The list itself lives on its own screen now, reached from the
+                            Done card on Home as well as from here: what you ticked off is
+                            found from the page you ticked it off on, not from Settings. */}
+                        <NavRow
+                          testID="settings-completed-history"
+                          tile={<IconTile bg={ui.soft}><CalendarDays color={ui.text} size={18} /></IconTile>}
+                          title={t('set_completed_history')}
+                          subtitle={t('set_completed_history_sub')}
+                          right={<ChevronRight color={ui.muted} size={18} />}
+                          onPress={() => router.push('/history' as never)}
+                        />
 
+                        {user?.is_admin ? (
+                          <NavRow
+                            testID="settings-metrics"
+                            tile={<IconTile bg={ui.mint}><BarChart3 color={ui.mintText} size={18} /></IconTile>}
+                            title="Usage analytics"
+                            subtitle="Active users & feature usage (admin)"
+                            onPress={() => router.push('/metrics')}
+                          />
+                        ) : null}
 
-          </>) : null}
-          </>) : null}
+                        {user?.is_admin ? (
+                          <>
+                            <NavRow
+                              testID="settings-client-errors"
+                              tile={<IconTile bg={ui.orangeSoft}><RotateCcw color={ui.orange} size={18} /></IconTile>}
+                              title="Device errors"
+                              subtitle="Failed requests from family devices (admin)"
+                              right={<Chevron open={expandClientErrors} />}
+                              onPress={() => {
+                                setExpandClientErrors((v) => !v);
+                                if (!expandClientErrors) {
+                                  api.listClientErrors().then(setClientErrors).catch(() => setClientErrors([]));
+                                }
+                              }}
+                            />
+                            {expandClientErrors ? (
+                              <View style={styles.expandBox}>
+                                {clientErrors.length === 0 ? (
+                                  <Text style={styles.emptyText}>No device errors recorded.</Text>
+                                ) : clientErrors.map((e) => (
+                                  <View key={e.error_id} style={{ paddingVertical: 6 }}>
+                                    {/* The build is on the FIRST line, beside the
+                                        platform, because it is what decides whether a row
+                                        needs acting on at all. An error from an old APK
+                                        and a fault on current code look identical without
+                                        it — which is how three Android push failures read
+                                        as a live outage on 2026-09-14, six days after the
+                                        fix had shipped. */}
+                                    <Text style={styles.ghostBtnText}>
+                                      {`${e.name || '?'} · ${e.platform || '?'} · ${buildLabel(e)} · ${e.method || ''} ${e.endpoint}${e.status ? ` · ${e.status}` : ''}`}
+                                    </Text>
+                                    <Text style={[styles.emptyText, { marginTop: 2 }]} numberOfLines={2}>
+                                      {`${(e.created_at || '').replace('T', ' ').slice(0, 16)} — ${e.message || ''}`}
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            ) : null}
+                          </>
+                        ) : null}
 
-          {/* Preferences — language */}
-          {/* One row, no heading over it.
-              This was a "Preferences · English" section label with the globe
-              icon, above a single "Language · English" row with the same globe
-              icon — the same word and the same value, twice, one under the
-              other. A group of one is not a group. */}
-          {groupVisible(GK.preferences) ? (<>
-          <Card style={styles.cardPad}>
-            <NavRow
-              testID="settings-lang"
-              tile={<IconTile bg={ui.soft}><Globe color={ui.text} size={18} /></IconTile>}
-              title={t('language')}
-              right={<View style={styles.valueRow}><Text style={styles.valueText}>{LANG_NAMES[lang]}</Text><ChevronRight color={ui.muted} size={18} /></View>}
-              onPress={() => setShowLang(true)}
-              divider={false}
-            />
-          </Card>
-          </>) : null}
+                        <NavRow
+                          tile={<IconTile bg={ui.soft}><Sparkles color={ui.text} size={18} /></IconTile>}
+                          title={t('set_plan_usage')}
+                          subtitle={t('set_plan_usage_sub')}
+                          right={<Chevron open={expandUsage} />}
+                          onPress={() => setExpandUsage((v) => !v)}
+                        />
+                        {expandUsage ? (
+                          <View style={styles.statGrid}>
+                            <StatBox label={t('set_stat_members')} value={`${memberSlotsUsed}/${memberLimit || '∞'}`} />
+                            <StatBox label={t('set_stat_ai_scans')} value={aiScansStat} />
+                            <StatBox label={t('set_stat_vault')} value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
+                            <StatBox label={t('set_stat_weekly_brief')} value={weeklyBrief ? t('set_on') : t('set_locked')} />
+                            {weeklyBrief ? (
+                              <View style={styles.testRow}>
+                                <PressScale
+                                  testID="open-sunday-brief"
+                                  onPress={() => setShowSundayBrief(true)}
+                                  style={styles.ghostBtnWide}
+                                >
+                                  <Text style={styles.ghostBtnText}>{t('sunday_brief')}</Text>
+                                </PressScale>
+                              </View>
+                            ) : null}
+                            <View style={styles.testRow}>
+                              <PressScale onPress={testReminderNotification} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_reminder')}</Text></PressScale>
+                              <PressScale onPress={testNewCardAlert} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_alert')}</Text></PressScale>
+                            </View>
+                          </View>
+                        ) : null}
 
-          {/* More — history, plans, usage, updates */}
-          {groupVisible(GK.more) ? (<>
-          {groupHead('more',
-            <IconTile bg={ui.soft}><BarChart3 color={ui.text} size={18} /></IconTile>,
-            // "More · 1.1.0" — the least descriptive label in the app, on the
-            // group holding Usage analytics, which is where the billing screen
-            // lives. It also collided with the More in the tab bar: same word,
-            // a different destination, one nested inside the other. A version
-            // number as a subtitle says nothing about what is behind the row,
-            // and the version is shown properly on the App version row inside.
-            t('set_tools'),
-            t('set_tools_sub'),
-            GK.more)}
-          {groupOpen('more', GK.more) ? (<>
-          <Card style={styles.cardPad}>
-            <NavRow
-              testID="settings-replay-setup"
-              tile={<IconTile bg={ui.orangeSoft}><Sparkles color={ui.orange} size={18} /></IconTile>}
-              title={t('set_replay_setup')}
-              subtitle={t('set_replay_setup_sub')}
-              right={<ChevronRight color={ui.muted} size={18} />}
-              onPress={() => router.push('/onboarding')}
-            />
-            {/* The list itself lives on its own screen now, reached from the
-                Done card on Home as well as from here: what you ticked off is
-                found from the page you ticked it off on, not from Settings. */}
-            <NavRow
-              testID="settings-completed-history"
-              tile={<IconTile bg={ui.soft}><CalendarDays color={ui.text} size={18} /></IconTile>}
-              title={t('set_completed_history')}
-              subtitle={t('set_completed_history_sub')}
-              right={<ChevronRight color={ui.muted} size={18} />}
-              onPress={() => router.push('/history' as never)}
-            />
-            <Divider />
-
-            <NavRow
-              testID="settings-rate-app"
-              tile={<IconTile bg={ui.mint}><Star color={ui.mintText} size={18} /></IconTile>}
-              title={t('set_rate_app')}
-              subtitle={t('set_rate_app_sub')}
-              onPress={() => { openReview().catch(() => undefined); }}
-            />
-
-            {user?.is_admin ? (
-              <NavRow
-                testID="settings-metrics"
-                tile={<IconTile bg={ui.mint}><BarChart3 color={ui.mintText} size={18} /></IconTile>}
-                title="Usage analytics"
-                subtitle="Active users & feature usage (admin)"
-                onPress={() => router.push('/metrics')}
-              />
-            ) : null}
-
-            {user?.is_admin ? (
-              <>
-                <NavRow
-                  testID="settings-client-errors"
-                  tile={<IconTile bg={ui.orangeSoft}><RotateCcw color={ui.orange} size={18} /></IconTile>}
-                  title="Device errors"
-                  subtitle="Failed requests from family devices (admin)"
-                  right={<Chevron open={expandClientErrors} />}
-                  onPress={() => {
-                    setExpandClientErrors((v) => !v);
-                    if (!expandClientErrors) {
-                      api.listClientErrors().then(setClientErrors).catch(() => setClientErrors([]));
-                    }
-                  }}
-                />
-                {expandClientErrors ? (
-                  <View style={styles.expandBox}>
-                    {clientErrors.length === 0 ? (
-                      <Text style={styles.emptyText}>No device errors recorded.</Text>
-                    ) : clientErrors.map((e) => (
-                      <View key={e.error_id} style={{ paddingVertical: 6 }}>
-                        {/* The build is on the FIRST line, beside the
-                            platform, because it is what decides whether a row
-                            needs acting on at all. An error from an old APK
-                            and a fault on current code look identical without
-                            it — which is how three Android push failures read
-                            as a live outage on 2026-09-14, six days after the
-                            fix had shipped. */}
-                        <Text style={styles.ghostBtnText}>
-                          {`${e.name || '?'} · ${e.platform || '?'} · ${buildLabel(e)} · ${e.method || ''} ${e.endpoint}${e.status ? ` · ${e.status}` : ''}`}
-                        </Text>
-                        <Text style={[styles.emptyText, { marginTop: 2 }]} numberOfLines={2}>
-                          {`${(e.created_at || '').replace('T', ' ').slice(0, 16)} — ${e.message || ''}`}
+                        {/* App version + a way to pull the latest one in by hand.
+                            Updates arrive over the air and apply on the NEXT launch, which
+                            from the outside is indistinguishable from nothing happening —
+                            there was no way to see which version you were on or to ask for
+                            a newer one, so "is my app up to date?" had no answer. This gives
+                            both: the version you are running, and a button that fetches and
+                            restarts into the newest build on the spot. */}
+                        <View style={styles.updateRow}>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.updateTitle}>{t('set_app_version')}</Text>
+                            <Text style={styles.updateVersion} numberOfLines={2}>{versionLabel}</Text>
+                          </View>
+                          <PressScale
+                            testID="check-updates"
+                            accessibilityRole="button"
+                            onPress={checkForUpdates}
+                            disabled={updateState === 'checking' || updateState === 'downloading'}
+                            style={styles.updateBtn}
+                          >
+                            {updateState === 'checking' || updateState === 'downloading' ? (
+                              <ActivityIndicator color={ui.orangeText} size="small" />
+                            ) : (
+                              <Text style={styles.updateBtnText}>{t('set_check_updates')}</Text>
+                            )}
+                          </PressScale>
+                        </View>
+                        {updateNote ? <Text style={styles.updateNote}>{updateNote}</Text> : null}
+                        {/* Selectable so it can be copied into a message rather than
+                            retyped from a photograph. */}
+                        <Text
+                          testID="update-diagnostics"
+                          selectable
+                          style={styles.updateDiagnostics}
+                        >
+                          {updateDiagnostics}
                         </Text>
                       </View>
-                    ))}
+                    ) : null}
                   </View>
-                ) : null}
-              </>
-            ) : null}
-
-            <NavRow
-              tile={<IconTile bg={ui.soft}><Sparkles color={ui.text} size={18} /></IconTile>}
-              title={t('set_plan_usage')}
-              subtitle={t('set_plan_usage_sub')}
-              right={<Chevron open={expandUsage} />}
-              onPress={() => setExpandUsage((v) => !v)}
-              divider={false}
-            />
-            {expandUsage ? (
-              <View style={styles.statGrid}>
-                <StatBox label={t('set_stat_members')} value={`${memberSlotsUsed}/${memberLimit || '∞'}`} />
-                <StatBox label={t('set_stat_ai_scans')} value={aiScansStat} />
-                <StatBox label={t('set_stat_vault')} value={formatBytes(entitlements?.vault_bytes_used ?? subscription?.vault_bytes_used)} />
-                <StatBox label={t('set_stat_weekly_brief')} value={weeklyBrief ? t('set_on') : t('set_locked')} />
-                {weeklyBrief ? (
-                  <View style={styles.testRow}>
-                    <PressScale
-                      testID="open-sunday-brief"
-                      onPress={() => setShowSundayBrief(true)}
-                      style={styles.ghostBtnWide}
-                    >
-                      <Text style={styles.ghostBtnText}>{t('sunday_brief')}</Text>
-                    </PressScale>
-                  </View>
-                ) : null}
-                <View style={styles.testRow}>
-                  <PressScale onPress={testReminderNotification} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_reminder')}</Text></PressScale>
-                  <PressScale onPress={testNewCardAlert} style={styles.ghostBtnWide}><Text style={styles.ghostBtnText}>{t('set_test_alert')}</Text></PressScale>
-                </View>
-              </View>
-            ) : null}
-          </Card>
-
-          {/* App version + a way to pull the latest one in by hand.
-              Updates arrive over the air and apply on the NEXT launch, which
-              from the outside is indistinguishable from nothing happening —
-              there was no way to see which version you were on or to ask for
-              a newer one, so "is my app up to date?" had no answer. This gives
-              both: the version you are running, and a button that fetches and
-              restarts into the newest build on the spot. */}
-          <Card>
-            <View style={styles.updateRow}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.updateTitle}>{t('set_app_version')}</Text>
-                <Text style={styles.updateVersion} numberOfLines={2}>{versionLabel}</Text>
-              </View>
-              <PressScale
-                testID="check-updates"
-                accessibilityRole="button"
-                onPress={checkForUpdates}
-                disabled={updateState === 'checking' || updateState === 'downloading'}
-                style={styles.updateBtn}
-              >
-                {updateState === 'checking' || updateState === 'downloading' ? (
-                  <ActivityIndicator color={ui.orangeText} size="small" />
-                ) : (
-                  <Text style={styles.updateBtnText}>{t('set_check_updates')}</Text>
-                )}
-              </PressScale>
+                ) : null,
+              ])}
             </View>
-            {updateNote ? <Text style={styles.updateNote}>{updateNote}</Text> : null}
-            {/* Selectable so it can be copied into a message rather than
-                retyped from a photograph. */}
-            <Text
-              testID="update-diagnostics"
-              selectable
-              style={styles.updateDiagnostics}
-            >
-              {updateDiagnostics}
-            </Text>
-          </Card>
+          ) : null}
 
-          </>) : null}
-          </>) : null}
+          {/* Help and privacy: where to ask, and what is yours. */}
+          {sectionVisible(['help', 'privacy']) ? (
+            <View testID="settings-section-help" style={styles.section}>
+              <Text style={styles.sectionLabel}>{t('set_section_help')}</Text>
+              {panel([
+                groupVisible(GK.privacy) ? (
+                  <View key="privacy">
+                    <HubRow styles={styles} ui={ui} testID="settings-group-privacy"
+                      icon={tile(ui.soft, <Lock color={ui.muted} size={18} />)}
+                      title={t('set_privacy_security')}
+                      open={groupOpen('privacy', GK.privacy)}
+                      onPress={() => toggleGroup('privacy')} />
+                    {groupOpen('privacy', GK.privacy) ? (
+                      <View style={styles.inset}>
+                        {/* Changing your password already ends other sessions, but that is the
+                            wrong tool when nothing is wrong with the password — a phone left
+                            somewhere, a tablet handed on. Sessions renew themselves while they
+                            are used, so there has to be a way to say "not that device". */}
+                        <NavRow
+                          testID="sign-out-everywhere"
+                          tile={<IconTile bg={ui.soft}><LogOut color={ui.muted} size={18} /></IconTile>}
+                          title={t('set_sign_out_everywhere')}
+                          subtitle={t('set_sign_out_everywhere_sub')}
+                          right={<ChevronRight color={ui.muted} size={18} />}
+                          onPress={async () => {
+                            try {
+                              const r = await api.signOutEverywhere();
+                              showToast(t('set_signed_out_everywhere', { n: r.ended }), 'success');
+                            } catch (e: any) {
+                              showToast(apiErrorText(e, t, 'set_please_try_again'), 'error');
+                            }
+                          }}
+                        />
+                        <NavRow
+                          testID="settings-terms"
+                          tile={<IconTile bg={ui.orangeSoft}><FileText color={ui.orange} size={18} /></IconTile>}
+                          title={t('acc_terms')}
+                          onPress={() => router.push('/terms')}
+                        />
+                        <NavRow
+                          testID="settings-privacy-policy"
+                          tile={<IconTile bg={ui.orangeSoft}><ShieldCheck color={ui.orange} size={18} /></IconTile>}
+                          title={t('acc_privacy')}
+                          onPress={() => router.push('/privacy')}
+                          divider={false}
+                        />
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null,
+                groupVisible(GK.help) ? (
+                  <View key="help">
+                    <HubRow styles={styles} ui={ui} testID="settings-group-help"
+                      icon={tile(ui.soft, <MessageCircle color={ui.muted} size={18} />)}
+                      title={t('set_help_support')}
+                      open={groupOpen('help', GK.help)}
+                      onPress={() => toggleGroup('help')} />
+                    {groupOpen('help', GK.help) ? (
+                      <View style={styles.inset}>
+                        {/* The form lives on the Account screen; this row raises a
+                            flag and goes there, and the form opens on arrival. */}
+                        <NavRow
+                          testID="settings-contact-support"
+                          tile={<IconTile bg={ui.orangeSoft}><LifeBuoy color={ui.orange} size={18} /></IconTile>}
+                          title={t('acc_contact_support')}
+                          onPress={() => { requestSupport(); router.push('/account'); }}
+                        />
+                        <NavRow
+                          testID="settings-replay-setup"
+                          tile={<IconTile bg={ui.orangeSoft}><Sparkles color={ui.orange} size={18} /></IconTile>}
+                          title={t('set_replay_setup')}
+                          subtitle={t('set_replay_setup_sub')}
+                          right={<ChevronRight color={ui.muted} size={18} />}
+                          onPress={() => router.push('/onboarding')}
+                        />
+                        <NavRow
+                          testID="settings-rate-app"
+                          tile={<IconTile bg={ui.mint}><Star color={ui.mintText} size={18} /></IconTile>}
+                          title={t('set_rate_app')}
+                          subtitle={t('set_rate_app_sub')}
+                          onPress={() => { openReview().catch(() => undefined); }}
+                          divider={false}
+                        />
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null,
+              ])}
+            </View>
+          ) : null}
 
           {/* Logout */}
-          {/* Changing your password already ends other sessions, but that is the
-              wrong tool when nothing is wrong with the password — a phone left
-              somewhere, a tablet handed on. Sessions renew themselves while they
-              are used, so there has to be a way to say "not that device". */}
-          <PressScale
-            testID="sign-out-everywhere"
-            onPress={async () => {
-              try {
-                const r = await api.signOutEverywhere();
-                showToast(t('set_signed_out_everywhere', { n: r.ended }), 'success');
-              } catch (e: any) {
-                showToast(apiErrorText(e, t, 'set_please_try_again'), 'error');
-              }
-            }}
-            style={styles.signOutAllBtn}
-          >
-            <LogOut color={ui.muted} size={18} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.signOutAllText}>{t('set_sign_out_everywhere')}</Text>
-              <Text style={styles.signOutAllSub}>{t('set_sign_out_everywhere_sub')}</Text>
-            </View>
-          </PressScale>
-
           <PressScale testID="logout" onPress={doLogout} style={styles.logoutBtn}>
             <LogOut color={ui.danger} size={20} />
             <Text style={styles.logoutText}>{t('log_out')}</Text>
@@ -1477,23 +1532,25 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
   headerGap: { marginTop: 18 },
 
-  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
-  avatar: { width: 52, height: 52, borderRadius: 99, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
-  avatarImg: { width: 52, height: 52, borderRadius: 99 },
-  avatarText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 21 },
+  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: ui.soft, borderColor: ui.soft },
+  avatar: { width: 54, height: 54, borderRadius: 99, borderWidth: 3, borderColor: ui.card, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 54, height: 54, borderRadius: 99, borderWidth: 3, borderColor: ui.card },
+  avatarText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 22 },
   profileName: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 18 },
-  profileEmail: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, marginTop: 2 },
+  profileEmail: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, marginTop: 1 },
+  profileLink: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13, marginTop: 3 },
   adminBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, alignSelf: 'flex-start', backgroundColor: ui.orangeSoft, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 99 },
   adminBadgeText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 11 },
 
-  planCard: { flexDirection: 'row', alignItems: 'center', padding: 18, gap: 14 },
-  planCol: { flex: 1 },
-  planTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
-  planSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 2 },
-  planDivider: { width: 1, height: 38, backgroundColor: ui.line },
-
-  sectionGap: { marginTop: 22, marginBottom: 10 },
-  cardPad: { paddingHorizontal: 16 },
+  sectionGap: { marginTop: 18, marginBottom: 4 },
+  section: { marginTop: 14, gap: 6 },
+  sectionLabel: { color: ui.muted, fontFamily: 'Figtree_800ExtraBold', fontSize: 12.5, letterSpacing: 0.4, textTransform: 'uppercase', paddingLeft: 4 },
+  panel: { paddingHorizontal: 14, paddingVertical: 2 },
+  hubRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11 },
+  hubTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15.5 },
+  hubSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 1 },
+  hubValue: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14, maxWidth: '42%' },
+  inset: { paddingBottom: 8 },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1510,29 +1567,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 15,
     padding: 0,
   },
-  groupHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderRadius: 18,
-    backgroundColor: ui.card,
-    borderWidth: 1,
-    borderColor: ui.line,
-  },
-  groupTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
-  groupSubtitle: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 1 },
-  subCardGap: { marginTop: 8 },
-  segmentCard: { paddingHorizontal: 18, paddingTop: 6 },
-
-  valueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  valueText: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
-
-  segmentWrap: { flexDirection: 'row', alignItems: 'center', gap: 26, borderBottomWidth: 1, borderBottomColor: ui.line },
-  segmentBtn: { paddingTop: 8, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  segmentText: { fontSize: 15 },
+  seg: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: 14, backgroundColor: ui.soft, marginBottom: 12 },
+  segBtn: { flex: 1, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  segOn: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
+  segText: { fontFamily: 'Figtree_700Bold', fontSize: 14, color: ui.muted },
+  segTextOn: { color: ui.text, fontFamily: 'Figtree_800ExtraBold' },
 
   expandBox: { paddingBottom: 10, gap: 2 },
   expandAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
@@ -1558,13 +1597,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   updateBtnText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
   updateNote: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
   updateDiagnostics: { color: ui.muted, fontFamily: 'Figtree_400Regular', fontSize: 11, lineHeight: 16, marginTop: 8, opacity: 0.85 },
-  signOutAllBtn: {
-    marginTop: 22, flexDirection: 'row', alignItems: 'center', gap: 11,
-    paddingVertical: 13, paddingHorizontal: 15, borderRadius: 16,
-    backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line,
-  },
-  signOutAllText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15 },
-  signOutAllSub: { color: ui.muted, fontFamily: 'Figtree_400Regular', fontSize: 12.5, marginTop: 2 },
   logoutBtn: { marginTop: 26, minHeight: 54, borderRadius: 99, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: ui.dangerSoft },
   logoutText: { color: ui.danger, fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
 

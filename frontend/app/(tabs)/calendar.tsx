@@ -122,7 +122,7 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 }
 
 export default function Calendar() {
-  const { t, lang, dataVersion, user, subscription, refreshSubscription } = useStore();
+  const { t, lang, dataVersion, user, subscription, refreshSubscription, custodyRequested, clearCustodyRequest } = useStore();
   const { toast, showToast } = useToast();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const router = useRouter();
@@ -506,6 +506,14 @@ export default function Calendar() {
   }, [load]);
 
   useFocusEffect(useCallback(() => { load(); refreshPending(); }, [load, refreshPending]));
+
+  // The Custody weeks row in Settings lands here with this flag raised: open
+  // the sheet as the tab comes into focus, and clear it so it fires once.
+  useFocusEffect(useCallback(() => {
+    if (!custodyRequested) return;
+    openCustody();
+    clearCustodyRequest();
+  }, [custodyRequested, openCustody, clearCustodyRequest]));
 
   // Reload in place after a capture from the global "+". A scan lands as a
   // CANDIDATE rather than a card, so the review count has to come with it —

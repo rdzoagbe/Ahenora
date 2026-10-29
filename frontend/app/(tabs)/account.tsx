@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import {
   CalendarCheck,
@@ -65,7 +65,7 @@ function ListRow({
 
 export default function AccountScreen() {
   const router = useRouter();
-  const { user, logout, refreshUser, t } = useStore();
+  const { user, logout, refreshUser, t, supportRequested, clearSupportRequest } = useStore();
   const { theme } = useStore();
   const ui = useUI();
   const styles = createStyles(ui);
@@ -194,6 +194,14 @@ export default function AccountScreen() {
       setPwSaving(false);
     }
   };
+
+  // Contact support in Settings lands here with this flag raised: open the
+  // form as the tab comes into focus, and clear it so it fires once.
+  useFocusEffect(useCallback(() => {
+    if (!supportRequested) return;
+    setSupportOpen(true);
+    clearSupportRequest();
+  }, [supportRequested, clearSupportRequest]));
 
   const submitSupport = async () => {
     if (supportSending) return;
