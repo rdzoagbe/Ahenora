@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, CalendarClock, Share2, Image as ImageIcon, Lock, Users } from 'lucide-react-native';
+import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, CalendarClock, Share2, Image as ImageIcon, Lock, Users, Search } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -27,7 +27,8 @@ import { PdfViewer } from '../../src/components/PdfViewer';
 import DatePickerSheet from '../../src/components/DatePickerSheet';
 import FirstRunTip from '../../src/components/FirstRunTip';
 import { HtmlDocViewer } from '../../src/components/HtmlDocViewer';
-import { Badge, Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
+import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
+import { expiryPhrase, headlineAlert, matchesQuery, ownerLine } from '../../src/vaultTop';
 import { CATEGORY_STATIC } from '../../src/documentCategories';
 
 import { useStore } from '../../src/store';
@@ -68,7 +69,7 @@ function updatedLine(iso: string, t: (k: string) => string) {
 
 
 export default function Vault() {
-  const { t, lang } = useStore();
+  const { t, lang, user } = useStore();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
@@ -274,7 +275,13 @@ export default function Vault() {
   const usedLabel = usedMb >= 1 ? `${usedMb.toFixed(0)} MB` : `${(usedMb * 1024).toFixed(0)} KB`;
   const storagePct = limitMb > 0 ? Math.min(100, (usedMb / limitMb) * 100) : 0;
 
-  const filtered = useMemo(() => (filter === 'All' ? docs : docs.filter((d) => d.category === filter)), [docs, filter]);
+  // What was typed in the search box. A search narrows the list the same
+  // way a drawer does; the two combine.
+  const [query, setQuery] = useState('');
+  const filtered = useMemo(
+    () => docs.filter((d) => (filter === 'All' || d.category === filter) && matchesQuery(d, query)),
+    [docs, filter, query],
+  );
 
   const openAdd = () => {
     setTitle('');
@@ -561,8 +568,8 @@ export default function Vault() {
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
           <ScreenHeader
-            eyebrow={t('vault_secure_storage')}
-            title={t('vault')}
+            eyebrow={t('vault')}
+            title={t('vault_family_documents')}
             // showAdd off, or this corner carries TWO plus buttons side by side,
             // both announcing themselves as "Add": the header's generic
             // quick-add picker and the one below it that adds a document. The
@@ -597,6 +604,27 @@ export default function Vault() {
             icon={<Shield color={ui.orange} size={20} />}
           />
 
+          {/* Where is that document? Asked by name first. */}
+          <View style={styles.searchBox}>
+            <Search color={ui.muted} size={18} />
+            <TextInput
+              testID="vault-search"
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t('vault_search_docs')}
+              placeholderTextColor={ui.muted}
+              accessibilityLabel={t('vault_search_docs')}
+              returnKeyType="search"
+              autoCorrect={false}
+              style={styles.searchInput}
+            />
+            {query ? (
+              <PressScale testID="vault-search-clear" accessibilityRole="button" accessibilityLabel={t('close')} onPress={() => setQuery('')} hitSlop={8}>
+                <X color={ui.muted} size={16} />
+              </PressScale>
+            ) : null}
+          </View>
+
           {/* Category filter chips */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} style={styles.chipScroll}>
             {['All', ...CATEGORIES.map((c) => c.key)].map((key) => {
@@ -609,23 +637,39 @@ export default function Vault() {
             })}
           </ScrollView>
 
-          {/* Storage summary */}
-          <Card style={styles.storageCard}>
-            <IconTile bg={ui.orangeSoft} size={52} radius={16}>
-              <Folder color={ui.orange} size={24} />
-            </IconTile>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.storageText}>{docs.length} {docs.length === 1 ? t('vault_document') : t('vault_documents')} · {usedLabel} {t('vault_of')} {limitMb >= 1024 ? `${(limitMb / 1024).toFixed(0)} GB` : `${limitMb.toFixed(0)} MB`}</Text>
-              <View style={{ marginTop: 10 }}>
-                <ProgressBar pct={storagePct} />
-              </View>
-            </View>
-          </Card>
+          {/* The one document that needs attention, first: the soonest to run
+              out, or one already run out. It opens the document itself; the
+              rest of the alerts keep their own list below, without this one. */}
+          {(() => {
+            const headline = headlineAlert(expiryAlerts);
+            if (!headline) return null;
+            const doc = docs.find((d) => d.doc_id === headline.doc_id) || null;
+            const phrase = expiryPhrase({ expiry_date: headline.expiry_date }, new Date(), t);
+            return (
+              <PressScale
+                testID="vault-attention"
+                accessibilityRole="button"
+                accessibilityLabel={`${t('vault_needs_attention')}: ${headline.title}${phrase ? `, ${phrase}` : ''}`}
+                disabled={!doc}
+                onPress={() => doc && openPreview(doc)}
+                style={styles.attention}
+              >
+                <IconTile bg={ui.card} size={40} radius={12}>
+                  <CalendarClock color={ui.goldText} size={22} />
+                </IconTile>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.attentionEyebrow}>{t('vault_needs_attention')}</Text>
+                  <Text style={styles.attentionTitle} numberOfLines={2}>{headline.title}{phrase ? ` · ${phrase}` : ''}</Text>
+                </View>
+                {doc ? <Text style={styles.attentionLink}>{t('vault_open')}</Text> : null}
+              </PressScale>
+            );
+          })()}
 
-          {/* Recent documents */}
-          <View style={styles.recentHead}>
-            <Text style={styles.recentTitle}>{t('vault_recent_documents')}</Text>
-            <Text style={styles.recentTotal}>{filtered.length} {t('vault_total')}</Text>
+          {/* All documents */}
+          <View style={styles.recentHead} testID="vault-all-documents">
+            <Text style={styles.recentTitle}>{t('vault_all_documents')}</Text>
+            <Text style={styles.recentTotal}>{filtered.length}</Text>
           </View>
 
           {filtered.length === 0 && !loading ? (
@@ -643,47 +687,61 @@ export default function Vault() {
               {filtered.map((d) => {
                 const cat = catInfo(d.category);
                 const isImg = isImageDoc(d);
+                const CatIcon = cat.icon;
+                const now = new Date();
+                // Whose it is, and when it runs out: the two things a row is
+                // read for. The drawer is the picture; what it is called is the
+                // title; who may see it is the small mark on the right.
+                const sub = [ownerLine(d, user?.user_id, t), expiryPhrase(d, now, t) || t('vault_no_expiry')]
+                  .filter(Boolean).join(' · ');
+                const visibility = d.visibility || 'shared';
                 return (
-                  <PressScale key={d.doc_id} testID={`vault-doc-${d.doc_id}`} onPress={() => openPreview(d)} style={styles.listRow}>
+                  <PressScale
+                    key={d.doc_id}
+                    testID={`vault-doc-${d.doc_id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${d.title}, ${sub}, ${visibility === 'private' ? t('vault_private') : visibility === 'selected' ? t('vault_selected') : t('vault_shared')}`}
+                    onPress={() => openPreview(d)}
+                    style={styles.listRow}
+                  >
                     <View style={[styles.listThumb, { backgroundColor: cat.soft }]}>
                       {isImg ? (
                         <Image source={{ uri: d.image_base64 }} style={styles.listThumbImg} />
                       ) : (
-                        <FileText color={cat.tone} size={22} />
+                        <CatIcon color={cat.tone} size={22} />
                       )}
                     </View>
-                    <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
+                    <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
                       <Text style={styles.listTitle} numberOfLines={1}>{d.title}</Text>
-                      <View style={styles.listMeta}>
-                        <Badge label={d.category.toUpperCase()} bg={cat.soft} color={cat.tone} />
-                        {(d.visibility || 'shared') === 'private' ? (
-                          <Badge label={t('vault_private')} bg={ui.soft} color={ui.muted} />
-                        ) : d.visibility === 'selected' ? (
-                          <Badge label={t('vault_selected')} bg={ui.mint} color={ui.mintText} />
-                        ) : (
-                          <Badge label={t('vault_shared')} bg={ui.mint} color={ui.mintText} />
-                        )}
-                        <Text style={styles.listDate}>{updatedLine(d.created_at, t)}</Text>
-                      </View>
+                      <Text style={styles.listSub} numberOfLines={1}>{sub}</Text>
                     </View>
+                    {(d.visibility || 'shared') === 'private' ? (
+                      <Lock color={ui.muted} size={15} />
+                    ) : d.visibility === 'selected' ? (
+                      <Users color={ui.mintText} size={15} />
+                    ) : null}
                     <ChevronRight color={ui.muted} size={18} />
                   </PressScale>
                 );
               })}
             </View>
           )}
-          {/* Document Expiry Alerts */}
-          {expiryAlerts.length > 0 ? (
+          {/* Document Expiry Alerts — the rest of them; the soonest is the
+              card at the top, and nothing appears twice on one screen. */}
+          {(() => {
+            const headline = headlineAlert(expiryAlerts);
+            const otherAlerts = headline ? expiryAlerts.filter((a) => a.doc_id !== headline.doc_id) : expiryAlerts;
+            return otherAlerts.length > 0 ? (
             <>
               <View style={styles.recentHead}>
                 <View style={styles.shopHeaderLeft}>
                   <AlertTriangle color="#DC2626" size={20} />
                   <Text style={styles.recentTitle}>{t('vault_expiry_alerts')}</Text>
                 </View>
-                <Text style={styles.recentTotal}>{expiryAlerts.length} {expiryAlerts.length === 1 ? t('vault_alert') : t('vault_alerts')}</Text>
+                <Text style={styles.recentTotal}>{otherAlerts.length} {otherAlerts.length === 1 ? t('vault_alert') : t('vault_alerts')}</Text>
               </View>
               <View style={styles.shopCard}>
-                {expiryAlerts.slice(0, 6).map((alert) => {
+                {otherAlerts.slice(0, 6).map((alert) => {
                   const expired = alert.status === 'expired';
                   const n = expired ? Math.abs(alert.days_left) : alert.days_left;
                   const unit = expired
@@ -718,7 +776,22 @@ export default function Vault() {
                 })}
               </View>
             </>
-          ) : null}
+          ) : null;
+          })()}
+
+          {/* Storage summary */}
+          <View testID="vault-storage"><Card style={styles.storageCard}>
+            <IconTile bg={ui.orangeSoft} size={52} radius={16}>
+              <Folder color={ui.orange} size={24} />
+            </IconTile>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.storageText}>{docs.length} {docs.length === 1 ? t('vault_document') : t('vault_documents')} · {usedLabel} {t('vault_of')} {limitMb >= 1024 ? `${(limitMb / 1024).toFixed(0)} GB` : `${limitMb.toFixed(0)} MB`}</Text>
+              <View style={{ marginTop: 10 }}>
+                <ProgressBar pct={storagePct} />
+              </View>
+            </View>
+          </Card></View>
+
 
           <View style={{ height: 140 }} />
       </TabScreen>
@@ -955,6 +1028,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
   chipScroll: { marginTop: 18, marginHorizontal: -20 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 46, paddingHorizontal: 14, borderRadius: 16, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, marginTop: 14, marginBottom: 12 },
+  searchInput: { flex: 1, fontFamily: 'Figtree_600SemiBold', fontSize: 15, color: ui.text, paddingVertical: 0 },
+  attention: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 20, backgroundColor: ui.gold, marginTop: 16 },
+  attentionEyebrow: { color: ui.goldText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
+  attentionTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16, lineHeight: 21 },
+  attentionLink: { color: ui.goldText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  listSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
   chipRow: { gap: 9, paddingHorizontal: 20 },
   chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 99, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
   chipActive: { backgroundColor: ui.text, borderColor: ui.text },
