@@ -23,8 +23,14 @@ name: Error watch
 # alert gets ignored on the day it matters.
 
 on:
+  # Two slots an hour, not one. GitHub runs scheduled workflows on a
+  # best-effort queue and drops them under load: in the six days to
+  # 2026-10-29 this "hourly" job fired 30 times in 136 hours — five a day,
+  # gaps of 2.5 to 7.6 hours. A second slot costs nothing (the check is a
+  # read) and halves the odds of a whole hour going unwatched.
   schedule:
     - cron: "7 * * * *"
+    - cron: "37 * * * *"
   workflow_dispatch:
     inputs:
       minutes:
@@ -51,7 +57,15 @@ jobs:
           # branch below exists to avoid. Overridable, but the default is the
           # one already proven by the smoke test.
           API_BASE: ${{ vars.API_BASE || secrets.SMOKE_BASE_URL || 'https://household-coo-production.up.railway.app' }}
-          MINUTES: ${{ github.event.inputs.minutes || '60' }}
+          # Eight hours back, not one. The window has to cover the gap since
+          # the previous run, or an error that threw between two runs is never
+          # asked about: with the five-a-day cadence above and a 60-minute
+          # window, the alert was looking at 29 of 136 hours — one hour in
+          # five. Eight hours clears the longest gap measured. An error that
+          # persists is reported again on every run until it is fixed, which
+          # is the right amount of noise for an unhandled exception in
+          # production. On demand, the window is whatever was typed.
+          MINUTES: ${{ github.event.inputs.minutes || '480' }}
         run: |
           set -uo pipefail
 

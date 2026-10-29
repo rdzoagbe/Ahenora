@@ -249,6 +249,20 @@ class TheAlertIsWiredToAHuman(unittest.TestCase):
         # and a watcher that goes quiet when it cannot see is the worst case.
         self.assertIn("Could not reach", self.workflow())
 
+    def test_it_looks_back_further_than_a_dropped_slot(self):
+        """GitHub drops scheduled slots: this "hourly" job ran five times a
+        day in the six days to 2026-10-29, with gaps up to 7.6 hours. A
+        window shorter than the gap means an error that threw between two
+        runs is never asked about — the alert looked at one hour in five.
+        Eight hours clears the longest gap measured, and a second slot an
+        hour shortens the gaps themselves."""
+        text = self.workflow()
+        import re
+        window = re.search(r"github\.event\.inputs\.minutes \|\| '(\d+)'", text)
+        self.assertIsNotNone(window, "the scheduled window is not set")
+        self.assertGreaterEqual(int(window.group(1)), 480)
+        self.assertGreaterEqual(len(re.findall(r"^\s+- cron:", text, re.M)), 2)
+
     def test_it_skips_rather_than_failing_when_it_is_not_set_up_yet(self):
         """A half-finished setup that fails hourly gets muted, and a muted
         alert is worse than none — everybody believes it is still working."""
