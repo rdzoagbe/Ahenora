@@ -1,14 +1,16 @@
-"""The OTA publishes overnight now, and only when there is something to publish.
+"""The OTA publishes on merge, overnight as the safety net, and only when
+there is something to publish.
 
 Two things this file holds.
 
-**The schedule.** Every merge to main used to publish to production
-immediately. On a day with six merges that is six bundles pushed at people
-mid-afternoon, with no gap between "CI went green" and "it is on every phone".
-The publish moved to 02:00 UTC, with a workflow_dispatch override for a hotfix.
-The danger in that move is publishing on BOTH triggers — a condition that reads
-correctly and still fires on push — so the job's `if` is parsed rather than
-eyeballed.
+**The triggers.** From 2026-09 to 2026-10-29 a merge to main did NOT publish:
+the OTA went out at 02:00 UTC, with a workflow_dispatch override for a hotfix,
+so nothing landed in the middle of a family's afternoon. On 2026-10-29 Roland
+asked for a merge to reach phones right away, every time. The app applies an
+update silently only in the first seconds of a fresh open (autoApplyUpdate),
+so the afternoon is still safe; the overnight slots stay for a merge whose
+publish failed or was cancelled. The job's `if` is parsed rather than
+eyeballed, because a condition can read one way and fire another.
 
 **The guard.** `eas update` mints a new update group every run, whatever the
 bytes contain, and a client compares ids rather than contents. So a nightly job
@@ -134,15 +136,21 @@ class TheSchedule(unittest.TestCase):
         self.assertIn("publish_now", inputs)
         self.assertIs(inputs["publish_now"]["default"], False)
 
-    def test_a_merge_to_main_does_not_publish(self):
-        # The failure this guards: a condition that reads as "nightly" and
-        # still fires on every push, leaving the behaviour exactly as before
-        # while the comments claim otherwise.
+    def test_a_merge_to_main_publishes(self):
+        # Roland, 2026-10-29: "I'd like them to be published right away when
+        # it's merged." A push to main publishes; the overnight slots and the
+        # hotfix switch stay, as the net under it.
         cond = " ".join(workflow()["jobs"]["expo-update"]["if"].split())
+        self.assertIn("github.event_name == 'push'", cond)
         self.assertIn("github.event_name == 'schedule'", cond)
         self.assertIn("workflow_dispatch", cond)
         self.assertIn("inputs.publish_now", cond)
-        self.assertNotIn("push", cond)
+
+    def test_only_main_ever_publishes(self):
+        # Feature branches run this workflow too (push: claude/**). The
+        # push trigger must never let one of them reach a phone.
+        cond = " ".join(workflow()["jobs"]["expo-update"]["if"].split())
+        self.assertTrue(cond.startswith("github.ref == 'refs/heads/main' &&"), cond)
 
     def test_the_web_app_still_goes_out_on_merge(self):
         # ahenora.com reloads itself and carries its own update banner, so it

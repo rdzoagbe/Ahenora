@@ -60,29 +60,27 @@ on:
       # theShoppingListIsWalkedByAisle.test.ts reads backend/shopping_aisles.py
       # so the list's aisle order can never drift from the server's.
       - 'backend/shopping_aisles.py'
-  # The OTA is published on a schedule, not on merge. 02:00 UTC is the middle
-  # of the night across Europe, where most households are, and late evening in
-  # the Americas — so a bundle becomes available while nobody is mid-task, and
-  # there is a working day between merging something and it reaching a phone.
+  # The OTA publishes on merge, and the schedule is the safety net.
   #
-  # Before this, every merge to main published to production immediately. On a
-  # day with six merges that is six updates pushed at people while they are
-  # using the app, and no window at all between "it looked fine in CI" and
-  # "it is on every phone".
+  # From 2026-09 to 2026-10-29 it published only overnight: a window between
+  # "CI went green" and "it is on every phone", and no bundle landing in the
+  # middle of a family's afternoon. Roland asked on 2026-10-29 for a merge to
+  # reach phones right away, every time, rather than waiting a night. The
+  # app applies an update silently only in the first seconds of a fresh
+  # open, before anybody has touched anything (src/autoApplyUpdate.ts), so a
+  # daytime publish is still never a screen pulled out from under somebody;
+  # what changes is that a day with several merges is several launches that
+  # take a beat longer, not one.
   #
-  # FOUR attempts, not one. GitHub runs scheduled workflows on a best-effort
-  # queue: they are routinely delayed and, under load, dropped entirely. This
-  # one fired ONCE in its first two days — five hours late — and eight merged
-  # PRs sat on main reaching nobody, with nothing anywhere saying so. A
-  # schedule that silently does not fire is the same shape as every other bug
-  # this codebase keeps finding: nothing breaks, nothing alerts, the thing
-  # just never happens.
-  #
-  # The later slots cost nothing when 02:00 worked. ota_should_publish.sh
-  # refuses to publish when the app has not changed since the last publish,
-  # and only moves the ota-published tag after `eas update` succeeds — so the
-  # first slot that runs publishes, and the rest report "no_app_change" and
-  # stop. All four are still the middle of the night in Europe.
+  # The four overnight slots stay, for a merge whose publish failed or was
+  # cancelled by the next merge landing on top of it: GitHub runs scheduled
+  # workflows on a best-effort queue, routinely late and under load dropped
+  # entirely (this one fired ONCE in its first two days, five hours late),
+  # which is why there are four of them. They cost nothing when the day's
+  # merges published: ota_should_publish.sh refuses to publish when the app
+  # has not changed since the last publish, and only moves the ota-published
+  # tag after `eas update` succeeds — so a slot with nothing new reports
+  # "nothing_merged" and stops.
   schedule:
     - cron: '0 2 * * *'
     - cron: '0 3 * * *'
@@ -340,13 +338,19 @@ jobs:
     name: Publish EAS update
     runs-on: ubuntu-latest
     needs: frontend-ci
-    # Nightly, or on demand for a hotfix. NOT on merge — see the schedule
-    # comment at the top of this file. A plain push to main still runs lint,
-    # typecheck, tests and the web export; it just does not reach any phone
-    # until tonight.
+    # On merge, overnight as the safety net, or on demand — see the schedule
+    # comment at the top of this file. Only ever from main: a push to a
+    # claude/** branch runs lint, typecheck and tests and reaches no phone.
+    #
+    # A push run shares its concurrency group with the next push to main, so
+    # two merges minutes apart can cancel the first publish mid-`eas update`.
+    # That is safe either way: the tag only moves after a publish succeeds,
+    # so the second run (or tonight's slot) publishes both changes, at worst
+    # staging one bundle twice.
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'schedule' ||
+      (github.event_name == 'push' ||
+       github.event_name == 'schedule' ||
        (github.event_name == 'workflow_dispatch' &&
         inputs.publish_now))
     # Moves the `ota-published` tag after a successful publish, so tomorrow
