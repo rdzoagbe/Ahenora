@@ -119,11 +119,9 @@ async def main():
         # ---- Android/inviter: send the invitation via the real form ----
         await android.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         await android.wait_for_timeout(2000)
-        # Settings groups are collapsed by default; open Household to reach the
-        # invite rows inside it.
-        await android.click('[data-testid="settings-group-household"]')
-        await android.wait_for_timeout(400)
-        await android.click("text=Invite a family member")
+        # Settings is three panels of rows (2026-10-29): "Invite someone" sits
+        # on the Family panel itself and opens the family invitation.
+        await android.click('[data-testid="settings-invite"]')
         await android.wait_for_timeout(800)
         await android.fill('[data-testid="invite-email"]', mail_b)
         await android.fill('[data-testid="invite-role"]', "Co-parent")
@@ -133,8 +131,10 @@ async def main():
         # exactly the production junk-folder scenario the app must survive.
         await android.click('[data-testid="close-invite"]')
         await android.wait_for_timeout(500)
-        # Household group is already open from the invite step above; just
-        # expand Manage members to see the pending co-parent invite.
+        # Open the household row, then expand Manage members to see the
+        # pending co-parent invite.
+        await android.click('[data-testid="settings-group-household"]')
+        await android.wait_for_timeout(400)
         await android.click('[data-testid="settings-household-toggle"]')
         await android.wait_for_timeout(800)
         body = await android.inner_text("body")
@@ -285,7 +285,9 @@ async def main():
         await android.click('[data-testid="settings-household-toggle"]')
         await android.wait_for_timeout(1000)
         body = await android.inner_text("body")
-        r["A_coparents_line"] = "Co-parents: Roland Sim & Keigh Sim" in body
+        # The household row names the other parent on its right: "Keigh".
+        household = await android.locator('[data-testid="settings-group-household"]').inner_text()
+        r["A_coparents_line"] = "Household and co-parents" in household and "Keigh" in household
         r["A_no_more_pending"] = await android.locator(
             '[data-testid^="revoke-invite-"]').count() == 0
 
@@ -340,7 +342,10 @@ async def main():
         # admin-household path still reported, and it read as a plan nobody
         # could buy; Household is what the plans screen sells.
         body_b = await iphone.inner_text("body")
-        r["B_sees_household_plan"] = "Household" in body_b and "Family Office" not in body_b
+        # Read off the plan row itself: "Household" also names the household
+        # row above it now, so the page as a whole would always say it.
+        plan_row = await iphone.locator('[data-testid="open-pricing"]').inner_text()
+        r["B_sees_household_plan"] = "Household" in plan_row and "Family Office" not in body_b
         await iphone.screenshot(path="journey_iphone_premium.png")
         await browser.close()
 
