@@ -116,7 +116,9 @@ function HubRow({ styles, ui, testID, icon, title, sub, value, open, onPress }: 
     <PressScale testID={testID} onPress={onPress} style={styles.hubRow}>
       {icon}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.hubTitle} numberOfLines={1}>{title}</Text>
+        {/* Two lines, not one: "Household and co-parents" beside "1 adult · 1 child"
+            must not become "Household and co…" to make room for its value. */}
+        <Text style={styles.hubTitle} numberOfLines={2}>{title}</Text>
         {sub ? <Text style={styles.hubSub} numberOfLines={1}>{sub}</Text> : null}
       </View>
       {value ? <Text style={styles.hubValue} numberOfLines={1}>{value}</Text> : null}
