@@ -831,7 +831,7 @@ export default function Settings() {
               {user?.picture ? (
                 <Image source={{ uri: user.picture }} style={styles.avatarImg} />
               ) : (
-                <View style={[styles.avatar, { backgroundColor: ui[myTone.fg] }]}><Text style={styles.avatarText}>{initial}</Text></View>
+                <View style={[styles.avatar, { backgroundColor: ui[myTone.bg] }]}><Text style={[styles.avatarText, { color: ui[myTone.fg] }]}>{initial}</Text></View>
               )}
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.profileName} numberOfLines={1}>{user?.name || t('set_household_member')}</Text>
@@ -1537,7 +1537,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   profileCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: ui.soft, borderColor: ui.soft },
   avatar: { width: 54, height: 54, borderRadius: 99, borderWidth: 3, borderColor: ui.card, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 54, height: 54, borderRadius: 99, borderWidth: 3, borderColor: ui.card },
-  avatarText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 22 },
+  // The tone's ink on its tint, like every other avatar in the app: a white
+  // letter on the ink reads in light mode and fails in dark, where the inks
+  // are pale.
+  avatarText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 22 },
   profileName: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 18 },
   profileEmail: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, marginTop: 1 },
   profileLink: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13, marginTop: 3 },
