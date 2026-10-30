@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useClientValue } from '../../src/hooks/useClientValue';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
 
@@ -133,8 +134,11 @@ export default function Kitchen() {
   // search hit — says so with ?view=shop, which wins until the person picks
   // a tab themselves; picking one clears it, so a later plain visit opens on
   // the meals again. Derived rather than copied into state so arriving on an
-  // already-mounted tab needs no effect.
-  const { view: askedView } = useLocalSearchParams<{ view?: string }>();
+  // already-mounted tab needs no effect. Applied after hydration on the web:
+  // the prerendered page knows no URL parameters, so reading one on the
+  // first render made the hydrated tree differ from the static one.
+  const { view: rawAskedView } = useLocalSearchParams<{ view?: string }>();
+  const askedView = useClientValue(rawAskedView, undefined);
   const [chosenView, setView] = useState<KitchenView>('meal');
   const view: KitchenView = askedView === 'shop' || askedView === 'spend' ? askedView : chosenView;
   const [loading, setLoading] = useState(true);

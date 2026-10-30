@@ -29,6 +29,14 @@ describe('the Kitchen opens on the meals', () => {
     expect(kitchen).not.toContain("useState<KitchenView>('shop')");
   });
 
+  it('applies the asked-for view only once the page is hydrated', () => {
+    // The prerendered page knows no URL parameters; reading one on the first
+    // render made React throw the hydrated tree away (error #418/#423).
+    expect(kitchen).toContain('const askedView = useClientValue(rawAskedView, undefined);');
+    const hook = read('src', 'hooks', 'useClientValue.ts');
+    expect(hook).toContain('useSyncExternalStore(subscribeToNothing, () => value, () => duringHydration)');
+  });
+
   it('forgets the asked-for view once a tab is picked', () => {
     expect(kitchen).toContain('if (askedView) router.setParams({ view: undefined });');
   });
