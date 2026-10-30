@@ -12,6 +12,7 @@ import { AppState, Platform, useColorScheme } from 'react-native';
 import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError } from './api';
 import { clearSnapshots } from './offline';
 import { Lang, SUPPORTED_LANGS, translate, detectDeviceLang } from './i18n';
+import { useClientValue } from './hooks/useClientValue';
 import { AppearanceMode, AppTheme, getTheme, resolveAppearance, ResolvedAppearance } from './theme';
 import { logger } from './logger';
 import { saveLoginHint, clearLoginHint } from './loginHint';
@@ -112,7 +113,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [user?.user_id]);
   // First-open default follows the device / browser language; a signed-in
   // account's own saved language overrides it in refreshUser.
-  const [lang, setLangState] = useState<Lang>(detectDeviceLang);
+  //
+  // On the web the page is prerendered in English and then hydrated. A
+  // French browser used to read its language on the very first render, so
+  // the hydrated tree differed from the static one and React threw it away
+  // and rendered every tab again from scratch (error #418, on every screen,
+  // for every French-locale visitor). The device language is now applied
+  // once the page is hydrated — the prerender's own English until then — and
+  // at once on the phones, where nothing is prerendered.
+  const deviceLang = useClientValue(detectDeviceLang(), 'en' as Lang);
+  const [chosenLang, setLangState] = useState<Lang | null>(null);
+  const lang: Lang = chosenLang ?? deviceLang;
   // The 401 handler is registered once, with no deps, so it cannot close over
   // `lang` directly — it would forever schedule the reminder in whatever
   // language the app started in. A ref keeps it on the current one.
