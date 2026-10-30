@@ -1530,7 +1530,7 @@ export default function Feed() {
                 handedByName={(card) => memberName(card.created_by_user_id)}
                 dayLine={(card) => formatDayLine(card.due_date, t)}
                 onOpenCard={(card) => setSelectedCard(card)}
-                onOpenShopping={() => router.navigate('/(tabs)/kitchen' as never)}
+                onOpenShopping={() => router.navigate({ pathname: '/(tabs)/kitchen', params: { view: 'shop' } } as never)}
                 onSeeAll={() => { setShowAlerts(true); markAlertsSeen(); }}
               />
             ) : null}

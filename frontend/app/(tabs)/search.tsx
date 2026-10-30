@@ -34,12 +34,13 @@ const KIND_META: Record<SearchKind, { icon: any; tone: keyof UIColors; soft: key
   meal:     { icon: UtensilsCrossed,  tone: 'mintText',     soft: 'mint',       group: 'search_group_meals' },
 };
 
-const DESTINATION: Record<SearchKind, string> = {
+// The Kitchen opens on the meals, so a shopping hit asks for the list.
+const DESTINATION: Record<SearchKind, string | { pathname: string; params: Record<string, string> }> = {
   task: '/(tabs)/feed',
   event: '/(tabs)/calendar',
   note: '/(tabs)/feed',
   document: '/(tabs)/vault',
-  shopping: '/(tabs)/kitchen',
+  shopping: { pathname: '/(tabs)/kitchen', params: { view: 'shop' } },
   meal: '/(tabs)/kitchen',
 };
 

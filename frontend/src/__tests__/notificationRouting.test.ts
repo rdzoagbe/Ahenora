@@ -174,7 +174,7 @@ describe('a notification that reports something must not then hide it', () => {
     // Roland, 2026-10-09: a co-parent ticking something off told nobody. The
     // server now says so; the tap has to land on the thing it named.
     expect(targetForNotification({ type: 'shopping_done', family_id: 'fam1' }))
-      .toEqual({ pathname: '/(tabs)/kitchen' });
+      .toEqual({ pathname: '/(tabs)/kitchen', params: { view: 'shop' } });
     expect(targetForNotification({ type: 'task_done', card_id: 'card_9', family_id: 'fam1' }))
       .toEqual({ pathname: '/(tabs)/feed', params: { cardId: 'card_9' } });
     expect(targetForNotification({ type: 'task_done' }))
@@ -184,8 +184,9 @@ describe('a notification that reports something must not then hide it', () => {
   it('takes a shopping alert to the shopping list', () => {
     // It used to land on the Feed, which has no list on it. The server sends
     // this one to PARENTS — the people who then have to go and buy the thing.
+    // The Kitchen opens on the meals, so the list is asked for by name.
     expect(targetForNotification({ type: 'shopping_added', family_id: 'fam1' }))
-      .toEqual({ pathname: '/(tabs)/kitchen' });
+      .toEqual({ pathname: '/(tabs)/kitchen', params: { view: 'shop' } });
   });
 
   it('takes a Secret Santa alert to the draw, by the name the route reads', () => {

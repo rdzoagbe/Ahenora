@@ -106,8 +106,12 @@ async def main():
         _, iphone = await make_persona(browser, 390, 844, tok_b, blocker=True)
 
         # ---- Android/inviter: add a shopping item through the UI ----
+        # The Kitchen opens on the meals (2026-10-30); the list is a tab away.
         await android.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await android.wait_for_timeout(2500)
+        if await android.get_by_placeholder("Add items — commas for several").count() == 0:
+            await android.click('[data-testid="kitchen-tab-shop"]')
+            await android.wait_for_timeout(1500)
         shop = android.get_by_placeholder("Add items — commas for several")
         await shop.fill("Plantain x6, Rice 1kg, Tomatoes x4, Chicken 600g")
         await shop.press("Enter")
@@ -191,8 +195,12 @@ async def main():
         await iphone.screenshot(path="journey_iphone_joined.png")
 
         # ---- iPhone/invitee: the shared household is really shared ----
+        # The Kitchen opens on the meals (2026-10-30); the list is a tab away.
         await iphone.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
+        if await iphone.get_by_placeholder("Add items — commas for several").count() == 0:
+            await iphone.click('[data-testid="kitchen-tab-shop"]')
+            await iphone.wait_for_timeout(1500)
         r["B_sees_shared_shopping"] = has_item(await iphone.inner_text("body"), "Plantain", "x6")
 
         # ---- Vault privacy: a shared household is not a shared filing
@@ -256,6 +264,10 @@ async def main():
         api("DELETE", "/shopping/all", None, tok_a)  # clears + archives
         await iphone.reload(wait_until="domcontentloaded")
         await iphone.wait_for_timeout(2500)
+        # A reload opens on the meals (2026-10-30); the banner is on the list.
+        if await iphone.locator('[data-testid="restore-banner"]').count() == 0:
+            await iphone.click('[data-testid="kitchen-tab-shop"]')
+            await iphone.wait_for_timeout(1500)
         r["B_restore_banner_after_clear"] = "Restore" in await iphone.inner_text("body")
         hist = api("GET", "/shopping/history", token=tok_a)
         r["one_archive_only"] = len(hist) == 1

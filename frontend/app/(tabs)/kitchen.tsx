@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useClientValue } from '../../src/hooks/useClientValue';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
 
@@ -128,7 +129,18 @@ export default function Kitchen() {
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
-  const [view, setView] = useState<KitchenView>('shop');
+  // The Kitchen opens on the meals (Roland, 2026-10-30). A door that wants
+  // the list instead — "open the shopping list" on Home, a shopping push, a
+  // search hit — says so with ?view=shop, which wins until the person picks
+  // a tab themselves; picking one clears it, so a later plain visit opens on
+  // the meals again. Derived rather than copied into state so arriving on an
+  // already-mounted tab needs no effect. Applied after hydration on the web:
+  // the prerendered page knows no URL parameters, so reading one on the
+  // first render made the hydrated tree differ from the static one.
+  const { view: rawAskedView } = useLocalSearchParams<{ view?: string }>();
+  const askedView = useClientValue(rawAskedView, undefined);
+  const [chosenView, setView] = useState<KitchenView>('meal');
+  const view: KitchenView = askedView === 'shop' || askedView === 'spend' ? askedView : chosenView;
   const [loading, setLoading] = useState(true);
   // The meal a tapped notification was about. "Dinner tonight: lasagne" used
   // to open the Kitchen and stop there, leaving the cook to find the lasagne
@@ -1330,7 +1342,10 @@ export default function Kitchen() {
     }
   }, [showToast, t]);
 
-  const selectView = (v: KitchenView) => setView(v);
+  const selectView = (v: KitchenView) => {
+    setView(v);
+    if (askedView) router.setParams({ view: undefined });
+  };
   // A tile for a day with nothing on it opens the add sheet on that day, so
   // the sheet does not have to be told twice which day was meant.
   const planDay = (day: string) => { setMealDay(day); setShowMealAdd(true); };
@@ -2051,7 +2066,7 @@ export default function Kitchen() {
                 <View style={styles.mealEmptyWrap}>
                   <Text style={styles.empty}>{t('vault_meal_empty')}</Text>
                   <PressScale testID="meal-suggest-cta" onPress={openSuggest} style={styles.suggestCta}>
-                    <Sparkles color="#FFFFFF" size={16} />
+                    <Sparkles color={ui.lavenderText} size={16} />
                     <Text style={styles.suggestCtaText}>{t('kitchen_suggest_week')}</Text>
                   </PressScale>
                 </View>
@@ -3232,8 +3247,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // size. Kept red-tinted, because clearing the list is the destructive one.
   clearAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999, backgroundColor: ui.dangerSoft },
   clearAllText: { color: ui.danger, fontFamily: 'Figtree_700Bold', fontSize: 13 },
-  suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavenderText, marginTop: 4 },
-  suggestCtaText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  // The plum ink on its tint, like the "dinner ideas" pill beside it: white
+  // on the ink read in light mode and measured 2.22:1 in dark, where the ink
+  // is pale. Caught by the contrast harness once the meals became the
+  // opening view.
+  suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavender, marginTop: 4 },
+  suggestCtaText: { color: ui.lavenderText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
   suggestSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13.5, lineHeight: 20, marginBottom: 8 },
   suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderTopWidth: 1, borderTopColor: ui.line },
   suggestDay: { color: ui.lavenderText, fontFamily: 'Figtree_800ExtraBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },

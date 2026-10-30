@@ -24,9 +24,9 @@ What this holds:
 
 Two things learned the hard way, written down because they cost an hour:
 
-  * Kitchen opens on the shopping LIST. The planner is behind the Meals tab,
-    and reading the default view reports a planned meal as missing when it is
-    one tap away.
+  * Kitchen opens on the MEALS since 2026-10-30 (it opened on the shopping
+    list before). This still clicks the Meals tab explicitly, so it reads the
+    planner whichever view the screen opened on.
   * A loading overlay covers the tab bar while the screen loads. This WAITS
     for it to clear rather than forcing a click past it — a harness that
     clicks through an overlay stops noticing when the overlay is the bug,
