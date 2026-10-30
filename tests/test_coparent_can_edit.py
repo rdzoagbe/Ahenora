@@ -15,6 +15,10 @@ A no-op is not a change. The rule underneath is worth keeping and is kept:
 actually flipping someone else's card between shared and private is still
 refused.
 
+Since 2026-10-30 a PRIVATE card of the other's is refused altogether, text
+included: Roland decided private stays private. The co-parent correction
+this file is about is a correction of what the other one SHARED.
+
 Run with:  python3 -m pytest tests/test_coparent_can_edit.py -q
 """
 import asyncio
@@ -92,22 +96,24 @@ class TwoParentsOneList(unittest.TestCase):
         out = self._edit(self.roland, card, title="Book the dentist")
         self.assertEqual(out["title"], "Book the dentist")
 
-    def test_that_works_for_a_private_card_of_theirs_too(self):
-        # Private-to-Keigh, resent unchanged. Still a no-op, still allowed —
-        # and whether Roland can SEE it is a different question, answered by
-        # the listing, not by the save.
+    def test_but_not_on_a_private_card_of_theirs(self):
+        # Private-to-Keigh is Keigh's alone, text included. Whether Roland can
+        # SEE it is answered by the listing; whether he can CHANGE it is
+        # answered here, and the answer is no.
         card = self._keighs_card(shared=False, title="Passport renewal")
-        out = self._edit(self.roland, card, title="Passport renewal form")
-        self.assertEqual(out["title"], "Passport renewal form")
+        with self.assertRaises(HTTPException) as caught:
+            self._edit(self.roland, card, title="Passport renewal form")
+        self.assertEqual(caught.exception.status_code, 403)
+        stored = asyncio.run(
+            self.db["cards"].find_one({"card_id": card["card_id"]}, {"_id": 0}))
+        self.assertEqual(stored["title"], "Passport renewal")
 
     def test_and_the_sharing_is_left_exactly_as_it_was(self):
-        for shared in (True, False):
-            card = self._keighs_card(shared=shared, title=f"thing {shared}")
-            self._edit(self.roland, card, title=f"thing {shared} edited")
-            stored = asyncio.run(
-                self.db["cards"].find_one({"card_id": card["card_id"]}, {"_id": 0}))
-            self.assertEqual(bool(stored["shared"]), shared,
-                             "an edit that did not touch sharing must not move it")
+        card = self._keighs_card(shared=True, title="thing")
+        self._edit(self.roland, card, title="thing edited")
+        stored = asyncio.run(
+            self.db["cards"].find_one({"card_id": card["card_id"]}, {"_id": 0}))
+        self.assertTrue(stored["shared"], "an edit that did not touch sharing must not move it")
 
     # --- the rule it must not have broken ---------------------------------
 

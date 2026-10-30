@@ -12339,6 +12339,23 @@ async def create_card(payload: CardIn, user=Depends(require_user)):
     return public_card(doc)
 
 
+def refuse_unless_owner_of_private(card: dict, user: dict) -> None:
+    """A private card is its owner's to change or remove, and nobody else's.
+
+    The listing, the search, the brief and the lock screen already keep one
+    person's private card out of the other's sight; this closes the write
+    side, so a card reached by its id alone cannot be edited or deleted from
+    under its owner. #720 had let a co-parent correct the text of the other's
+    private card (the save itself was a no-op on the sharing); Roland decided
+    on 2026-10-30 that private stays private, text included. A shared card
+    stays everybody's, and a card written before ownership was recorded has
+    no owner, so it stays the household's.
+    """
+    owner = card.get("created_by_user_id")
+    if card.get("shared", True) is False and owner and owner != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Only the person who added this private item can change it")
+
+
 @app.patch("/api/cards/{card_id}")
 async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_user)):
     database = get_db()
@@ -12348,6 +12365,7 @@ async def update_card(card_id: str, payload: CardPatchIn, user=Depends(require_u
     )
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    refuse_unless_owner_of_private(card, user)
 
     changes = {}
     award_child = False
@@ -12691,6 +12709,12 @@ async def share_card(card_id: str, user=Depends(require_user)):
 @app.delete("/api/cards/{card_id}")
 async def delete_card(card_id: str, user=Depends(require_user)):
     database = get_db()
+    card = await database["cards"].find_one(
+        {"card_id": card_id, "family_id": user["family_id"]},
+        {"_id": 0, "shared": 1, "created_by_user_id": 1},
+    )
+    if card:
+        refuse_unless_owner_of_private(card, user)
     await database["cards"].delete_one({"card_id": card_id, "family_id": user["family_id"]})
     # Deleting a card from the completed history takes its feed lines with it —
     # "done" and "created" for a thing that no longer exists would otherwise
