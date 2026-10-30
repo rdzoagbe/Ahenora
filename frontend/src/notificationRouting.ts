@@ -97,14 +97,14 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // "Keigh added milk and bread to the list" landed on the Feed, which has no
     // shopping list on it. The server sends this one to PARENTS only — the
     // people who then have to go and buy the thing — so the tap dropping them
-    // one tab away from the list is the whole of its usefulness lost. Kitchen
-    // opens on the shopping view, so no parameter is needed to get there.
+    // one tab away from the list is the whole of its usefulness lost. The
+    // Kitchen opens on the meals (2026-10-30), so the list is asked for.
     case 'shopping_added':
-      return { pathname: '/(tabs)/kitchen' };
+      return { pathname: '/(tabs)/kitchen', params: { view: 'shop' } };
     // "Keigh finished the shop" is about the list that just got shorter, and
     // the list is in the Kitchen.
     case 'shopping_done':
-      return { pathname: '/(tabs)/kitchen' };
+      return { pathname: '/(tabs)/kitchen', params: { view: 'shop' } };
     // "Keigh finished School run" names a card, and the Done card on Home
     // shows it with an Undo, so the card itself opens: the same treatment a
     // hand-off gets, because it is the other half of the same job.

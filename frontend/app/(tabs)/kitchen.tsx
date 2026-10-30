@@ -128,7 +128,15 @@ export default function Kitchen() {
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
-  const [view, setView] = useState<KitchenView>('shop');
+  // The Kitchen opens on the meals (Roland, 2026-10-30). A door that wants
+  // the list instead — "open the shopping list" on Home, a shopping push, a
+  // search hit — says so with ?view=shop, which wins until the person picks
+  // a tab themselves; picking one clears it, so a later plain visit opens on
+  // the meals again. Derived rather than copied into state so arriving on an
+  // already-mounted tab needs no effect.
+  const { view: askedView } = useLocalSearchParams<{ view?: string }>();
+  const [chosenView, setView] = useState<KitchenView>('meal');
+  const view: KitchenView = askedView === 'shop' || askedView === 'spend' ? askedView : chosenView;
   const [loading, setLoading] = useState(true);
   // The meal a tapped notification was about. "Dinner tonight: lasagne" used
   // to open the Kitchen and stop there, leaving the cook to find the lasagne
@@ -1330,7 +1338,10 @@ export default function Kitchen() {
     }
   }, [showToast, t]);
 
-  const selectView = (v: KitchenView) => setView(v);
+  const selectView = (v: KitchenView) => {
+    setView(v);
+    if (askedView) router.setParams({ view: undefined });
+  };
   // A tile for a day with nothing on it opens the add sheet on that day, so
   // the sheet does not have to be told twice which day was meant.
   const planDay = (day: string) => { setMealDay(day); setShowMealAdd(true); };
