@@ -2066,7 +2066,7 @@ export default function Kitchen() {
                 <View style={styles.mealEmptyWrap}>
                   <Text style={styles.empty}>{t('vault_meal_empty')}</Text>
                   <PressScale testID="meal-suggest-cta" onPress={openSuggest} style={styles.suggestCta}>
-                    <Sparkles color="#FFFFFF" size={16} />
+                    <Sparkles color={ui.lavenderText} size={16} />
                     <Text style={styles.suggestCtaText}>{t('kitchen_suggest_week')}</Text>
                   </PressScale>
                 </View>
@@ -3247,8 +3247,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // size. Kept red-tinted, because clearing the list is the destructive one.
   clearAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999, backgroundColor: ui.dangerSoft },
   clearAllText: { color: ui.danger, fontFamily: 'Figtree_700Bold', fontSize: 13 },
-  suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavenderText, marginTop: 4 },
-  suggestCtaText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  // The plum ink on its tint, like the "dinner ideas" pill beside it: white
+  // on the ink read in light mode and measured 2.22:1 in dark, where the ink
+  // is pale. Caught by the contrast harness once the meals became the
+  // opening view.
+  suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavender, marginTop: 4 },
+  suggestCtaText: { color: ui.lavenderText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
   suggestSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13.5, lineHeight: 20, marginBottom: 8 },
   suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderTopWidth: 1, borderTopColor: ui.line },
   suggestDay: { color: ui.lavenderText, fontFamily: 'Figtree_800ExtraBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
