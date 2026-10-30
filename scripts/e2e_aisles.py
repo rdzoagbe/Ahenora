@@ -64,7 +64,8 @@ async def main():
         await page.route("**/api/**", route)
         await page.add_init_script(f"localStorage.setItem('coo_session_token','{tok}');")
 
-        await page.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
+        # The Kitchen opens on the meals (2026-10-30); the list is asked for.
+        await page.goto(f"{WEB}/kitchen?view=shop", wait_until="domcontentloaded")
         await page.wait_for_timeout(2600)
         box = page.get_by_placeholder("Add items — commas for several")
         await box.fill("Tomatoes 400g, Milk x2, Pampers")
@@ -169,7 +170,7 @@ async def main():
         await dpage.add_init_script(
             f"localStorage.setItem('coo_session_token','{tok}');"
             "localStorage.setItem('coo_appearance_mode_minimal_light_v5','dark');")
-        await dpage.goto(f"{WEB}/kitchen", wait_until="domcontentloaded")
+        await dpage.goto(f"{WEB}/kitchen?view=shop", wait_until="domcontentloaded")
         await dpage.wait_for_timeout(2600)
         r["dark_mode_shows_the_sections"] = await dpage.locator(
             '[data-testid="shop-aisle-head-Produce"]').count() == 1
