@@ -19,8 +19,12 @@ Run the **EAS Build (Android)** workflow from the Actions tab. Three inputs:
 | `track` | `internal` to test on your own phone, `production` for a release |
 
 `internal` publishes to Internal testing as a completed release, so it appears
-on testers' devices straight away. `production` uploads as a **draft** — it
-still has to be promoted by hand in Play Console, deliberately.
+on testers' devices straight away. `production` also submits as a **completed**
+release (`releaseStatus: completed` in `eas.json`), so it goes out to every
+Android user at once, as a NEW build. To ship the exact build you tested on
+the internal track instead, promote it by hand: Play Console → Testing →
+Internal testing → Promote release → Production, where a staged rollout can
+be chosen. That is how 1.2.2 went out on 2026-10-30.
 
 Both need the `GOOGLE_SERVICE_ACCOUNT_KEY` repo secret. Without it the build
 still succeeds and the submit is skipped.

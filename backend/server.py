@@ -11580,7 +11580,11 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
 MIN_SUPPORTED_RUNTIME = "3.0.0"
 # 1.2.1 was approved on both stores in early October 2026; the admin read-out
 # and the smoke log said 1.2.0 until the stability check of 2026-10-18 noticed.
-CURRENT_STORE_VERSION = "1.2.1"
+# 1.2.2 rolled out on Google Play on 2026-10-30 (Android-only native changes
+# from #673: no overlay permission, the phone's own theme). The App Store still
+# serves 1.2.1 — nothing native changed for iOS since — so this is the newest
+# build either store offers, which is what the two readers of it want to know.
+CURRENT_STORE_VERSION = "1.2.2"
 
 
 @app.get("/api/app/version-info")
