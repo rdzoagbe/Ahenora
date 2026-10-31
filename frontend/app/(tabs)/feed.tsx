@@ -1186,23 +1186,16 @@ export default function Feed() {
     }
   };
 
+  // Complete in the card's sheet ticks it straight away. Since 2026-10-31 the
+  // rows of the day carry no checkbox (the reference Roland chose has none),
+  // so this is the way a thing is ticked off; asking "are you sure?" here as
+  // well made it three taps. A slip is still undoable: the ticked card waits
+  // in the Done card under the day, with Undo.
   const completeSelected = () => {
     if (!selectedCard) return;
     const card = selectedCard;
-    Alert.alert(
-      t('feed_mark_done_q'),
-      `"${card.title}" ${t('feed_move_to_history')}`,
-      [
-        { text: t('feed_cancel'), style: 'cancel' },
-        {
-          text: t('feed_done'),
-          onPress: () => {
-            setSelectedCard(null);
-            toggle(card);
-          },
-        },
-      ],
-    );
+    setSelectedCard(null);
+    toggle(card);
   };
 
   // The "before" count, held in a ref so the handler is not rebuilt on every

@@ -90,6 +90,10 @@ describe('a row of the day', () => {
   it('has no checkbox: the row opens the card, and the card is ticked off there', () => {
     expect(row).not.toMatch(/feed-card-complete-/);
     expect(feed).toMatch(/testID="feed-complete-card"/);
+    // Two taps, not three: Complete ticks at once, and Undo is in the Done card.
+    const complete = feed.slice(feed.indexOf('const completeSelected'), feed.indexOf('const cardsRef'));
+    expect(complete).not.toMatch(/Alert\.alert/);
+    expect(complete).toMatch(/toggle\(card\);/);
   });
 
   it('gives every kind of card a tile, and imported events their own', () => {
