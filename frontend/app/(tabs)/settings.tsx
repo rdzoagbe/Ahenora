@@ -19,6 +19,7 @@ import {
   Mail,
   MessageCircle,
   MessageSquare,
+  MessageSquareHeart,
   Moon,
   PenLine,
   RotateCcw,
@@ -41,6 +42,8 @@ import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
 import { HandoverPicker } from '../../src/components/HandoverPicker';
 import { LanguageModal } from '../../src/components/LanguageModal';
+import { SupportSheet } from '../../src/components/SupportSheet';
+import { FeedbackSheet } from '../../src/components/FeedbackSheet';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
@@ -128,13 +131,15 @@ function HubRow({ styles, ui, testID, icon, title, sub, value, open, onPress }: 
 }
 
 export default function Settings() {
-  const { user, t, lang, logout, subscription, refreshSubscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest, requestCustody, requestSupport } = useStore();
+  const { user, t, lang, logout, subscription, refreshSubscription, appearanceMode, setAppearance, inviteRequested, clearInviteRequest, membersRequested, clearMembersRequest, requestCustody } = useStore();
   const router = useRouter();
   const ui = useUI();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
   const [showLang, setShowLang] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   // isUpdatePending is only exposed through the hook, and it is the piece that
   // distinguishes "nothing new" from "new build already downloaded, waiting
   // for a restart" — two states checkForUpdateAsync reports identically.
@@ -1326,13 +1331,21 @@ export default function Settings() {
                       onPress={() => toggleGroup('help')} />
                     {groupOpen('help', GK.help) ? (
                       <View style={styles.inset}>
-                        {/* The form lives on the Account screen; this row raises a
-                            flag and goes there, and the form opens on arrival. */}
+                        {/* The form opens here. It lived on the Account screen,
+                            reached by a flag from this row; since 2026-10-31 it
+                            is said once, where Help and support is. */}
                         <NavRow
                           testID="settings-contact-support"
                           tile={<IconTile bg={ui.orangeSoft}><LifeBuoy color={ui.orange} size={18} /></IconTile>}
                           title={t('acc_contact_support')}
-                          onPress={() => { requestSupport(); router.push('/account'); }}
+                          onPress={() => setShowSupport(true)}
+                        />
+                        <NavRow
+                          testID="settings-send-feedback"
+                          tile={<IconTile bg={ui.lavender}><MessageSquareHeart color={ui.lavenderText} size={18} /></IconTile>}
+                          title={t('fb_title')}
+                          subtitle={t('fb_more_sub')}
+                          onPress={() => setShowFeedback(true)}
                         />
                         <NavRow
                           testID="settings-replay-setup"
@@ -1368,6 +1381,8 @@ export default function Settings() {
       </TabScreen>
 
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
+      <SupportSheet visible={showSupport} onClose={() => setShowSupport(false)} />
+      <FeedbackSheet visible={showFeedback} onClose={() => setShowFeedback(false)} />
       <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>

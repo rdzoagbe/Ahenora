@@ -1,23 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import {
   CalendarCheck,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  FileText,
   Download,
   KeyRound,
-  LifeBuoy,
-  LogOut,
   Mail,
   ShieldCheck,
   Trash2,
   X,
-  Send,
 } from 'lucide-react-native';
 
 import { PressScale } from '../../src/components/PressScale';
@@ -65,7 +61,7 @@ function ListRow({
 
 export default function AccountScreen() {
   const router = useRouter();
-  const { user, logout, refreshUser, t, supportRequested, clearSupportRequest } = useStore();
+  const { user, refreshUser, t } = useStore();
   const { theme } = useStore();
   const ui = useUI();
   const styles = createStyles(ui);
@@ -108,10 +104,6 @@ export default function AccountScreen() {
 
   const [diagnostics, setDiagnostics] = useState<AuthDiagnosticResult | null>(null);
   const [checking, setChecking] = useState(false);
-  const [supportOpen, setSupportOpen] = useState(false);
-  const [supportSubject, setSupportSubject] = useState('');
-  const [supportMessage, setSupportMessage] = useState('');
-  const [supportSending, setSupportSending] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew] = useState('');
@@ -120,11 +112,6 @@ export default function AccountScreen() {
   const name = user?.name || t('acc_default_name');
   const email = user?.email || t('acc_not_signed_in');
   const initial = (name.trim()[0] || 'H').toUpperCase();
-
-  const doLogout = async () => {
-    await logout();
-    router.replace('/');
-  };
 
   // A copy of your data, on the phone and in the share sheet. The privacy
   // policy promised a portable copy and answered it by email; deletion has been
@@ -192,36 +179,6 @@ export default function AccountScreen() {
       Alert.alert(t('acc_pw_error_title'), apiErrorText(e, t, 'acc_pw_error_msg'));
     } finally {
       setPwSaving(false);
-    }
-  };
-
-  // Contact support in Settings lands here with this flag raised: open the
-  // form as the tab comes into focus, and clear it so it fires once.
-  useFocusEffect(useCallback(() => {
-    if (!supportRequested) return;
-    setSupportOpen(true);
-    clearSupportRequest();
-  }, [supportRequested, clearSupportRequest]));
-
-  const submitSupport = async () => {
-    if (supportSending) return;
-    const subj = supportSubject.trim();
-    const msg = supportMessage.trim();
-    if (!subj || !msg) {
-      Alert.alert(t('acc_missing_fields_title'), t('acc_missing_fields_msg'));
-      return;
-    }
-    setSupportSending(true);
-    try {
-      await api.submitSupportRequest({ subject: subj, message: msg });
-      setSupportOpen(false);
-      setSupportSubject('');
-      setSupportMessage('');
-      Alert.alert(t('acc_sent_title'), t('acc_sent_msg'));
-    } catch {
-      Alert.alert(t('acc_error_title'), t('acc_send_error_msg'));
-    } finally {
-      setSupportSending(false);
     }
   };
 
@@ -358,40 +315,13 @@ export default function AccountScreen() {
             </Card>
           ) : null}
 
-          {/* Legal & support */}
-          <SectionTitle style={styles.sectionGap}>{t('acc_section_legal')}</SectionTitle>
-          <Card style={styles.cardPad}>
-            <ListRow
-              tile={<IconTile bg={ui.orangeSoft}><LifeBuoy color={ui.orange} size={18} /></IconTile>}
-              title={t('acc_contact_support')}
-              onPress={() => setSupportOpen(true)}
-            />
-            <ListRow
-              testID="open-terms-support"
-              tile={<IconTile bg={ui.orangeSoft}><FileText color={ui.orange} size={18} /></IconTile>}
-              title={t('acc_terms')}
-              onPress={() => router.push('/terms')}
-            />
-            <ListRow
-              testID="open-privacy-policy"
-              tile={<IconTile bg={ui.orangeSoft}><ShieldCheck color={ui.orange} size={18} /></IconTile>}
-              title={t('acc_privacy')}
-              onPress={() => router.push('/privacy')}
-              divider={false}
-            />
-          </Card>
-
-          {/* Account actions */}
+          {/* What used to follow here — Contact support, the terms, the
+              privacy policy and Log out — is on Settings, which this page is
+              reached from, so it is said once (2026-10-31). This page keeps
+              what is personal: the picture, the sign-in, the data, and the
+              one thing nobody should find by accident. */}
           <SectionTitle style={[styles.sectionGap, { color: ui.danger }]}>{t('acc_section_actions')}</SectionTitle>
           <Card style={[styles.cardPad, { borderColor: 'rgba(220,38,38,0.18)' }]}>
-            <ListRow
-              testID="account-logout"
-              tile={<IconTile bg={ui.dangerSoft}><LogOut color={ui.danger} size={18} /></IconTile>}
-              title={t('acc_logout')}
-              danger
-              right={null}
-              onPress={doLogout}
-            />
             <ListRow
               testID="open-account-deletion"
               tile={<IconTile bg={ui.dangerSoft}><Trash2 color={ui.danger} size={18} /></IconTile>}
@@ -406,58 +336,6 @@ export default function AccountScreen() {
           <View style={{ height: 150 }} />
         </ScrollView>
       </SafeAreaView>
-
-      {/* Support Contact Form Modal */}
-      <Modal visible={supportOpen} transparent animationType="fade" onRequestClose={() => setSupportOpen(false)}>
-        <BlurView intensity={40} tint={theme.mode === 'light' ? 'light' : 'dark'} style={StyleSheet.absoluteFill} />
-        <View style={[styles.modalBackdrop, { backgroundColor: theme.mode === 'light' ? 'rgba(255,255,255,0.52)' : 'rgba(8,9,16,0.6)' }]} />
-        <KeyboardAvoidingView style={styles.modalCenter} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={[styles.modalSheet, { backgroundColor: theme.colors.card, borderColor: theme.colors.cardBorder, shadowColor: theme.colors.shadow }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t('acc_contact_support')}</Text>
-              <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('close')} onPress={() => setSupportOpen(false)} style={[styles.modalCloseBtn, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
-                <X color={theme.colors.text} size={18} />
-              </PressScale>
-            </View>
-
-            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_subject')}</Text>
-            <TextInput
-              style={[styles.modalInput, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
-              value={supportSubject}
-              onChangeText={setSupportSubject}
-              placeholder={t('acc_subject_placeholder')}
-              placeholderTextColor={theme.colors.textMuted}
-              maxLength={200}
-              returnKeyType="next"
-            />
-
-            <Text style={[styles.modalLabel, { color: theme.colors.textMuted }]}>{t('acc_message')}</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalTextArea, { color: theme.colors.text, borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}
-              value={supportMessage}
-              onChangeText={setSupportMessage}
-              placeholder={t('acc_message_placeholder')}
-              placeholderTextColor={theme.colors.textMuted}
-              maxLength={5000}
-              multiline
-              textAlignVertical="top"
-            />
-
-            <PressScale
-              onPress={submitSupport}
-              disabled={supportSending}
-              style={[styles.modalSendBtn, { backgroundColor: theme.colors.primary, opacity: supportSending ? 0.6 : 1 }]}
-            >
-              <Send color={theme.colors.primaryText} size={16} />
-              <Text style={[styles.modalSendText, { color: theme.colors.primaryText }]}>
-                {supportSending ? t('acc_sending') : t('acc_send_message')}
-              </Text>
-            </PressScale>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
       {/* Change Password Modal */}
       <Modal visible={pwOpen} transparent animationType="fade" onRequestClose={() => setPwOpen(false)}>

@@ -64,11 +64,6 @@ interface StoreState {
   custodyRequested: boolean;
   requestCustody: () => void;
   clearCustodyRequest: () => void;
-  /** Raised by Contact support in Settings: the Account screen opens its
-   *  support form on arrival. */
-  supportRequested: boolean;
-  requestSupport: () => void;
-  clearSupportRequest: () => void;
   // Bumped whenever something is captured from the global "+" so any visible
   // tab can refresh its data without a navigation.
   dataVersion: number;
@@ -182,9 +177,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [custodyRequested, setCustodyRequested] = useState(false);
   const requestCustody = useCallback(() => setCustodyRequested(true), []);
   const clearCustodyRequest = useCallback(() => setCustodyRequested(false), []);
-  const [supportRequested, setSupportRequested] = useState(false);
-  const requestSupport = useCallback(() => setSupportRequested(true), []);
-  const clearSupportRequest = useCallback(() => setSupportRequested(false), []);
   // A monotonic counter the global "+" bumps after a successful capture; tabs
   // depend on it to reload the surface the user is looking at.
   const [dataVersion, setDataVersion] = useState(0);
@@ -471,9 +463,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         custodyRequested,
         requestCustody,
         clearCustodyRequest,
-        supportRequested,
-        requestSupport,
-        clearSupportRequest,
         dataVersion,
         unreadChats,
         refreshUnreadChats,
