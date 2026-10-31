@@ -79,6 +79,7 @@ import { recordWin } from '../../src/reviewPrompt';
 import { isAlreadySettled, mergeRedemptions, restoreRedemption } from '../../src/redemptions';
 import { webConfirm } from '../../src/confirm';
 import { localeFor } from '../../src/utils/date';
+import { SECTION_ART } from '../../src/sectionArt';
 
 /** "Sat 2 Aug" — short enough for a subtitle, unambiguous about which day. */
 function formatDueDate(iso: string, locale: string): string {
@@ -1797,6 +1798,7 @@ export default function Kids() {
             <ScreenHeader
               eyebrow={peopleCount(members) === 1 ? t('fam_person_one') : t('fam_people_count', { n: peopleCount(members) })}
               title={t('fam_our_family')}
+              art={SECTION_ART.family}
               right={
                 <PressScale
                   testID="family-manage-members"

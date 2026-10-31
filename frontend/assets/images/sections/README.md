@@ -1,12 +1,12 @@
 # Section pictures: record
 
 One square painting per part of the app, in the same style as the Home
-pictures (brief and rights: `../home/README.md`). Not shown in the app yet:
-they are kept here so they are not lost while the set is completed, and are
-wired in by their own change.
+pictures (brief and rights: `../home/README.md`).
 
 Roland confirmed on 2026-10-31 that every picture was made by him in ChatGPT,
-in his own account. Saved as WebP at 768×768.
+in his own account. Saved as WebP at 768×768. Shown since 2026-10-31 as a
+tile in the page header (`src/sectionArt.ts`): Calendar, Family, Kitchen (the
+basket on the shopping list) and Settings.
 
 | File | Tool | Account | Date | Subject | Edits made by hand |
 |---|---|---|---|---|---|

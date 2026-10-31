@@ -36,6 +36,7 @@ import { recipeMethod } from '../../src/recipeSteps';
 import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '../../src/kitchenWeek';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
+import { SECTION_ART } from '../../src/sectionArt';
 
 type KitchenView = 'shop' | 'meal' | 'spend';
 
@@ -1381,6 +1382,7 @@ export default function Kitchen() {
         <ScreenHeader
           eyebrow={t('kitchen')}
           title={t('kitchen_whats_cooking')}
+          art={view === 'shop' ? SECTION_ART.shopping : SECTION_ART.kitchen}
         />
 
         {/* Three ways in, all visible.
