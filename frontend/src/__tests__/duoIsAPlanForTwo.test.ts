@@ -112,7 +112,7 @@ describe('Duo hides, never deletes', () => {
   it('the Family hub, calendar, feed and More menu all read the same flag', () => {
     expect(read('..', 'app', '(tabs)', 'kids.tsx')).toContain('useKidsSectionsHidden()');
     expect(read('..', 'app', '(tabs)', 'calendar.tsx')).toContain('useKidsSectionsHidden()');
-    expect(read('components', 'MoreSheet.tsx')).toContain('useKidsSectionsHidden()');
+    expect(read('..', 'app', 'member.tsx')).toContain('useKidsSectionsHidden()');
     expect(read('..', 'app', '(tabs)', 'feed.tsx')).toContain('subscription?.kids_sections_hidden');
     expect(read('kidsSections.ts')).toContain('subscription?.kids_sections_hidden');
   });

@@ -27,6 +27,7 @@ import {
   Send,
   Share2,
   ShieldCheck,
+  Smile,
   Sparkles,
   Star,
   Trash2,
@@ -44,6 +45,7 @@ import { HandoverPicker } from '../../src/components/HandoverPicker';
 import { LanguageModal } from '../../src/components/LanguageModal';
 import { SupportSheet } from '../../src/components/SupportSheet';
 import { FeedbackSheet } from '../../src/components/FeedbackSheet';
+import { HandOverSheet } from '../../src/components/HandOverSheet';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PremiumPreviewBanner } from '../../src/components/PremiumGate';
@@ -139,6 +141,7 @@ export default function Settings() {
   const [invites, setInvites] = useState<FamilyInvite[]>([]);
   const [showLang, setShowLang] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
+  const [showHandOver, setShowHandOver] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   // isUpdatePending is only exposed through the hook, and it is the piece that
   // distinguishes "nothing new" from "new build already downloaded, waiting
@@ -785,7 +788,7 @@ export default function Settings() {
     subscription: 'subscription plan plans upgrade premium billing pay payment manage cancel tier household family price pricing',
     notifications: 'notifications push sign slip weekly digest email alert reminder',
     appearance: 'appearance theme light dark system display',
-    household: 'household members co-parent co parent children child pin invite family custody weeks',
+    household: 'household members co-parent co parent children child pin invite family custody weeks hand over kid mode phone',
     preferences: 'preferences language translation locale',
     more: 'more history completed cards usage limits version update metrics',
     help: 'help support contact replay setup onboarding rate review',
@@ -817,6 +820,9 @@ export default function Settings() {
   // Parents set custody, never helpers or teens (the server's write gate), and
   // only while the children's side of the app is shown at all.
   const canSetCustody = !!user && !user.is_helper && !user.is_teen && kidsShown;
+  // A helper cannot leave kid mode (that needs a parent's PIN), so the
+  // hand-over is not theirs to start.
+  const canHandOver = canSetCustody;
 
   return (
     <SwipeableTabView style={styles.container}>
@@ -987,6 +993,16 @@ export default function Settings() {
                     title={t('set_custody_weeks')}
                     value={custodyValue(subscription?.custody, t)}
                     onPress={() => { requestCustody(); router.push('/(tabs)/calendar'); }} />
+                ) : null,
+                // Handing the phone to a child lived in the More drawer; the
+                // drawer is gone (2026-10-31), so it sits with the household,
+                // and on each child's own page.
+                groupVisible(GK.household) && canHandOver ? (
+                  <HubRow key="handover" styles={styles} ui={ui} testID="settings-hand-over"
+                    icon={tile(ui.mint, <Smile color={ui.mintText} size={18} />)}
+                    title={t('kid_hand_over')}
+                    sub={t('kid_hand_over_sub')}
+                    onPress={() => setShowHandOver(true)} />
                 ) : null,
                 groupVisible(GK.household) ? (
                   <HubRow key="invite" styles={styles} ui={ui} testID="settings-invite"
@@ -1383,6 +1399,7 @@ export default function Settings() {
       <LanguageModal visible={showLang} onClose={() => setShowLang(false)} />
       <SupportSheet visible={showSupport} onClose={() => setShowSupport(false)} />
       <FeedbackSheet visible={showFeedback} onClose={() => setShowFeedback(false)} />
+      <HandOverSheet visible={showHandOver} onClose={() => setShowHandOver(false)} />
       <KeyboardAwareBottomSheet visible={showInvite} onClose={() => setShowInvite(false)} contentStyle={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>

@@ -19,7 +19,6 @@ const SRC = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
 
 const FEATURES = read('features.ts');
-const MORE_SHEET = read('components/MoreSheet.tsx');
 const GIFTING = read('components/GiftingStrip.tsx');
 
 describe('Secret Santa visibility', () => {
@@ -35,10 +34,9 @@ describe('Secret Santa visibility', () => {
     expect(decl).not.toMatch(/Date|getMonth|now\(\)/);
   });
 
-  it('gates the More menu row', () => {
-    expect(MORE_SHEET).toContain('SECRET_SANTA_ENABLED');
-    // The row is dropped from the list, not merely styled away.
-    expect(MORE_SHEET).toMatch(/\.\.\.\(SECRET_SANTA_ENABLED \?/);
+  it('has no drawer row to gate: the More drawer went on 2026-10-31, and the gifting strip is gated', () => {
+    expect(read('components/GiftingStrip.tsx')).toContain('SECRET_SANTA_ENABLED');
+    expect(read('components/GiftingStrip.tsx')).not.toContain('ss_more_title');
   });
 
   it('has no second entry point on the account screen', () => {

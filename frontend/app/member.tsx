@@ -3,11 +3,13 @@ import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from 'rea
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, ChevronRight, Eye, KeyRound, MessageCircle, Pencil, Pill, Plus, Shield, Star, Syringe, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Eye, KeyRound, MessageCircle, Pencil, Pill, Plus, Shield, Smile, Star, Syringe, Trash2 } from 'lucide-react-native';
 
 import { PressScale } from '../src/components/PressScale';
 import { PersonAvatar, AvatarPicker } from '../src/components/PersonAvatar';
 import { PinPadModal } from '../src/components/PinPadModal';
+import { HandOverSheet } from '../src/components/HandOverSheet';
+import { useKidsSectionsHidden } from '../src/kidsSections';
 import { useUI, UIColors } from '../src/components/Kit';
 import { useStore } from '../src/store';
 import { api, FamilyMember, Medicine, MemberJob, MemberJobsToday, MemberRecord, Redemption, Reward, StarTransaction, Vaccination } from '../src/api';
@@ -149,7 +151,13 @@ function RecordField({ testID, label, value, placeholder, editable, saving, onSa
 export default function MemberProfile() {
   const ui = useUI();
   const router = useRouter();
-  const { t, lang } = useStore();
+  const { t, lang, user } = useStore();
+  // Handing the phone to this child: a thing you do from the child's page,
+  // where you are already looking at them. Never for a helper, who cannot
+  // leave kid mode (that needs a parent's PIN), and not while the children's
+  // side of the app is put away.
+  const kidsHidden = useKidsSectionsHidden();
+  const [handOver, setHandOver] = useState(false);
   const styles = createStyles(ui);
   const params = useLocalSearchParams<{ id?: string; name?: string; role?: string; thread?: string }>();
 
@@ -723,6 +731,21 @@ export default function MemberProfile() {
           />
         ) : null}
         <View style={kind === 'kid' ? styles.bodyKidInner : null}>
+        {kind === 'kid' && !user?.is_helper && !kidsHidden ? (
+          <>
+            <Text style={styles.sec}>{t('kid_hand_over')}</Text>
+            <PressScale testID="member-hand-over" onPress={() => setHandOver(true)} style={styles.row}>
+              <View style={[styles.rowIcon, { backgroundColor: ui.mint }]}>
+                <Smile color={ui.mintText} size={18} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.rowTitle}>{t('member_hand_over', { name: displayName })}</Text>
+                <Text style={styles.rowSub} numberOfLines={1}>{t('kid_hand_over_sub')}</Text>
+              </View>
+              <ChevronRight color={ui.muted} size={18} />
+            </PressScale>
+          </>
+        ) : null}
         {/* The conversation is a door, not the page: it opens as its own screen,
             the same one the Hub opens, so there is a single chat surface. Not on
             your OWN profile — you cannot message yourself, and offering
@@ -1219,6 +1242,7 @@ export default function MemberProfile() {
       </KeyboardAwareScrollView>
 
 
+      <HandOverSheet visible={handOver} onClose={() => setHandOver(false)} />
       <PinPadModal
         visible={pinOpen}
         mode="set"

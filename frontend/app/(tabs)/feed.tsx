@@ -1382,16 +1382,16 @@ export default function Feed() {
                     <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(unseenAlertCount, 9)}</Text></View>
                   ) : null}
                 </PressScale>
-                {/* The grid moved down to the tab bar, where More now sits on
-                    its own. The corner it freed goes to whoever is signed in —
-                    a portrait next to a greeting that already uses their name.
-                    It opens your own profile. */}
+                {/* Your portrait is the one door to your account and settings,
+                    as the design canvas draws it: Settings opens on you, with
+                    Manage account on its first card. The More button that used
+                    to sit beside the bar is gone (2026-10-31). */}
                 <PressScale
                   testID="feed-portrait"
-                  onPress={() => router.navigate('/(tabs)/account' as never)}
+                  onPress={() => router.navigate('/(tabs)/settings' as never)}
                   style={styles.bellWrap}
                   accessibilityRole="button"
-                  accessibilityLabel={t('nav_more_account')}
+                  accessibilityLabel={t('settings')}
                 >
                   <PersonAvatar name={user?.name} avatar={myAvatar} size={30} />
                 </PressScale>
