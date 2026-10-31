@@ -34,8 +34,8 @@ Landscape 3:2, the largest size the tool offers, saved as WebP or PNG.
 |---|---|---|---|
 | `family` | two adults or more, with children | `home-family-light.webp` | `home-family-dark.webp` |
 | `children` | one adult with children (right for a mum or a dad) | `home-children-light.webp` | `home-children-dark.webp` |
-| `mum` | chosen in Settings | `home-mum-light.webp` | `home-mum-dark.webp` |
-| `dad` | chosen in Settings | `home-dad-light.webp` | `home-dad-dark.webp` |
+| `mum` | chosen in Settings (the choice is built once the pictures exist) | `home-mum-light.webp` | `home-mum-dark.webp` |
+| `dad` | chosen in Settings (the choice is built once the pictures exist) | `home-dad-light.webp` | `home-dad-dark.webp` |
 | `grandparent` | a grandparent with grandchildren | `home-grandparent-light.webp` | `home-grandparent-dark.webp` |
 | `couple` | two adults, no children | `home-couple-light.webp` | `home-couple-dark.webp` |
 | `solo` | one person | `home-solo-light.webp` | `home-solo-dark.webp` |
