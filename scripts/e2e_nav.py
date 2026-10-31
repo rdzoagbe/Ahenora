@@ -167,12 +167,10 @@ async def main():
         r["every_seat_present"] = all(c == 1 for c in seat_counts.values())
         if not r["every_seat_present"]:
             print(f"seat counts: {seat_counts}")
-        # More is gone entirely, not moved: the vault took a seat and the rest
-        # of the drawer moved onto the account screen.
-        # More is a button beside the pill, not a seat in it: it holds
-        # settings, your account and the hand-over, which are a tool, a record
-        # and an action rather than places you go.
-        r["more_button_present"] = await p.locator('[data-testid="tab-more"]').count() == 1
+        # The More button beside the pill went on 2026-10-31: the bar is the
+        # five places, and what the drawer held is on Settings, behind your
+        # portrait on Home.
+        r["more_button_gone"] = await p.locator('[data-testid="tab-more"]').count() == 0
         r["no_raised_plus_in_the_bar"] = await p.locator('[data-testid="tab-add"]').count() == 0
         await p.screenshot(path="nav_feed.png")
 
@@ -211,18 +209,13 @@ async def main():
         await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(2600)
 
-        # Option A in one number: the pill and More share the bar, and neither
-        # runs off the screen.
-        r["pill_and_more_share_the_bar"] = await p.evaluate("""
+        # One number: the pill spans the bar and runs off neither edge.
+        r["pill_spans_the_bar"] = await p.evaluate("""
           () => {
-            const seats = [...document.querySelectorAll('[data-testid^="tab-"]')]
-              .filter((s) => s.dataset.testid !== 'tab-more');
-            const more = document.querySelector('[data-testid="tab-more"]');
-            if (seats.length !== 5 || !more) return false;
+            const seats = [...document.querySelectorAll('[data-testid^="tab-"]')];
+            if (seats.length !== 5) return false;
             const pill = seats[0].parentElement.getBoundingClientRect();
-            const m = more.getBoundingClientRect();
-            return pill.left >= 15 && m.right <= window.innerWidth - 15
-                && m.left >= pill.right && m.width >= 44;
+            return pill.left >= 15 && pill.right <= window.innerWidth - 15;
           }
         """)
 
@@ -232,13 +225,17 @@ async def main():
         r["seat_reaches_vault"] = "Vault" in await p.inner_text("body")
         await p.screenshot(path="nav_vault.png")
 
-        # --- and everything More holds is reachable ---------------------
-        await p.click('[data-testid="tab-more"]')
-        await p.wait_for_timeout(1200)
-        sheet = await p.inner_text("body")
-        r["sheet_lists_settings"] = "Settings" in sheet
-        r["sheet_lists_account"] = "Your account" in sheet
-        r["sheet_no_longer_lists_vault"] = await p.locator('[data-testid="more-vault"]').count() == 0
+        # --- and everything the drawer held is reachable ------------------
+        # Your portrait on Home opens Settings; the hand-over, support,
+        # feedback and your account are rows on it.
+        await p.click('[data-testid="tab-feed"]')
+        await p.wait_for_timeout(2500)
+        await p.click('[data-testid="feed-portrait"]')
+        await p.wait_for_timeout(3000)
+        settings_body = await p.inner_text("body")
+        r["portrait_reaches_settings"] = "Household" in settings_body
+        r["settings_offers_hand_over"] = await p.locator('[data-testid="settings-hand-over"]').count() == 1
+        await p.screenshot(path="nav_settings.png")
 
         # A row's subtitle is the only thing that says what is behind it, and
         # a subtitle ending in "…" says less than no subtitle at all. This has
@@ -247,7 +244,7 @@ async def main():
         clipped_rows = await p.evaluate("""
           () => {
             const bad = [];
-            for (const row of document.querySelectorAll('[data-testid^="more-"]')) {
+            for (const row of document.querySelectorAll('[data-testid^="settings-"]')) {
               for (const n of row.querySelectorAll('*')) {
                 if (n.children.length || !n.textContent.trim()) continue;
                 if (n.scrollWidth - n.clientWidth > 1) bad.push(n.textContent.trim());
@@ -256,21 +253,12 @@ async def main():
             return bad;
           }
         """)
-        r["no_drawer_row_truncated"] = not clipped_rows
+        r["no_settings_row_truncated"] = not clipped_rows
         if clipped_rows:
-            print(f"truncated drawer rows: {clipped_rows}")
-        await p.screenshot(path="nav_more.png")
+            print(f"truncated settings rows: {clipped_rows}")
 
-        await p.click('[data-testid="more-settings"]')
-        await p.wait_for_timeout(3000)
-        # Settings is a hub of group rows; "Household" is a group header,
-        # visible without opening anything.
-        r["more_reaches_settings"] = "Household" in await p.inner_text("body")
-
-        # Your portrait in the Feed header still opens your account directly.
-        await p.click('[data-testid="tab-feed"]')
-        await p.wait_for_timeout(2500)
-        await p.click('[data-testid="feed-portrait"]')
+        # Your account is the first card on Settings.
+        await p.click('[data-testid="settings-open-account"]')
         await p.wait_for_timeout(2500)
         acct = await p.inner_text("body")
         r["portrait_reaches_account"] = "Picture" in acct
@@ -350,11 +338,12 @@ async def main():
         if bad_helper:
             print(f"helper bar: {bad_helper}")
 
-        await hp.click('[data-testid="tab-more"]')
-        await hp.wait_for_timeout(1200)
-        r["helper_reaches_settings"] = await hp.locator('[data-testid="more-settings"]').count() == 1
-        r["helper_is_not_offered_hand_over"] = await hp.locator('[data-testid="more-kid"]').count() == 0
-        await hp.click('[data-testid="more-account"]')
+        r["helper_has_no_more_button"] = await hp.locator('[data-testid="tab-more"]').count() == 0
+        await hp.click('[data-testid="feed-portrait"]')
+        await hp.wait_for_timeout(3000)
+        r["helper_reaches_settings"] = await hp.locator('[data-testid="settings-open-account"]').count() == 1
+        r["helper_is_not_offered_hand_over"] = await hp.locator('[data-testid="settings-hand-over"]').count() == 0
+        await hp.click('[data-testid="settings-open-account"]')
         await hp.wait_for_timeout(2500)
         # The whole point of the badge fix, seen by the person it was wrong for.
         hacct = await hp.inner_text("body")

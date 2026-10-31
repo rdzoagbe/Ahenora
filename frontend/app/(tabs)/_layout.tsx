@@ -2,12 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Calendar as CalendarIcon, LayoutGrid, Lock, Settings as SettingsIcon, UtensilsCrossed, Users } from 'lucide-react-native';
+import { Home, Calendar as CalendarIcon, Lock, Settings as SettingsIcon, UtensilsCrossed, Users } from 'lucide-react-native';
 import { useStore } from '../../src/store';
 import { markStart, markEnd } from '../../src/perf';
 import { useBreakpoint } from '../../src/responsive';
-import { BAR_GAP, BAR_INSET, LABEL_FONT_SIZE, LABEL_MIN_SCALE, MORE_WIDTH, PILL_PADDING, SEAT_MIN_WIDTH, SEAT_PADDING } from '../../src/navGeometry';
-import { MoreSheet } from '../../src/components/MoreSheet';
+import { BAR_INSET, LABEL_FONT_SIZE, LABEL_MIN_SCALE, PILL_PADDING, SEAT_MIN_WIDTH, SEAT_PADDING } from '../../src/navGeometry';
 import { GlobalCapture } from '../../src/components/GlobalCapture';
 
 // ─── Phone: floating pill tab bar ────────────────────────────────────────────
@@ -18,11 +17,11 @@ import { GlobalCapture } from '../../src/components/GlobalCapture';
  * and ink; the rest sit quiet in muted text, so five small labels read as a
  * legend rather than noise.
  *
- * Five seats fit beside More only because the seats size to their own words.
- * Equal shares spend the same width on "Feed" as on "Calendar", and the bar
- * then has to fit five copies of its longest label — which it cannot, with
- * More taking its share. Sized to content, the five together need about what
- * three equal seats would. src/navGeometry.ts holds the arithmetic.
+ * The seats size to their own words. Equal shares spend the same width on
+ * "Feed" as on "Calendar"; sized to content, the five together need about
+ * what three equal seats would. The More button that sat beside the pill is
+ * gone (2026-10-31) and the width it took went back to the seats.
+ * src/navGeometry.ts holds the arithmetic.
  */
 function TabIcon({ focused, Icon, label, badge = 0 }: { focused: boolean; Icon: any; label: string; badge?: number }) {
   const { theme } = useStore();
@@ -99,7 +98,7 @@ export function navSeats(isHelper: boolean | undefined) {
 // ─── Tablet / Desktop: left sidebar ──────────────────────────────────────────
 
 function SidebarNav({ width }: { width: number }) {
-  const { theme, t, unreadChats, user, openHouseholdMenu } = useStore();
+  const { theme, t, unreadChats, user } = useStore();
   const { isDesktop } = useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
@@ -116,6 +115,7 @@ function SidebarNav({ width }: { width: number }) {
   }, [pathname]);
   const insets = useSafeAreaInsets();
   const light = theme.mode === 'light';
+  const settingsActive = pathname.endsWith('settings') || pathname.endsWith('account');
 
   return (
     <View
@@ -187,19 +187,29 @@ function SidebarNav({ width }: { width: number }) {
         );
       })}
 
-      {/* The phone bar has a More button; the sidebar needs the same door, or
-          the hand-over and Your account become unreachable on a wide screen. */}
+      {/* Settings is not a seat: on the phone it is behind your portrait on
+          Home, on a wide screen it is this row. Everything the old More
+          drawer held is on Settings (2026-10-31). */}
       <TouchableOpacity
-        testID="sidebar-more"
-        onPress={openHouseholdMenu}
-        style={[styles.sidebarItem, isDesktop ? styles.sidebarItemWide : styles.sidebarItemCompact]}
+        testID="sidebar-settings"
+        onPress={() => router.navigate('/(tabs)/settings' as any)}
+        style={[
+          styles.sidebarItem,
+          isDesktop ? styles.sidebarItemWide : styles.sidebarItemCompact,
+          settingsActive && (light ? { backgroundColor: theme.colors.accentSoft } : styles.sidebarItemActive),
+        ]}
         activeOpacity={0.75}
-        accessibilityRole="button"
-        accessibilityLabel={t('nav_more')}
+        accessibilityRole="tab"
+        accessibilityLabel={t('settings')}
+        accessibilityState={{ selected: settingsActive }}
       >
-        <LayoutGrid color={theme.colors.textSoft} size={20} strokeWidth={2.0} />
+        <SettingsIcon
+          color={settingsActive ? (light ? theme.colors.accentInk : theme.colors.primaryText) : theme.colors.textSoft}
+          size={20}
+          strokeWidth={settingsActive ? 2.5 : 2.0}
+        />
         {isDesktop && (
-          <Text style={[styles.sidebarLabel, { color: theme.colors.textMuted }]}>{t('nav_more')}</Text>
+          <Text style={[styles.sidebarLabel, { color: settingsActive ? (light ? theme.colors.accentInk : theme.colors.primaryText) : theme.colors.textMuted }]}>{t('settings')}</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -211,27 +221,19 @@ function SidebarNav({ width }: { width: number }) {
 /**
  * The phone bar: the five places, in one pill that spans the bar.
  *
- * Two objects: the places, and the drawer. More sits beside the pill rather
- * than in it, because it is not somewhere you go — it holds settings, your
- * account and the hand-over, which are a tool, a record and an action.
- *
- * What changed is what was INSIDE it. The vault was the one item in that
- * drawer that was a place: somewhere a parent goes when a passport is
- * expiring, filed behind a button whose label said nothing about what it held.
- * So it took a seat, and More kept its own — which is a tighter bar than
- * either arrangement alone, and is why the seats size to their words rather
- * than to equal shares.
- *
- * Rendering the bar ourselves (rather than styling the default one) is still
- * what keeps the seats plain buttons: on web the built-in tab buttons are
- * anchors, and an anchor cannot be conditionally hidden per member type
- * without a full route swap.
+ * One object since 2026-10-31. A More button sat beside the pill for a while,
+ * holding settings, your account and the hand-over, and before that the vault
+ * lived in that drawer too — filed behind a button whose label said nothing
+ * about what it held, which is why nobody found a passport renewal there. The
+ * vault took a seat; then the drawer itself went, with its contents on
+ * Settings behind your portrait on Home, and the width it took went back to
+ * the seats. The seats still size to their words rather than to equal shares,
+ * because "Feed" never needed the room "Calendar" does.
  */
-function PhoneTabBar({ state, navigation, style, onMore }: {
+function PhoneTabBar({ state, navigation, style }: {
   state: { index: number; routes: { key: string; name: string }[] };
   navigation: any;
   style: object;
-  onMore: () => void;
 }) {
   const { t, theme, unreadChats, user } = useStore();
   const current = state.routes[state.index]?.name;
@@ -265,22 +267,6 @@ function PhoneTabBar({ state, navigation, style, onMore }: {
           );
         })}
       </View>
-      {/* Icon only. It carried a 10pt label reading "More" under a grid icon,
-          which said what the icon says and cost 14pt of width the fifth seat
-          needed. Still 48pt wide, so the target clears 44. */}
-      <TouchableOpacity
-        testID="tab-more"
-        accessibilityRole="button"
-        accessibilityLabel={t('nav_more')}
-        activeOpacity={0.85}
-        onPress={onMore}
-        style={[
-          styles.moreBtn,
-          { backgroundColor: theme.colors.tabBar, borderColor: theme.colors.tabBorder, shadowColor: '#202323' },
-        ]}
-      >
-        <LayoutGrid color={theme.colors.textMuted} size={22} />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -294,7 +280,7 @@ function PhoneTabBar({ state, navigation, style, onMore }: {
 let onboardingRedirectedFor: string | null = null;
 
 export default function TabLayout() {
-  const { theme, user, loading, householdMenuOpen, openHouseholdMenu, closeHouseholdMenu, quickAddOpen, closeQuickAdd } = useStore();
+  const { theme, user, loading, quickAddOpen, closeQuickAdd } = useStore();
   const { isWide, sidebarW } = useBreakpoint();
   const router = useRouter();
 
@@ -319,7 +305,7 @@ export default function TabLayout() {
     }
   }, [loading, user, router]);
 
-  // The pill holds the five places; More is laid out beside it by barWrap.
+  // The pill holds the five places and spans the bar.
   const floatingTabStyle = {
     flex: 1,
     height: 74,
@@ -349,7 +335,6 @@ export default function TabLayout() {
               state={props.state}
               navigation={props.navigation}
               style={floatingTabStyle}
-              onMore={openHouseholdMenu}
             />
           )
         }
@@ -366,8 +351,9 @@ export default function TabLayout() {
             /api/vault route is behind require_full_member, so their bar would
             carry a door onto a screen of 403s. */}
         <Tabs.Screen name="vault" options={{ href: user?.is_helper ? null : undefined }} />
-        {/* Routable, but not seats — reached from your portrait in the Feed
-            header (phone) or the account row in the sidebar (wide). */}
+        {/* Routable, but not seats. Settings is reached from your portrait on
+            Home (phone) or its row in the sidebar (wide); Account from the
+            first card on Settings. */}
         <Tabs.Screen name="settings" options={{ href: null }} />
         <Tabs.Screen name="account"  options={{ href: null }} />
         {/* Reached from the feed header, never a tab. */}
@@ -376,7 +362,6 @@ export default function TabLayout() {
 
       {isWide && <SidebarNav width={sidebarW} />}
       <GlobalCapture visible={quickAddOpen} onClose={closeQuickAdd} />
-      <MoreSheet visible={householdMenuOpen} onClose={closeHouseholdMenu} />
     </>
   );
 }
@@ -391,10 +376,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   // flexGrow with an AUTO basis, not flex:1. flex:1 sets the basis to 0, so
-  // every seat gets the same width whatever it says — and the bar then has to
-  // fit five copies of its longest label, which beside More it cannot. An auto
-  // basis starts each seat at its own content and shares the surplus, so
-  // "Feed" stops taking as much room as "Calendar".
+  // every seat gets the same width whatever it says, and the bar then has to
+  // fit five copies of its longest label — which it could not beside the old
+  // More button. An auto basis starts each seat at its own content and shares
+  // the surplus, so "Feed" stops taking as much room as "Calendar".
   barSlot: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', alignItems: 'center', justifyContent: 'center' },
   // box-none so the strip either side of the pill does not swallow taps meant
   // for the screen behind it.
@@ -404,19 +389,6 @@ const styles = StyleSheet.create({
     right: BAR_INSET,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: BAR_GAP,
-  },
-  moreBtn: {
-    width: MORE_WIDTH,
-    height: 74,
-    borderRadius: 24,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 10,
-    shadowOpacity: 0.16,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 12 },
   },
   // Five seats share 338pt of pill on a 390pt phone — 67.6pt each — and only
   // 268pt on a 320pt one, 53.6pt each. maxWidth is the load-bearing line: the

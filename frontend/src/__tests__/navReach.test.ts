@@ -1,22 +1,24 @@
 /**
- * The bar promoted the vault to a seat and deleted the More drawer. Two things
- * have to stay true after that, and neither is visible in a screenshot of one
- * phone in one language:
+ * The bar is the five places, and nothing else. The More button beside the
+ * pill went on 2026-10-31 (Roland, from the review of More and Settings:
+ * portrait on Home only); everything it held is on Settings, which your
+ * portrait on Home opens. Two things have to stay true, and neither is
+ * visible in a screenshot of one phone in one language:
  *
  *  1. Everything the drawer held is still reachable — for a parent AND for a
  *     helper, who never had the vault and cannot hand the device to a child.
  *     A drawer you delete takes its contents with it unless someone checks.
- *  2. Five labels still fit. The old bar had four seats in 278pt; the new one
- *     has five in 338pt, which works out — but only just, and only because the
- *     seat gave back most of its padding. A later nudge to a padding is
- *     exactly the sort of edit that silently ellipsises "Kalender".
+ *  2. Five labels still fit. They fitted beside More on the narrowest phone
+ *     with 9pt to spare; without More the pill spans the bar, and a later
+ *     nudge to a padding is still the sort of edit that silently ellipsises
+ *     "Kalender".
  *
  * Source-level for (1) because what matters is that no destination is left
  * without a door anywhere in the app, which is a property of the files.
  * Arithmetic for (2) from the same constants the StyleSheet uses, so the two
  * cannot drift; the browser harness measures the real rendered labels.
  */
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 import {
@@ -28,30 +30,24 @@ const APP = join(__dirname, '..', '..', 'app');
 const read = (...p: string[]) => readFileSync(join(APP, ...p), 'utf8');
 
 const LAYOUT = read('(tabs)', '_layout.tsx');
-const MORE_SHEET = readFileSync(join(APP, '..', 'src', 'components', 'MoreSheet.tsx'), 'utf8');
 const FEED = read('(tabs)', 'feed.tsx');
+const SETTINGS = read('(tabs)', 'settings.tsx');
+const MEMBER = read('member.tsx');
+const MORE_SHEET_PATH = join(APP, '..', 'src', 'components', 'MoreSheet.tsx');
 
-describe('the bar holds the five places, and More holds the rest', () => {
+describe('the bar holds the five places, and nothing else', () => {
   it('seats exactly Feed, Calendar, Family, Kitchen and Vault, in that order', () => {
     const names = [...LAYOUT.matchAll(/\{ name: '(\w+)',\s+Icon:/g)].map((m) => m[1]);
     expect(names).toEqual(['feed', 'calendar', 'kids', 'kitchen', 'vault']);
   });
 
-  it('keeps More beside the pill, as a button and not a seat', () => {
-    // It is not a destination — it holds settings, your account and the
-    // hand-over, which are a tool, a record and an action.
-    expect(LAYOUT).toContain('testID="tab-more"');
-    expect(LAYOUT).toContain('MoreSheet');
+  it('has no More button and no drawer', () => {
+    // What More held is on Settings; the width it took went to the seats.
+    expect(LAYOUT).not.toContain('tab-more');
+    expect(LAYOUT).not.toContain('MoreSheet');
+    expect(LAYOUT).not.toContain('openHouseholdMenu');
+    expect(existsSync(MORE_SHEET_PATH)).toBe(false);
   });
-
-  it('gives More no label, because that is where the fifth seat came from', () => {
-    // A 10pt word reading "More" under a grid icon said what the icon says
-    // and cost 14pt of width. If it comes back, the bar stops fitting.
-    const more = LAYOUT.slice(LAYOUT.indexOf('testID="tab-more"'),
-                              LAYOUT.indexOf('</TouchableOpacity>', LAYOUT.indexOf('testID="tab-more"')));
-    expect(more).not.toMatch(/<Text/);
-  });
-
   it('withholds the vault seat from a helper, whose vault calls are all 403s', () => {
     // Both the seat and the route: a seat we hid but left routable is still
     // reachable by deep link, and the screen behind it cannot load.
@@ -60,33 +56,34 @@ describe('the bar holds the five places, and More holds the rest', () => {
   });
 });
 
-describe('everything More holds still has a door', () => {
-  it('opens the same drawer from the phone bar and the sidebar', () => {
-    expect(LAYOUT).toContain('testID="sidebar-more"');
-    expect((LAYOUT.match(/openHouseholdMenu/g) ?? []).length).toBeGreaterThanOrEqual(3);
+describe('everything the drawer held still has a door', () => {
+  it('opens Settings from your portrait on Home, and from the sidebar on a wide screen', () => {
+    expect(FEED).toContain("router.navigate('/(tabs)/settings'");
+    expect(LAYOUT).toContain('testID="sidebar-settings"');
+    expect(LAYOUT).not.toContain('sidebar-more');
   });
-
-  it('no longer lists the vault, which is a seat now', () => {
-    // A place in the bar AND in the drawer is the duplication this sheet's
-    // own comments argue against — two taps either way, one list longer.
-    expect(MORE_SHEET).not.toMatch(/key: 'vault'/);
-    expect(MORE_SHEET).toMatch(/key: 'settings'/);
-    expect(MORE_SHEET).toMatch(/key: 'account'/);
-    expect(MORE_SHEET).toMatch(/key: 'kid'/);
+  it('reaches your account from the first card on Settings', () => {
+    expect(SETTINGS).toContain('testID="settings-open-account"');
   });
-
+  it('offers the hand-over with the household on Settings and on the child’s own page', () => {
+    expect(SETTINGS).toContain('testID="settings-hand-over"');
+    expect(SETTINGS).toContain('<HandOverSheet visible={showHandOver}');
+    expect(MEMBER).toContain('testID="member-hand-over"');
+    expect(MEMBER).toContain('<HandOverSheet visible={handOver}');
+  });
   it('offers a helper settings but not the hand-over', () => {
     // A helper cannot leave kid mode: that needs a parent's PIN they do not
     // hold, so the row would be a door onto a dead end.
-    expect(MORE_SHEET).toMatch(/user\?\.is_helper && it\.key === 'kid'/);
+    expect(SETTINGS).toContain('const canHandOver = canSetCustody;');
+    expect(SETTINGS).toMatch(/const canSetCustody = !!user && !user\.is_helper/);
+    expect(MEMBER).toContain("kind === 'kid' && !user?.is_helper && !kidsHidden");
   });
-
-  it('still reaches your account from the Feed portrait', () => {
-    expect(FEED).toContain("router.navigate('/(tabs)/account'");
+  it('offers feedback and support under Help and support on Settings', () => {
+    expect(SETTINGS).toContain('testID="settings-send-feedback"');
+    expect(SETTINGS).toContain('testID="settings-contact-support"');
   });
 });
-
-describe('five seats and More fit together', () => {
+describe('five seats fit the bar', () => {
   const WIDTHS = [NARROWEST_PHONE_PT, 360, 375, 390, 412, 430];
   const LANGS = Object.keys(MEASURED_LABEL_PT);
 
@@ -105,20 +102,17 @@ describe('five seats and More fit together', () => {
     }
   });
 
-  it('would not hold with equal-width seats', () => {
-    // The reason the seats size to their words. Equal shares spend as much on
-    // "Feed" as on "Calendar", so the bar has to fit five copies of its
-    // longest label. In English and German — the two widest, and therefore
-    // the two that decide whether the bar fits at all — that overflows the
-    // narrowest phone. French and Spanish would squeak in, which is not a
-    // reason to ship a bar that breaks in half the languages.
+  it('would hold even with equal-width seats, now that More is gone', () => {
+    // Beside More, equal shares overflowed the narrowest phone in English and
+    // German, which was the reason the seats size to their words. The pill
+    // now spans the bar, so the seats are sized to content for their look,
+    // not to fit — worth knowing before anyone reaches for that lever again.
     const overflows = (lang: string) => {
       const widest = Math.max(...MEASURED_LABEL_PT[lang]);
       return seatWidth(widest) * 5 > pillWidth(NARROWEST_PHONE_PT) - PILL_PADDING * 2;
     };
-    expect({ en: overflows('en'), de: overflows('de') }).toEqual({ en: true, de: true });
+    expect({ en: overflows('en'), de: overflows('de') }).toEqual({ en: false, de: false });
   });
-
   it('buys back real width in every language by sizing to content', () => {
     for (const lang of LANGS) {
       const widest = Math.max(...MEASURED_LABEL_PT[lang]);
@@ -129,13 +123,15 @@ describe('five seats and More fit together', () => {
 
   it('is held back by the seat floor, not by the words', () => {
     // Four of the five labels are shorter than the floor, so minWidth decides
-    // the total. Raising it back to 46 overflowed a 320pt phone while every
-    // label still fitted its own box — which is why the floor is a measured
-    // number and not a taste.
+    // the total. At 46 the five seats spent 235pt; beside More that overflowed
+    // a 320pt phone while every label still fitted its own box, which is why
+    // the floor is a measured number and not a taste. The pill has the whole
+    // bar now, so 46 would fit again — and the floor stays 40 all the same.
     const en = MEASURED_LABEL_PT.en;
     expect(en.filter((l) => l + 4 < SEAT_MIN_WIDTH).length).toBeGreaterThanOrEqual(3);
     const atFortySix = en.reduce((t, l) => t + Math.max(46, l + 4), 0);
-    expect(atFortySix).toBeGreaterThan(pillWidth(NARROWEST_PHONE_PT) - PILL_PADDING * 2);
+    expect(atFortySix).toBe(235);
+    expect(atFortySix).toBeLessThanOrEqual(pillWidth(NARROWEST_PHONE_PT) - PILL_PADDING * 2);
   });
 
   it('English is the widest set, not German', () => {

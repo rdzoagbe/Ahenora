@@ -12,20 +12,12 @@
  * re-measures the real rendered boxes in all four languages on every run. A
  * wrong value here fails there rather than shipping.
  *
- * The bar is two objects: a pill holding the five places, and More beside it
- * holding what is not a place — settings, your account, the hand-over.
+ * The bar is one object since 2026-10-31: a pill holding the five places,
+ * spanning the width. The More button that sat beside it is gone — what it
+ * held is on Settings, behind your portrait on Home — and the width it took
+ * went back to the seats.
  */
 export const BAR_INSET = 16;        // barWrap left / right
-export const BAR_GAP = 8;           // between the pill and the More button
-/**
- * More: icon only, and exactly the 44pt minimum tap target.
- *
- * It was 62pt with a 10pt label reading "More" under a grid icon — a word that
- * said what the icon says, spending 18pt the fifth seat needed. At 48 the
- * narrowest phone had 5pt of slack, which is the kind of margin that has
- * already been wrong twice this session; 44 makes it 9.
- */
-export const MORE_WIDTH = 44;
 export const PILL_PADDING = 6;      // the pill's own paddingHorizontal
 export const SEAT_PADDING = 2;      // tabItem paddingHorizontal, per side
 export const LABEL_FONT_SIZE = 11;
@@ -64,7 +56,7 @@ export const NARROWEST_PHONE_PT = 320;
 
 /** How wide the pill is, once More and the insets have taken their share. */
 export function pillWidth(screenWidth: number): number {
-  return screenWidth - BAR_INSET * 2 - BAR_GAP - MORE_WIDTH;
+  return screenWidth - BAR_INSET * 2;
 }
 
 /**

@@ -64,10 +64,11 @@ describe('release notes', () => {
 });
 
 describe('feedback', () => {
-  it('is in the More menu, which every screen reaches', () => {
-    const more = read('components', 'MoreSheet.tsx');
-    expect(more).toContain("key: 'feedback'");
-    expect(more).toContain('<FeedbackSheet');
+  it('is under Help and support on Settings, which your portrait on Home opens', () => {
+    // It lived in the More drawer; the drawer went on 2026-10-31.
+    const settings = read('..', 'app', '(tabs)', 'settings.tsx');
+    expect(settings).toContain('testID="settings-send-feedback"');
+    expect(settings).toContain('<FeedbackSheet');
   });
 
   it('is offered where a release is announced', () => {

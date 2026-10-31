@@ -81,12 +81,13 @@ async def main():
         # --- handing the device over ---------------------------------------
         await p.goto(f"{WEB}/feed", wait_until="domcontentloaded")
         await p.wait_for_timeout(3500)
-        # Handing the phone over is a thing you DO, not a place you go, so it
-        # lives in the More drawer beside the bar rather than wearing a seat.
-        await p.click('[data-testid="tab-more"]')
-        await p.wait_for_timeout(1200)
-        r["more_offers_hand_over"] = await p.locator('[data-testid="more-kid"]').count() == 1
-        await p.click('[data-testid="more-kid"]')
+        # Handing the phone over is a thing you DO: it sits with the household
+        # on Settings (behind your portrait on Home) and on each child's page.
+        # The More drawer it lived in went on 2026-10-31.
+        await p.click('[data-testid="feed-portrait"]')
+        await p.wait_for_timeout(3000)
+        r["settings_offers_hand_over"] = await p.locator('[data-testid="settings-hand-over"]').count() == 1
+        await p.click('[data-testid="settings-hand-over"]')
         await p.wait_for_timeout(1800)
 
         # --- the way out has to exist before the way in ----------------------
