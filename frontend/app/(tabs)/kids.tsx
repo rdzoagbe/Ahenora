@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   Plus,
   Star,
@@ -1544,6 +1544,16 @@ export default function Kids() {
     setChoreMembers(activeChild ? [activeChild.member_id] : []);
     setShowChoreSheet(true);
   }, [activeChild]);
+
+  // Home's "Add chore" arrives with ?add=chore: open the sheet once, then
+  // clear the parameter so a later visit to the tab does not open it again.
+  // A focus effect rather than a plain one: it opens a sheet, which is state.
+  const { add: askedAdd } = useLocalSearchParams<{ add?: string }>();
+  useFocusEffect(useCallback(() => {
+    if (askedAdd !== 'chore') return;
+    openChoreSheet();
+    router.setParams({ add: undefined } as never);
+  }, [askedAdd, openChoreSheet, router]));
 
   /**
    * The missing half of the Chore Wheel.

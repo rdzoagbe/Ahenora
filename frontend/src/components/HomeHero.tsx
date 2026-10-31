@@ -1,28 +1,28 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
-import { House } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import { PressScale } from './PressScale';
-import { PersonAvatar } from './PersonAvatar';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import type { FamilyMember } from '../api';
-import { familyFaces } from '../homeFamily';
+import { HOME_HERO_ART } from '../homeHeroArt';
 
 /**
- * The top of Home: a picture of a family on its way home, whose week it is as
- * a sentence, and everyone's face.
+ * The picture at the top of Home, as in the reference Roland chose on
+ * 2026-10-31 ("this is the exact view I wanted to have"): a tall picture of a
+ * family under the greeting, fading into the page at the top, with the day's
+ * card laid over its bottom edge.
  *
- * The picture is drawn here, in code, rather than bought or generated, so the
- * household owns nothing it has to licence. One adult with two children, not a
+ * The artwork comes from src/homeHeroArt.ts. Until there is a picture the
+ * household holds the rights to, the drawing below stands in: it is made here,
+ * in code, so nothing has to be licensed. One adult with two children, not a
  * couple: many households on Ahenora are two homes, and a picture of two
  * parents together is the wrong one to greet a separated parent with.
  *
- * It only appears in a household with children whose side of the app is on;
- * a couple on Duo gets the faces and nothing that assumes a child.
+ * Only shown in a household with children whose side of the app is on; a
+ * couple on Duo gets the greeting and the day, and nothing that assumes a child.
  */
-const BAND_HEIGHT = 120;
+export const HERO_HEIGHT = 250;
 
 type Palette = {
   sky1: string; sky2: string; sun: string; stars: number; hill1: string; hill2: string;
@@ -45,10 +45,10 @@ function palette(dark: boolean, ui: UIColors): Palette {
 }
 
 export function familyIllustration(p: Palette): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 160" preserveAspectRatio="xMidYMid slice">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -80 390 240" preserveAspectRatio="xMidYMax slice">
 <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.sky1}"/><stop offset="1" stop-color="${p.sky2}"/></linearGradient></defs>
-<rect width="390" height="160" fill="url(#sky)"/>
-<g fill="#FFFFFF" opacity="${p.stars}"><circle cx="40" cy="30" r="1.5"/><circle cx="86" cy="16" r="1.2"/><circle cx="150" cy="24" r="1.5"/><circle cx="244" cy="18" r="1.2"/><circle cx="282" cy="42" r="1.4"/><circle cx="370" cy="22" r="1.2"/></g>
+<rect y="-80" width="390" height="240" fill="url(#sky)"/>
+<g fill="#FFFFFF" opacity="${p.stars}"><circle cx="60" cy="-50" r="1.3"/><circle cx="190" cy="-62" r="1.5"/><circle cx="300" cy="-30" r="1.2"/><circle cx="40" cy="30" r="1.5"/><circle cx="86" cy="16" r="1.2"/><circle cx="150" cy="24" r="1.5"/><circle cx="244" cy="18" r="1.2"/><circle cx="282" cy="42" r="1.4"/><circle cx="370" cy="22" r="1.2"/></g>
 <circle cx="322" cy="44" r="20" fill="${p.sun}"/>
 <path d="M0 112 C 80 82, 160 92, 230 104 S 340 92, 390 96 V160 H0 Z" fill="${p.hill2}"/>
 <g transform="translate(262 0)"><rect x="40" y="58" width="7" height="16" fill="${p.roof}"/><rect x="0" y="80" width="54" height="42" fill="${p.house}"/><polygon points="-6,82 27,54 60,82" fill="${p.roof}"/><rect x="21" y="98" width="12" height="24" rx="6" fill="${p.roof}"/><rect x="6" y="90" width="10" height="10" rx="2" fill="${p.win}"/><rect x="38" y="90" width="10" height="10" rx="2" fill="${p.win}"/></g>
@@ -73,83 +73,41 @@ export function familyIllustration(p: Palette): string {
 </g></svg>`;
 }
 
-export function FamilyBand({
-  members,
-  showPicture,
-  custodyLine,
-  onOpenMember,
-}: {
-  members: FamilyMember[];
-  /** A household with children whose side of the app is on. */
-  showPicture: boolean;
-  /** "Ama and Leo are with you this week", or null when there is nothing to say. */
-  custodyLine: string | null;
-  onOpenMember: (member: FamilyMember) => void;
-}) {
+export function HomeHero({ label }: { label: string }) {
   const ui = useUI();
-  const { t, theme } = useStore();
+  const { theme } = useStore();
   const dark = theme.mode === 'dark';
   const styles = useMemo(() => createStyles(ui), [ui]);
-  const xml = useMemo(() => familyIllustration(palette(dark, ui)), [dark, ui]);
-  const faces = familyFaces(members);
-
-  if (!showPicture && faces.length < 2) return null;
+  const art = dark ? HOME_HERO_ART.dark : HOME_HERO_ART.light;
+  const xml = useMemo(() => (art ? null : familyIllustration(palette(dark, ui))), [art, dark, ui]);
 
   return (
-    <View style={styles.wrap} testID="home-family-band">
-      {showPicture ? (
-        <View
-          style={styles.picture}
-          accessible
-          accessibilityRole="image"
-          accessibilityLabel={custodyLine ? `${t('home_illustration_label')}. ${custodyLine}` : t('home_illustration_label')}
-        >
-          <SvgXml xml={xml} width="100%" height={BAND_HEIGHT} />
-          {custodyLine ? (
-            <View style={styles.custody} testID="home-custody-line">
-              <House color={ui.orangeText} size={16} strokeWidth={2.2} />
-              <Text style={styles.custodyText}>{custodyLine}</Text>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {faces.length > 1 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.faces}>
-          {faces.map((m) => (
-            <PressScale
-              key={m.member_id}
-              testID={`home-member-${m.member_id}`}
-              accessibilityRole="button"
-              accessibilityLabel={m.is_me ? t('home_you') : m.name}
-              onPress={() => onOpenMember(m)}
-              style={styles.face}
-            >
-              <PersonAvatar name={m.name} avatar={m.avatar} size={50} />
-              <Text style={styles.faceName} numberOfLines={1}>
-                {m.is_me ? t('home_you') : (m.name || '').trim().split(/\s+/)[0]}
-              </Text>
-            </PressScale>
-          ))}
-        </ScrollView>
-      ) : null}
+    <View
+      style={styles.wrap}
+      testID="home-hero"
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={label}
+    >
+      {art ? (
+        <Image source={art} style={styles.art} resizeMode="cover" />
+      ) : (
+        <SvgXml xml={xml as string} width="100%" height={HERO_HEIGHT} />
+      )}
+      {/* The sky runs into the page instead of stopping at an edge. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={[ui.bg, ui.bg + '00']}
+        style={styles.fade}
+      />
     </View>
   );
 }
 
 function createStyles(ui: UIColors) {
   return StyleSheet.create({
-    wrap: { gap: 14, marginBottom: 18 },
-    picture: { borderRadius: 24, overflow: 'hidden', backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
-    // Under the picture, not over it: laid over the bottom edge it covered the
-    // family standing there, on every phone width.
-    custody: {
-      flexDirection: 'row', alignItems: 'center', gap: 8,
-      paddingHorizontal: 14, paddingVertical: 11,
-    },
-    custodyText: { flexShrink: 1, color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 14, lineHeight: 19 },
-    faces: { gap: 14, paddingRight: 4 },
-    face: { alignItems: 'center', gap: 5, width: 58 },
-    faceName: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 13, maxWidth: 58 },
+    wrap: { height: HERO_HEIGHT, overflow: 'hidden', backgroundColor: ui.bg },
+    art: { width: '100%', height: HERO_HEIGHT },
+    fade: { position: 'absolute', left: 0, right: 0, top: 0, height: 64 },
   });
 }

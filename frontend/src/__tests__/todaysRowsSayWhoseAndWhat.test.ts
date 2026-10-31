@@ -8,8 +8,8 @@
  * never cut short, and a colour per person. This pins that:
  *
  *  - a title gets two lines;
- *  - the kind is the first words of the grey line, coloured only where it
- *    changes what you do (a slip to sign, an invitation to answer);
+ *  - the grey line says when and who (since 2026-10-31 what a row is shows as
+ *    its coloured tile, as in the reference Roland chose);
  *  - each person keeps one colour, in the order their faces sit on Home, and
  *    the brand orange is never a person's colour.
  */
@@ -58,8 +58,11 @@ describe('each person keeps one colour', () => {
 });
 
 describe('the row', () => {
+  // Since 2026-10-31 the row follows the reference Roland chose ("this is the
+  // exact view I wanted to have"): a coloured tile for what it is, the title,
+  // then when and who in words. The person is said by name, not by a badge.
   it('gives a title two lines', () => {
-    expect(feed).toMatch(/styles\.taskTitle, \{ flexShrink: 1 \}\]\} numberOfLines=\{2\}>\{card\.title\}/);
+    expect(feed).toMatch(/<Text style=\{styles\.dayRowTitle\} numberOfLines=\{2\}>\{card\.title\}<\/Text>/);
   });
 
   it('draws no kind pill', () => {
@@ -67,18 +70,8 @@ describe('the row', () => {
     expect(feed).not.toMatch(/function statusCopy/);
   });
 
-  it('says the kind in the grey line, in colour only where it changes what you do', () => {
-    const kind = feed.slice(feed.indexOf('function rowKind'), feed.indexOf('function TaskRow'));
-    expect(kind).toMatch(/SIGN_SLIP'\) return \{ label: t\('feed_status_sign'\), color: ui\.orangeText \}/);
-    expect(kind).toMatch(/RSVP'\) return \{ label: t\('feed_status_rsvp'\), color: ui\.lavenderText \}/);
-    ['BIRTHDAY', 'SCHOOL', 'APPOINTMENT', 'VACATION'].forEach((type) => {
-      expect(kind).toMatch(new RegExp(`'${type}'\\) return \\{ label: [^}]*color: ui\\.muted \\}`));
-    });
-    expect(feed).toMatch(/\{kind \? <Text style=\{\[styles\.taskKind, \{ color: kind\.color \}\]\}>\{kind\.label\}<\/Text> : null\}/);
-  });
-
-  it("colours the initials with the assignee's own colour", () => {
-    expect(feed).toMatch(/tone=\{card\.assignee\?\.trim\(\) \? personTone\(card\.assignee, members\) : null\}/);
-    expect(feed).toMatch(/backgroundColor: ui\[tone\.bg\], borderColor: ui\[tone\.fg\]/);
+  it('says when and who in the grey line', () => {
+    expect(feed).toMatch(/const meta = \[when, who, privacy\]\.filter\(Boolean\)\.join\(' · '\);/);
+    expect(feed).toMatch(/when=\{todayTimeLabel\(card, t, lang\)\}/);
   });
 });
