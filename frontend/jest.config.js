@@ -28,6 +28,10 @@ const unit = {
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
   },
+  // Pictures the app bundles (the Home artwork) load as a stand-in number.
+  moduleNameMapper: {
+    '\\.(png|jpe?g|webp|gif)$': '<rootDir>/jest.assetStub.js',
+  },
 };
 
 const components = {

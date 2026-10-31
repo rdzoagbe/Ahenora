@@ -69,6 +69,21 @@ solo        One adult on their own, relaxing on a sofa with a cup of tea and a n
 
 ## Record
 
+Roland confirmed on 2026-10-31 that every picture was made by him in ChatGPT,
+in his own account. Saved for the app as WebP at 1170×780 (three times the
+phone width Home is drawn at), about 120 KB each.
+
 | File | Tool | Account | Date | Prompt used | Edits made by hand |
 |---|---|---|---|---|---|
-| | | | | | |
+| `home-family-light.webp` | ChatGPT | Roland's own | 2026-10-31 | STYLE + family | resized to 1170×780 WebP |
+| `home-children-light.webp` | ChatGPT | Roland's own | 2026-10-31 | STYLE + children | resized to 1170×780 WebP |
+| `home-mum-light.webp` | ChatGPT | Roland's own | 2026-10-31 | STYLE + mum | resized to 1170×780 WebP |
+| `home-dad-light.webp` | ChatGPT | Roland's own | 2026-10-31 | STYLE + dad | resized to 1170×780 WebP |
+| `home-couple-light.webp` | ChatGPT | Roland's own | 2026-10-31 | STYLE + couple | resized to 1170×780 WebP |
+| `home-solo-light.webp` | ChatGPT | Roland's own | 2026-10-31 | STYLE + solo | resized to 1170×780 WebP |
+| `home-solo-dark.webp` | ChatGPT | Roland's own | 2026-10-31 | STYLE + solo + NIGHT | resized to 1170×780 WebP |
+| `home-grandparent-dark.webp` | ChatGPT | Roland's own | 2026-10-31 | STYLE + grandparent, at night | made square; cropped to 3:2 keeping every face, resized to 1170×780 WebP |
+
+Still to make (2026-10-31): `home-grandparent-light`, and the night versions
+of `family`, `children`, `mum`, `dad` and `couple`. Until then a scene shows
+the picture it has in both modes.

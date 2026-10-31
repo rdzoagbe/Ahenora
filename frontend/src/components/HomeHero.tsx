@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { HOME_HERO_ART, HeroScene } from '../homeHeroArt';
+import { HeroScene, heroArtFor } from '../homeHeroArt';
 
 /**
  * The picture at the top of Home, as in the reference Roland chose on
@@ -76,7 +76,7 @@ export function HomeHero({ scene, label }: { scene: HeroScene; label: string }) 
   const { theme } = useStore();
   const dark = theme.mode === 'dark';
   const styles = useMemo(() => createStyles(ui), [ui]);
-  const art = dark ? HOME_HERO_ART[scene].dark : HOME_HERO_ART[scene].light;
+  const art = heroArtFor(scene, dark);
   const xml = useMemo(() => (art ? null : familyIllustration(palette(dark, ui))), [art, dark, ui]);
 
   return (
@@ -96,7 +96,7 @@ export function HomeHero({ scene, label }: { scene: HeroScene; label: string }) 
       <LinearGradient
         pointerEvents="none"
         colors={[ui.bg, ui.bg + '00']}
-        style={styles.fade}
+        style={[styles.fade, art ? styles.fadeOverArt : null]}
       />
     </View>
   );
@@ -107,5 +107,7 @@ function createStyles(ui: UIColors) {
     wrap: { height: HERO_HEIGHT, overflow: 'hidden', backgroundColor: ui.bg },
     art: { width: '100%', height: HERO_HEIGHT },
     fade: { position: 'absolute', left: 0, right: 0, top: 0, height: 64 },
+    // Shallower over a painted picture, whose people stand nearer the top.
+    fadeOverArt: { height: 36 },
   });
 }

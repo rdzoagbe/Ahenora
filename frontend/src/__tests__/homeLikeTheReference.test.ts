@@ -22,7 +22,7 @@ import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
 import { QUICK_TILE, TILE, tileFor } from '../homeTiles';
-import { HERO_SCENES, HOME_HERO_ART, heroHasPicture } from '../homeHeroArt';
+import { HERO_SCENES, HOME_HERO_ART, SCENES_WITH_CHILDREN, heroArtFor } from '../homeHeroArt';
 import { homeHeroScene } from '../homeFamily';
 import type { CardType, FamilyMember } from '../api';
 
@@ -137,18 +137,38 @@ describe('a calm day', () => {
 
 describe('the picture', () => {
   const hero = read('src', 'components', 'HomeHero.tsx');
+  const art = read('src', 'homeHeroArt.ts');
+  const brief = read('assets', 'images', 'home', 'README.md');
 
-  it('has a slot per kind of household, each empty until there is art the household owns', () => {
+  it('has a slot per kind of household', () => {
     expect(Object.keys(HOME_HERO_ART).sort()).toEqual([...HERO_SCENES].sort());
-    HERO_SCENES.forEach((scene) => expect(HOME_HERO_ART[scene]).toEqual({ light: null, dark: null }));
-    expect(hero).toMatch(/const art = dark \? HOME_HERO_ART\[scene\]\.dark : HOME_HERO_ART\[scene\]\.light;/);
+    expect(hero).toMatch(/const art = heroArtFor\(scene, dark\);/);
+  });
+
+  it('ships only pictures that are on disk and on the record of where they came from', () => {
+    const files = [...art.matchAll(/require\('\.\.\/assets\/images\/home\/([^']+)'\)/g)].map((m) => m[1]);
+    expect(files.length).toBeGreaterThan(0);
+    files.forEach((file) => {
+      expect(fs.existsSync(path.join(__dirname, '..', '..', 'assets', 'images', 'home', file))).toBe(true);
+      // A row of the record table names the file, the tool and the date.
+      expect(brief).toMatch(new RegExp(`\\| \`${file.replace('.', '\\.')}\` \\| ChatGPT \\|[^\\n]*\\| 2026-`));
+    });
+  });
+
+  it('shows a scene\'s day or night picture in both modes rather than the stand-in drawing', () => {
+    HERO_SCENES.forEach((scene) => {
+      const { light, dark } = HOME_HERO_ART[scene];
+      if (light || dark) {
+        expect(heroArtFor(scene, false)).toBeTruthy();
+        expect(heroArtFor(scene, true)).toBeTruthy();
+      }
+    });
   });
 
   it('never draws children into a household that has none', () => {
-    expect(heroHasPicture('couple', false)).toBe(false);
-    expect(heroHasPicture('solo', true)).toBe(false);
-    expect(heroHasPicture('family', false)).toBe(true);
-    expect(heroHasPicture('children', true)).toBe(true);
+    expect(SCENES_WITH_CHILDREN).not.toContain('couple');
+    expect(SCENES_WITH_CHILDREN).not.toContain('solo');
+    expect(art).toMatch(/return !!heroArtFor\(scene, dark\) \|\| SCENES_WITH_CHILDREN\.includes\(scene\);/);
   });
 });
 
