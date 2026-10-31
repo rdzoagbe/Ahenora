@@ -40,6 +40,7 @@ import { refreshOutcome } from '../../src/refreshOutcome';
 import { onVaultChanged } from '../../src/vaultChanged';
 import { parseDisplayDate } from '../../src/dateDisplay';
 import { localDayIso, localeFor } from '../../src/utils/date';
+import { SECTION_ART } from '../../src/sectionArt';
 
 // The drawers now live in one module shared with the scan router, so the
 // list the model is offered and the list the screen renders cannot drift.
@@ -570,6 +571,7 @@ export default function Vault() {
           <ScreenHeader
             eyebrow={t('vault')}
             title={t('vault_family_documents')}
+            art={SECTION_ART.vault}
             // showAdd off, or this corner carries TWO plus buttons side by side,
             // both announcing themselves as "Add": the header's generic
             // quick-add picker and the one below it that adds a document. The

@@ -63,6 +63,7 @@ import { requestWebPush } from '../../src/webpush';
 import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
 import { SundayBriefModal } from '../../src/components/SundayBriefModal';
+import { SECTION_ART } from '../../src/sectionArt';
 
 /**
  * Which BUILD an error came from, in the words that decide what to do about it.
@@ -833,7 +834,7 @@ export default function Settings() {
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
           <ScreenHeader
-          showAdd={false} eyebrow={t('set_manage')} title={t('set_settings')} />
+          showAdd={false} eyebrow={t('set_manage')} title={t('set_settings')} art={SECTION_ART.settings} />
 
           {/* Profile: who is signed in, in their own colour, and the door to
               their account. */}

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { Image, ImageSourcePropType, StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
@@ -107,11 +107,14 @@ export function ScreenHeader({
   right,
   titleSize = 30,
   showAdd = true,
+  art,
 }: {
   eyebrow: string;
   title: string;
   right?: React.ReactNode;
   titleSize?: number;
+  /** The page's painting (src/sectionArt.ts), a tile beside the brand and section name. */
+  art?: ImageSourcePropType | null;
   /** Off where "add" has no obvious meaning — Settings, Search, Chat. More is
    *  in the tab bar now, so those headers simply carry nothing on the right. */
   showAdd?: boolean;
@@ -120,10 +123,31 @@ export function ScreenHeader({
   const { openQuickAdd, t } = useStore();
   return (
     <View>
-      <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
+      {/* With a painting, the brand and the section's name sit beside it and
+          the title gets the full width under them: beside the title it cut
+          "October 2026" to "October 2…" on a phone. */}
+      {art ? (
+        <View style={kit.headerTop}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
+            <Text style={[kit.eyebrow, { color: ui.muted }]}>{eyebrow}</Text>
+          </View>
+          {/* Decoration only: screen readers skip it. */}
+          <View
+            style={[kit.headerArt, { borderColor: ui.line }]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            testID="screen-header-art"
+          >
+            <Image source={art} style={kit.headerArtImg} resizeMode="cover" />
+          </View>
+        </View>
+      ) : (
+        <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
+      )}
       <View style={kit.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={[kit.eyebrow, { color: ui.muted }]}>{eyebrow}</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {art ? null : <Text style={[kit.eyebrow, { color: ui.muted }]}>{eyebrow}</Text>}
           <Text style={[kit.title, { color: ui.text, fontSize: titleSize, lineHeight: titleSize + 6 }]}>{title}</Text>
         </View>
         <View style={kit.headerRight}>
@@ -271,6 +295,9 @@ export function StatBox({ label, value }: { label: string; value: string }) {
 const kit = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerTop: { flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginBottom: 2 },
+  headerArt: { width: 76, height: 76, borderRadius: 20, overflow: 'hidden', borderWidth: 1 },
+  headerArtImg: { width: '100%', height: '100%' },
   hubBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   hubLabel: { fontFamily: 'Figtree_700Bold', fontSize: 9, letterSpacing: 0.2, marginTop: 1 },
   brand: { fontFamily: 'Figtree_800ExtraBold', fontSize: 13, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 },

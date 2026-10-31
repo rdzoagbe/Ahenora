@@ -35,6 +35,7 @@ import { localeFor, isoWeek, custodyIsOurs, buildMonthDays } from '../../src/uti
 import { glyphFor } from '../../src/cardIcons';
 import { sendLocalNotification, syncCalendarNightly } from '../../src/notifications';
 import { cleanText, openExternal, parseDescription } from '../../src/eventDescription';
+import { SECTION_ART } from '../../src/sectionArt';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -1178,6 +1179,7 @@ export default function Calendar() {
       >
           <ScreenHeader
             eyebrow={t('cal_family_calendar')}
+            art={SECTION_ART.calendar}
             title={monthTitle}
             titleSize={30}
             right={
