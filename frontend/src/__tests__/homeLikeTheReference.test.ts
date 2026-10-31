@@ -12,7 +12,8 @@
  *    a chevron, with no checkbox (ticking off is in the sheet the row opens);
  *  - four quick actions under the day, each wired to something real;
  *  - a calm day shows no "nothing needs you" card;
- *  - the picture has a slot for licensed artwork and nothing is fetched;
+ *  - each kind of household has its own picture slot, chosen from who is in
+ *    it and never from a name, and no children are drawn where there are none;
  *  - every tile colour is legible, and every new string exists in all four
  *    languages.
  */
@@ -21,8 +22,9 @@ import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
 import { QUICK_TILE, TILE, tileFor } from '../homeTiles';
-import { HOME_HERO_ART } from '../homeHeroArt';
-import type { CardType } from '../api';
+import { HERO_SCENES, HOME_HERO_ART, heroHasPicture } from '../homeHeroArt';
+import { homeHeroScene } from '../homeFamily';
+import type { CardType, FamilyMember } from '../api';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
 const read = (...p: string[]) => fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8');
@@ -53,8 +55,9 @@ describe('the order of the screen', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it('greets the family, with a sun by day and a moon in the evening', () => {
-    expect(feed).toMatch(/\{t\('home_family'\)\}/);
+  it('greets the family (or you, when you live alone), with a sun by day and a moon in the evening', () => {
+    expect(feed).toMatch(/const greetName = heroScene === 'solo'/);
+    expect(feed).toMatch(/: t\('home_family'\);/);
     expect(feed).toMatch(/\? <Moon /);
     expect(feed).toMatch(/: <Sun /);
     expect(feed).toMatch(/evening \? t\('home_tagline_evening'\) : t\('home_tagline_day'\)/);
@@ -129,9 +132,51 @@ describe('a calm day', () => {
 });
 
 describe('the picture', () => {
-  it('has a slot for licensed artwork, empty until there is art the household owns', () => {
-    expect(HOME_HERO_ART).toEqual({ light: null, dark: null });
-    expect(read('src', 'components', 'HomeHero.tsx')).toMatch(/const art = dark \? HOME_HERO_ART\.dark : HOME_HERO_ART\.light;/);
+  const hero = read('src', 'components', 'HomeHero.tsx');
+
+  it('has a slot per kind of household, each empty until there is art the household owns', () => {
+    expect(Object.keys(HOME_HERO_ART).sort()).toEqual([...HERO_SCENES].sort());
+    HERO_SCENES.forEach((scene) => expect(HOME_HERO_ART[scene]).toEqual({ light: null, dark: null }));
+    expect(hero).toMatch(/const art = dark \? HOME_HERO_ART\[scene\]\.dark : HOME_HERO_ART\[scene\]\.light;/);
+  });
+
+  it('never draws children into a household that has none', () => {
+    expect(heroHasPicture('couple', false)).toBe(false);
+    expect(heroHasPicture('solo', true)).toBe(false);
+    expect(heroHasPicture('family', false)).toBe(true);
+    expect(heroHasPicture('children', true)).toBe(true);
+  });
+});
+
+describe('which picture a household gets', () => {
+  const m = (over: Partial<FamilyMember>): FamilyMember =>
+    ({ member_id: over.name || 'x', family_id: 'f', name: 'X', role: 'parent', stars: 0, ...over }) as FamilyMember;
+  const me = m({ name: 'Jordan', standing: 'owner', is_me: true });
+  const sam = m({ name: 'Sam', standing: 'parent', role: 'co-parent' });
+  const ama = m({ name: 'Ama', standing: 'child', role: 'child' });
+  const nanny = m({ name: 'Efua', standing: 'helper', role: 'helper' });
+
+  it('two adults with children: the whole family', () => {
+    expect(homeHeroScene([me, sam, ama], false)).toBe('family');
+  });
+
+  it('one adult with children: the children, which is right for a mum or a dad alike', () => {
+    expect(homeHeroScene([me, ama], false)).toBe('children');
+    expect(homeHeroScene([me, ama, nanny], false)).toBe('children');
+  });
+
+  it('a grandparent, when their own relationship says so', () => {
+    expect(homeHeroScene([m({ name: 'Nana', standing: 'owner', is_me: true, role: 'Grandmother' }), ama], false)).toBe('grandparent');
+  });
+
+  it('without children, or with their side put away: a couple, or one person', () => {
+    expect(homeHeroScene([me, sam], false)).toBe('couple');
+    expect(homeHeroScene([me], false)).toBe('solo');
+    expect(homeHeroScene([me, ama], true)).toBe('solo');
+  });
+
+  it('never reads a name to decide', () => {
+    expect(read('src', 'homeFamily.ts').slice(read('src', 'homeFamily.ts').indexOf('export function homeHeroScene'))).not.toMatch(/\.name\b/);
   });
 });
 

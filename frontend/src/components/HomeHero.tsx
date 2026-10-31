@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { HOME_HERO_ART } from '../homeHeroArt';
+import { HOME_HERO_ART, HeroScene } from '../homeHeroArt';
 
 /**
  * The picture at the top of Home, as in the reference Roland chose on
@@ -13,14 +13,12 @@ import { HOME_HERO_ART } from '../homeHeroArt';
  * family under the greeting, fading into the page at the top, with the day's
  * card laid over its bottom edge.
  *
- * The artwork comes from src/homeHeroArt.ts. Until there is a picture the
- * household holds the rights to, the drawing below stands in: it is made here,
- * in code, so nothing has to be licensed. One adult with two children, not a
- * couple: many households on Ahenora are two homes, and a picture of two
- * parents together is the wrong one to greet a separated parent with.
- *
- * Only shown in a household with children whose side of the app is on; a
- * couple on Duo gets the greeting and the day, and nothing that assumes a child.
+ * Each kind of household has its own scene (src/homeFamily.ts picks it, and
+ * src/homeHeroArt.ts holds the artwork). Until a scene has a picture the
+ * household holds the rights to, the drawing below stands in for the scenes
+ * with children in them: it is made here, in code, so nothing has to be
+ * licensed. A scene without children and without its artwork shows no picture,
+ * rather than a drawing of children that are not there.
  */
 export const HERO_HEIGHT = 250;
 
@@ -73,12 +71,12 @@ export function familyIllustration(p: Palette): string {
 </g></svg>`;
 }
 
-export function HomeHero({ label }: { label: string }) {
+export function HomeHero({ scene, label }: { scene: HeroScene; label: string }) {
   const ui = useUI();
   const { theme } = useStore();
   const dark = theme.mode === 'dark';
   const styles = useMemo(() => createStyles(ui), [ui]);
-  const art = dark ? HOME_HERO_ART.dark : HOME_HERO_ART.light;
+  const art = dark ? HOME_HERO_ART[scene].dark : HOME_HERO_ART[scene].light;
   const xml = useMemo(() => (art ? null : familyIllustration(palette(dark, ui))), [art, dark, ui]);
 
   return (

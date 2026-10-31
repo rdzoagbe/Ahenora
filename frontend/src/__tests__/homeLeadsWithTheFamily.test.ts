@@ -115,7 +115,7 @@ describe('the screen', () => {
   });
 
   it('keeps the children off Home on a plan with their side put away', () => {
-    expect(feed).toMatch(/const showFamilyPicture = !kidsHidden && members\.some\(isChild\);/);
+    expect(feed).toMatch(/const heroScene = homeHeroScene\(members, kidsHidden\);/);
     expect(feed).toMatch(/const custodyLine = kidsHidden \? null :/);
   });
 

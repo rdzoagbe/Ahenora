@@ -70,10 +70,11 @@ import { CoParentBalance } from '../../src/components/CoParentBalance';
 import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
 import { DoneCard, completedForHome } from '../../src/components/DoneCard';
 import { HomeHero } from '../../src/components/HomeHero';
+import { heroHasPicture } from '../../src/homeHeroArt';
 import { HomeQuickActions } from '../../src/components/HomeQuickActions';
 import { tileFor, TileIconKey } from '../../src/homeTiles';
 import { DinnerTonight } from '../../src/components/DinnerTonight';
-import { custodySentence, dinnerTonight, isChild } from '../../src/homeFamily';
+import { custodySentence, dinnerTonight, homeHeroScene, isChild } from '../../src/homeFamily';
 import { activityPhrase } from '../../src/activityPhrase';
 import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
@@ -331,7 +332,7 @@ const ANN_SEEN_KEY = 'coo_family_board_seen_at';
 const SEEN_ALERTS_KEY = 'coo_seen_alert_ids';
 
 export default function Feed() {
-  const { user, t, lang, subscription, dataVersion, requestInvite, refreshSubscription } = useStore();
+  const { user, t, lang, theme, subscription, dataVersion, requestInvite, refreshSubscription } = useStore();
   // On Duo the children's side is put away: no custody line, no stars.
   const kidsHidden = !!subscription?.kids_sections_hidden;
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -1029,7 +1030,14 @@ export default function Feed() {
   // day holds. Whose week it is reads as a sentence on the card when there are
   // children to name; a co-parent without one keeps the week's parity here.
   const custodyLine = kidsHidden ? null : custodySentence(members, subscription?.custody, now, t);
-  const showFamilyPicture = !kidsHidden && members.some(isChild);
+  // The picture fits the household: a family, children, a couple, one person.
+  const heroScene = homeHeroScene(members, kidsHidden);
+  // "Family" to a household, and your own name when you live on your own:
+  // "Good morning, Family" to one person reads as a mistake.
+  const greetName = heroScene === 'solo'
+    ? ((user?.name || '').trim().split(/\s+/)[0] || t('home_family'))
+    : t('home_family');
+  const showFamilyPicture = members.length > 0 && heroHasPicture(heroScene, theme.mode === 'dark');
   const tonight = dinnerTonight(meals, now);
   const dateTitle = now
     ? now.toLocaleDateString(localeFor(lang), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
@@ -1376,7 +1384,7 @@ export default function Feed() {
                 <Text style={styles.heroTitle} numberOfLines={1}>{greetingWord},</Text>
               ) : null}
               <View style={styles.greetLine}>
-                <Text style={styles.heroTitle} numberOfLines={1}>{t('home_family')}</Text>
+                <Text style={styles.heroTitle} numberOfLines={1}>{greetName}</Text>
                 {evening
                   ? <Moon color={ui.star} fill={ui.star} size={24} />
                   : <Sun color={ui.star} size={28} strokeWidth={2.4} />}
@@ -1384,11 +1392,12 @@ export default function Feed() {
               <Text style={styles.tagline}>{evening ? t('home_tagline_evening') : t('home_tagline_day')}</Text>
             </View>
 
-            {/* The family picture, edge to edge, with the day laid over its
-                bottom. Only in a household with children whose side is on. */}
+            {/* The household's picture, edge to edge, with the day laid over
+                its bottom. A scene with no artwork yet and no children in it
+                shows nothing. */}
             {showFamilyPicture ? (
               <View style={{ marginHorizontal: -px }}>
-                <HomeHero label={t('home_illustration_label')} />
+                <HomeHero scene={heroScene} label={t('home_illustration_label')} />
               </View>
             ) : null}
 

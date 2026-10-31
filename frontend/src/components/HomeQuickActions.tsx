@@ -76,7 +76,7 @@ export function HomeQuickActions({
 
 function createStyles(ui: UIColors) {
   return StyleSheet.create({
-    wrap: { marginTop: 22 },
+    wrap: { marginTop: 22, marginBottom: 18 },
     title: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17, marginBottom: 12, paddingHorizontal: 2 },
     row: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
     tile: { flex: 1, alignItems: 'center', gap: 8 },
