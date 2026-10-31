@@ -69,7 +69,9 @@ describe('whose week it is, as a sentence', () => {
   });
 });
 
-describe("everyone's face is on Home", () => {
+// The faces row left Home on 2026-10-31 with the reference layout; the order
+// still holds where faces are drawn (the Family tab, the calendar).
+describe("everyone's face, in order", () => {
   it('puts you first, then the other adults, then the children', () => {
     expect(familyFaces([ama, sam, leo, me]).map((m) => m.member_id)).toEqual(['m_me', 'm_sam', 'm_ama', 'm_leo']);
   });
@@ -79,7 +81,6 @@ describe("everyone's face is on Home", () => {
     expect(memberRoute(kofi).params.thread).toBe('u_kofi');
     expect(memberRoute(ama)).toEqual({ pathname: '/member', params: { id: 'm_ama', name: 'Ama Mensah', role: 'child', thread: '' } });
     expect(read('app', '(tabs)', 'kids.tsx')).toMatch(/router\.push\(memberRoute\(m\)\)/);
-    expect(read('app', '(tabs)', 'feed.tsx')).toMatch(/onOpenMember=\{\(m\) => router\.push\(memberRoute\(m\)\)\}/);
   });
 });
 
@@ -104,32 +105,31 @@ describe("tonight's dinner is on Home", () => {
 describe('the screen', () => {
   const feed = read('app', '(tabs)', 'feed.tsx');
 
-  it('renders the family band above the day, and dinner under it', () => {
-    const band = feed.indexOf('<FamilyBand');
-    const today = feed.indexOf("accessibilityRole=\"header\">{t('feed_today')}");
+  it('puts the family picture above the day, and dinner under it', () => {
+    const hero = feed.indexOf('<HomeHero');
+    const today = feed.indexOf('testID="home-today-card"');
     const dinner = feed.indexOf('<DinnerTonight');
-    expect(band).toBeGreaterThan(-1);
-    expect(band).toBeLessThan(today);
+    expect(hero).toBeGreaterThan(-1);
+    expect(hero).toBeLessThan(today);
     expect(dinner).toBeGreaterThan(today);
   });
 
   it('keeps the children off Home on a plan with their side put away', () => {
-    expect(feed).toMatch(/members=\{kidsHidden \? members\.filter\(\(m\) => !isChild\(m\)\) : members\}/);
-    expect(feed).toMatch(/const showFamilyPicture = !kidsHidden && members\.some\(isChild\);/);
+    expect(feed).toMatch(/const heroScene = homeHeroScene\(members, kidsHidden\);/);
     expect(feed).toMatch(/const custodyLine = kidsHidden \? null :/);
   });
 
-  it('shows three of the day before "See all"', () => {
-    expect(feed).toMatch(/const TASK_CAP = 3;/);
+  it('shows five of the day before "See all", as the reference does', () => {
+    expect(feed).toMatch(/const TASK_CAP = 5;/);
   });
 
-  it('says the schedule once: no "· with you" in the day line when the sentence shows', () => {
-    expect(feed).toMatch(/feedWeekLine\(now, t, kidsHidden \|\| custodyLine \? null : subscription\?\.custody\)/);
+  it('says the schedule once: the week line only when no sentence names the children', () => {
+    expect(feed).toMatch(/subscription\?\.custody\?\.enabled && !custodyLine \? feedWeekLine\(/);
   });
 
-  it('draws the picture in the repo instead of fetching one', () => {
-    const band = read('src', 'components', 'FamilyBand.tsx');
-    const urls = band.match(/https?:\/\/[^\s"'`]+/g) || [];
+  it('draws the stand-in picture in the repo instead of fetching one', () => {
+    const hero = read('src', 'components', 'HomeHero.tsx');
+    const urls = hero.match(/https?:\/\/[^\s"'`]+/g) || [];
     expect(urls.filter((u) => !u.startsWith('http://www.w3.org/2000/svg'))).toEqual([]);
   });
 });

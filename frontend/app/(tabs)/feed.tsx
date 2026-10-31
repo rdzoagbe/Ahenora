@@ -17,7 +17,15 @@ import {
   ArrowUp,
   BarChart3,
   Bell,
+  Cake,
+  GraduationCap,
+  House,
+  Mail,
+  Moon,
+  PenLine,
+  Plane,
   Search as SearchIcon,
+  Sun,
   CalendarDays,
   Camera,
   Check,
@@ -59,13 +67,14 @@ import { keepRoomFilter, roomFilterWorthShowing, roomsInUse } from '../../src/ro
 import { NotificationsNudge } from '../../src/components/NotificationsNudge';
 import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { CoParentBalance } from '../../src/components/CoParentBalance';
-import { streakLabel, useStreak } from '../../src/components/StreakChip';
 import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
 import { DoneCard, completedForHome } from '../../src/components/DoneCard';
-import { FamilyBand } from '../../src/components/FamilyBand';
+import { HomeHero } from '../../src/components/HomeHero';
+import { heroHasPicture } from '../../src/homeHeroArt';
+import { HomeQuickActions } from '../../src/components/HomeQuickActions';
+import { tileFor, TileIconKey } from '../../src/homeTiles';
 import { DinnerTonight } from '../../src/components/DinnerTonight';
-import { custodySentence, dinnerTonight, isChild, personTone, PersonTone } from '../../src/homeFamily';
-import { memberRoute } from '../../src/memberRoute';
+import { custodySentence, dinnerTonight, homeHeroScene, isChild } from '../../src/homeFamily';
 import { activityPhrase } from '../../src/activityPhrase';
 import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
@@ -151,13 +160,6 @@ function formatDayLine(date: string | null | undefined, t: TFunc) {
   return `${due.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
 }
 
-function feedDateLine(now: Date | null, lang: string) {
-  if (!now) return '';
-  // The app's language, not the browser's: a French household on the web
-  // read "Monday, September 7" above "Bonsoir".
-  return now.toLocaleDateString(localeFor(lang), { weekday: 'long', month: 'long', day: 'numeric' });
-}
-
 // The ISO week and its parity, beside the date. For a separated co-parent the
 // number IS the schedule — French judgments read "semaines paires / impaires" —
 // and for everyone else it is a normal, harmless piece of the week's identity
@@ -189,36 +191,6 @@ function relativeDue(date: string | null | undefined, t: (k: string, p?: Record<
   if (diffMin <= 0 || diffMin > 24 * 60) return null;
   if (diffMin < 60) return t('feed_in_min', { n: diffMin });
   return t('feed_in_h', { n: Math.round(diffMin / 60) });
-}
-
-/**
- * What kind of thing a row is, as the first words of its grey line.
- *
- * It was a coloured pill at the end of the row, and on a phone the pill took
- * the width the title needed: "Soccer …", "Dentist…" on every row of the day.
- * A word in the line underneath says the same and costs the title nothing.
- * Colour is kept only where the kind changes what you do — a slip to sign, an
- * invitation to answer; an appointment or a birthday is a fact, said quietly.
- * "Task" on a task said nothing and is still not said.
- */
-function rowKind(card: Card, ui: UIColors, t: TFunc): { label: string; color: string } | null {
-  if (card.source === 'CALENDAR') return { label: t('feed_pill_imported'), color: ui.muted };
-  if (card.type === 'SIGN_SLIP') return { label: t('feed_status_sign'), color: ui.orangeText };
-  if (card.type === 'RSVP') return { label: t('feed_status_rsvp'), color: ui.lavenderText };
-  if (card.type === 'BIRTHDAY') return { label: t('type_birthday'), color: ui.muted };
-  if (card.type === 'SCHOOL') return { label: t('type_school'), color: ui.muted };
-  if (card.type === 'APPOINTMENT') return { label: t('type_appointment'), color: ui.muted };
-  if (card.type === 'VACATION') return { label: t('type_vacation'), color: ui.muted };
-  return null;
-}
-
-// A name to a one- or two-letter badge: "Roland Dzoagbe" -> "RD", "Keigh" -> "K".
-// So a task shows at a glance whose plate it is on, without opening it.
-function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return '?';
-  if (words.length === 1) return words[0].slice(0, 1).toUpperCase();
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 }
 
 /**
@@ -262,13 +234,6 @@ function shortWhen(iso: string, t: TFunc): string {
   return t('when_days', { n: String(Math.round(hours / 24)) });
 }
 
-function greetingFallback(name: string, t: TFunc, now: Date | null) {
-  if (!now) return name || '';
-  const hour = now.getHours();
-  const prefix = hour < 12 ? t('feed_good_morning') : hour < 18 ? t('feed_good_afternoon') : t('feed_good_evening');
-  return `${prefix},${name ? `\n${name}` : ''}`;
-}
-
 // "Snooze" presets: move a task to tomorrow, the weekend, or next week — all
 // at 9am local, the times people mean by those words.
 function atMorning(d: Date) {
@@ -309,65 +274,55 @@ function todayTimeLabel(card: Card, t: TFunc, lang: string): string {
   return due.toLocaleTimeString(localeFor(lang), { hour: 'numeric', minute: '2-digit' });
 }
 
+const TILE_ICON: Record<TileIconKey, typeof CalendarDays> = {
+  calendar: CalendarDays,
+  task: CheckCircle2,
+  sign: PenLine,
+  rsvp: Mail,
+  school: GraduationCap,
+  birthday: Cake,
+  travel: Plane,
+  imported: CalendarDays,
+};
+
 /**
- * One open thing in today's list. A ticked card leaves this list for the Done
- * card below it (it used to stay here greyed out), so every row is open.
- *
- * `compact` is the undated row: checkbox and title, the group label "Any time"
- * above the first of them saying what the time column would have said on each.
- * Nothing that only repeats the row — the TASK pill on a task, the chevron on
- * a row that is itself the button, the day on a row sitting under its time —
- * is drawn on either kind.
+ * One open thing in the day, as the reference Roland chose on 2026-10-31
+ * draws it: a coloured tile saying what it is, the title, when and who, and a
+ * chevron. The whole row opens the card, and the card's sheet is where it is
+ * ticked off (Complete) — the reference has no checkbox on the row. A ticked
+ * card leaves this list for the Done card further down.
  */
-function TaskRow({ card, onOpen, onComplete, styles, tone, compact = false }: {
-  card: Card; onOpen: () => void; onComplete: () => void; styles: ReturnType<typeof createStyles>;
-  /** The assignee's own colour, or null when nobody is named. */
-  tone: PersonTone | null;
-  compact?: boolean;
+function TaskRow({ card, onOpen, styles, when }: {
+  card: Card; onOpen: () => void; styles: ReturnType<typeof createStyles>;
+  /** "5:00 PM", "All day", "Any time", or a weekday. */
+  when: string;
 }) {
   const ui = useUI();
   const { t } = useStore();
-  const imported = card.source === 'CALENDAR';
-  const kind = rowKind(card, ui, t);
-  // The badge on the right says whose it is and the time column says when,
-  // so the line underneath carries only what nothing else on the row does.
-  const meta = cardMeta(card, t, { withDay: false, withAssignee: false });
+  const { icon, tile } = tileFor(card);
+  const Icon = TILE_ICON[icon];
+  const who = (card.assignee || '').trim().split(/\s+/)[0];
+  // A private card says so: without it nobody can tell an item is invisible
+  // to the rest of the household.
+  const privacy = card.shared === false ? t('card_private') : null;
+  const meta = [when, who, privacy].filter(Boolean).join(' · ');
   return (
-    <PressScale style={[styles.taskRow, compact && styles.taskRowCompact]} onPress={onOpen} testID={`feed-card-${card.card_id}`}>
-      <PressScale
-        onPress={onComplete}
-        style={styles.checkRing}
-        accessibilityLabel={t('feed_mark_done')}
-        accessibilityRole="button"
-        testID={`feed-card-complete-${card.card_id}`}
-      >
-        {null}
-      </PressScale>
-      <View style={styles.taskBody}>
-        <View style={styles.taskTitleRow}>
-          {imported ? <CalendarDays color={ui.muted} size={13} /> : null}
-          {/* Two lines, so a title is read, not guessed at. */}
-          <Text style={[styles.taskTitle, { flexShrink: 1 }]} numberOfLines={2}>{card.title}</Text>
-        </View>
-        {kind || meta ? (
-          <Text style={styles.taskMeta} numberOfLines={1} testID={`feed-card-meta-${card.card_id}`}>
-            {kind ? <Text style={[styles.taskKind, { color: kind.color }]}>{kind.label}</Text> : null}
-            {kind && meta ? ' · ' : null}
-            {meta}
-          </Text>
-        ) : null}
+    <PressScale
+      style={styles.dayRow}
+      onPress={onOpen}
+      testID={`feed-card-${card.card_id}`}
+      accessibilityRole="button"
+      accessibilityLabel={`${card.title}, ${meta}`}
+    >
+      <View style={[styles.dayTile, { backgroundColor: tile.solid }]}>
+        <Icon color="#FFFFFF" size={19} strokeWidth={2.2} />
       </View>
-      {card.assignee && card.assignee.trim() && tone ? (
-        <View
-          style={[styles.assigneeBadge, { backgroundColor: ui[tone.bg], borderColor: ui[tone.fg] }]}
-          accessibilityLabel={t('card_assigned_to', { name: card.assignee.trim() })}
-          testID={`feed-card-who-${card.card_id}`}
-        >
-          <Text style={[styles.assigneeBadgeText, { color: ui[tone.fg] }]}>
-            {initials(card.assignee)}
-          </Text>
-        </View>
-      ) : null}
+      <View style={styles.taskBody}>
+        {/* Two lines, so a title is read, not guessed at. */}
+        <Text style={styles.dayRowTitle} numberOfLines={2}>{card.title}</Text>
+        <Text style={styles.dayRowMeta} numberOfLines={1} testID={`feed-card-meta-${card.card_id}`}>{meta}</Text>
+      </View>
+      <ChevronRight color={ui.muted} size={18} />
     </PressScale>
   );
 }
@@ -377,7 +332,7 @@ const ANN_SEEN_KEY = 'coo_family_board_seen_at';
 const SEEN_ALERTS_KEY = 'coo_seen_alert_ids';
 
 export default function Feed() {
-  const { user, t, lang, subscription, dataVersion, requestInvite, refreshSubscription } = useStore();
+  const { user, t, lang, theme, subscription, dataVersion, requestInvite, refreshSubscription } = useStore();
   // On Duo the children's side is put away: no custody line, no stars.
   const kidsHidden = !!subscription?.kids_sections_hidden;
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -415,7 +370,6 @@ export default function Feed() {
   const styles = useMemo(() => createStyles(ui), [ui]);
   // Days in a row the app was opened: one phrase in the line under the
   // greeting, where a chip of its own sat between Today and the gift pot.
-  const streak = useStreak();
   const [cards, setCards] = useState<Card[]>([]);
   // Gift pots keyed by their birthday card, so the Gift Pot strip can show a
   // pot's progress inline. Fetched alongside the feed; empty is fine.
@@ -994,7 +948,7 @@ export default function Feed() {
 
   // Three, so the day, the family and tonight's dinner fit the first screen;
   // "See all" opens the rest in place.
-  const TASK_CAP = 3;
+  const TASK_CAP = 5;
   // What the Family pulse holds (rebrand Stage 2): overdue work, and work
   // somebody ELSE handed you whatever its date. The Today list below leaves
   // these out, so nothing is shown twice.
@@ -1063,21 +1017,39 @@ export default function Feed() {
   const handedToMe = assigned.filter((c) => c.status === 'OPEN');
   const handedIds = new Set(handedToMe.map((c) => c.card_id));
 
-  const firstName = (user?.name || '').split(' ')[0] || '';
-  const headline = greetingFallback(firstName, t, now);
-  // One grey line under the greeting: the date, the week and its parity (for
-  // a separated co-parent the parity IS the schedule), and the streak. These
-  // were three lines in two places before, above and below the greeting.
-  // Whose week it is, as a sentence, on the family picture at the top. When
-  // that sentence shows, the day line keeps the week number and its parity but
-  // drops its own "· with you", so the schedule is said once.
+  // The greeting is to the family, as in the reference Roland chose on
+  // 2026-10-31, with the time of day as a sun or a moon beside it. Nothing of
+  // it is rendered before the clock is known (the prerendered web page has no
+  // time of day), so the hydrated page matches the static one.
+  const hour = now ? now.getHours() : null;
+  const evening = hour !== null && hour >= 18;
+  const greetingWord = hour === null
+    ? ''
+    : hour < 12 ? t('feed_good_morning') : hour < 18 ? t('feed_good_afternoon') : t('feed_good_evening');
+  // The day's card: the date as its title, and under it how many things the
+  // day holds. Whose week it is reads as a sentence on the card when there are
+  // children to name; a co-parent without one keeps the week's parity here.
   const custodyLine = kidsHidden ? null : custodySentence(members, subscription?.custody, now, t);
-  const showFamilyPicture = !kidsHidden && members.some(isChild);
+  // The picture fits the household: a family, children, a couple, one person.
+  const heroScene = homeHeroScene(members, kidsHidden);
+  // "Family" to a household, and your own name when you live on your own:
+  // "Good morning, Family" to one person reads as a mistake.
+  const greetName = heroScene === 'solo'
+    ? ((user?.name || '').trim().split(/\s+/)[0] || t('home_family'))
+    : t('home_family');
+  const showFamilyPicture = members.length > 0 && heroHasPicture(heroScene, theme.mode === 'dark');
   const tonight = dinnerTonight(meals, now);
+  const dateTitle = now
+    ? now.toLocaleDateString(localeFor(lang), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
+  const thingsLine = loading
+    ? ''
+    : roomCards.length === 0
+      ? t('home_things_none')
+      : roomCards.length === 1 ? t('home_things_one') : t('home_things_many', { n: roomCards.length });
   const dayLine = [
-    feedDateLine(now, lang),
-    feedWeekLine(now, t, kidsHidden || custodyLine ? null : subscription?.custody),
-    streakLabel(streak, t),
+    thingsLine,
+    subscription?.custody?.enabled && !custodyLine ? feedWeekLine(now, t, kidsHidden ? null : subscription?.custody) : null,
   ].filter(Boolean).join(' · ');
   const alertCount = dashboard.priority.length;
   // The bell badge counts what you have NOT looked at yet, not how much work is
@@ -1145,6 +1117,12 @@ export default function Feed() {
     setAddSource('MANUAL');
     setShowAdd(true);
   };
+  // "Add event" on Home: the same composer, already set to an appointment.
+  const openNewEvent = () => {
+    setPendingDraft({ transcript: '', type: 'APPOINTMENT', title: '', description: '', assignee: '' } as ScanDraft);
+    setAddSource('MANUAL');
+    setShowAdd(true);
+  };
 
   const toggle = async (card: Card) => {
     const next = card.status === 'DONE' ? 'OPEN' : 'DONE';
@@ -1208,23 +1186,16 @@ export default function Feed() {
     }
   };
 
+  // Complete in the card's sheet ticks it straight away. Since 2026-10-31 the
+  // rows of the day carry no checkbox (the reference Roland chose has none),
+  // so this is the way a thing is ticked off; asking "are you sure?" here as
+  // well made it three taps. A slip is still undoable: the ticked card waits
+  // in the Done card under the day, with Undo.
   const completeSelected = () => {
     if (!selectedCard) return;
     const card = selectedCard;
-    Alert.alert(
-      t('feed_mark_done_q'),
-      `"${card.title}" ${t('feed_move_to_history')}`,
-      [
-        { text: t('feed_cancel'), style: 'cancel' },
-        {
-          text: t('feed_done'),
-          onPress: () => {
-            setSelectedCard(null);
-            toggle(card);
-          },
-        },
-      ],
-    );
+    setSelectedCard(null);
+    toggle(card);
   };
 
   // The "before" count, held in a ref so the handler is not rebuilt on every
@@ -1398,47 +1369,142 @@ export default function Feed() {
               </View>
             </View>
 
-            <View style={styles.heroRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}>{headline}</Text>
-                {/* The "N overdue" pill that sat here said what the Family
-                    pulse says a few rows down, in its own words, with the
-                    items. Said once, in the place that owns it. */}
-                <Text style={styles.weekLine} testID="feed-week" numberOfLines={2}>{dayLine}</Text>
+            {/* The greeting, as in the reference Roland chose on 2026-10-31:
+                the family, the time of day as a sun or a moon, and one line
+                under it. The date and the day's count are on the card below. */}
+            <View style={styles.greet}>
+              {greetingWord ? (
+                <Text style={styles.heroTitle} numberOfLines={1}>{greetingWord},</Text>
+              ) : null}
+              <View style={styles.greetLine}>
+                <Text style={styles.heroTitle} numberOfLines={1}>{greetName}</Text>
+                {evening
+                  ? <Moon color={ui.star} fill={ui.star} size={24} />
+                  : <Sun color={ui.star} size={28} strokeWidth={2.4} />}
               </View>
+              <Text style={styles.tagline}>{evening ? t('home_tagline_evening') : t('home_tagline_day')}</Text>
             </View>
 
-            {/* The family first: a picture of a family on its way home, whose
-                week it is as a sentence, and everyone's face — each one opens
-                that person, as on the Family tab. */}
-            <FamilyBand
-              members={kidsHidden ? members.filter((m) => !isChild(m)) : members}
-              showPicture={showFamilyPicture}
-              custodyLine={custodyLine}
-              onOpenMember={(m) => router.push(memberRoute(m))}
-            />
+            {/* The household's picture, edge to edge, with the day laid over
+                its bottom. A scene with no artwork yet and no children in it
+                shows nothing. */}
+            {showFamilyPicture ? (
+              <View style={{ marginHorizontal: -px }}>
+                <HomeHero scene={heroScene} label={t('home_illustration_label')} />
+              </View>
+            ) : null}
 
-            {/* Capture leads now, and the day follows it.
-                The bar used to sit UNDER the list, where a footer goes — and it
-                is the most capable control on the screen: a typed line goes to
-                the shopping list, the week's menu or a task, on its own. The
-                first thing you can do belongs above the first thing you read. */}
-            {/* Quick capture — one slim bar with camera/mic tucked to the
-                right. The tab bar carries no ＋ at all now, so this is the
-                Feed's single, unambiguous "add" gesture (was a full
-                Add/Photo card up top). */}
-            {/* A handover with your name on it, above the day's work.
-                Lavender rather than orange on purpose: orange is how this app
-                says urgent — overdue cards, the alert banner. A handover is not
-                urgent, it just needs an owner, and lavender is already the
-                notes colour. A strip rather than a dialog: unmissable without
-                standing in the way of the thing you opened the app to do.
+            <View
+              style={[styles.listCard, styles.dayCard, showFamilyPicture && styles.dayCardOverHero]}
+              testID="home-today-card"
+            >
+              <View style={styles.dayCardHead}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.dayCardTitle} accessibilityRole="header">{dateTitle}</Text>
+                  <Text style={styles.dayCardSub} testID="feed-week" numberOfLines={2}>{dayLine}</Text>
+                </View>
+                <PressScale
+                  testID="feed-open-calendar"
+                  accessibilityRole="link"
+                  accessibilityLabel={t('feed_open_calendar')}
+                  onPress={() => router.navigate('/(tabs)/calendar')}
+                  style={styles.dayCardCal}
+                >
+                  <CalendarDays color={ui.orangeText} size={20} />
+                </PressScale>
+              </View>
+              {custodyLine ? (
+                <View style={styles.custody} testID="home-custody-line">
+                  <House color={ui.orangeText} size={16} strokeWidth={2.2} />
+                  <Text style={styles.custodyText}>{custodyLine}</Text>
+                </View>
+              ) : null}
 
-                And top-level, deliberately. The first build of this put it
-                inside the Household section, which is collapsed by default —
-                so a note addressed to you was visible only if you went looking
-                for it, which is the one thing it must never require. Writing a
-                note stays two taps down; being handed one does not. */}
+              {roomFilterWorthShowing(rooms) ? (
+                <View style={styles.roomRow}>
+                  <PressScale
+                    testID="feed-room-all"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('room_all')}
+                    accessibilityState={{ selected: roomFilter === '' }}
+                    onPress={() => setRoomFilter('')}
+                    style={[styles.roomChip, roomFilter === '' && styles.roomChipOn]}
+                  >
+                    <Text style={[styles.roomChipText, roomFilter === '' && styles.roomChipTextOn]}>
+                      {t('room_all')}
+                    </Text>
+                  </PressScale>
+                  {rooms.map((r) => {
+                    const active = roomFilter === r;
+                    return (
+                      <PressScale
+                        key={r}
+                        testID={`feed-room-${r}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t(`room_${r}`)}
+                        accessibilityState={{ selected: active }}
+                        onPress={() => setRoomFilter(active ? '' : r)}
+                        style={[styles.roomChip, active && styles.roomChipOn]}
+                      >
+                        <Text style={[styles.roomChipText, active && styles.roomChipTextOn]} numberOfLines={1}>
+                          {t(`room_${r}`)}
+                        </Text>
+                      </PressScale>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              <View style={styles.dayList}>
+                {loading ? (
+                  <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
+                ) : loadError && visibleCards.length === 0 ? (
+                  <PressScale onPress={handleRefresh} style={styles.emptyBox}>
+                    <AlertTriangle color={ui.orange} size={22} />
+                    <Text style={styles.emptyTitle}>{t('feed_load_failed_title')}</Text>
+                    <Text style={styles.emptySub}>{t('feed_load_failed_sub')}</Text>
+                  </PressScale>
+                ) : visibleCards.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <CheckCircle2 color={ui.mintText} size={22} />
+                    <Text style={styles.emptyTitle}>{t('feed_nothing_urgent')}</Text>
+                    <Text style={styles.emptySub}>{t('feed_empty_hint')}</Text>
+                    <PressScale
+                      testID="feed-empty-scan"
+                      onPress={() => setShowCamera(true)}
+                      style={[styles.emptyScanBtn, { backgroundColor: ui.orangeSoft, borderColor: ui.orange + '40' }]}
+                    >
+                      <Camera color={ui.orange} size={15} />
+                      <Text style={[styles.emptyScanText, { color: ui.orangeText }]}>{t('feed_try_scan')}</Text>
+                    </PressScale>
+                  </View>
+                ) : (
+                  <>
+                    {visibleCards.map((card) => (
+                      <TaskRow
+                        key={card.card_id}
+                        card={card}
+                        when={todayTimeLabel(card, t, lang)}
+                        onOpen={() => setSelectedCard(card)}
+                        styles={styles}
+                      />
+                    ))}
+                  </>
+                )}
+              </View>
+
+              {hiddenTaskCount > 0 && !showAllTasks ? (
+                <PressScale testID="feed-see-all" onPress={() => setShowAllTasks(true)} style={styles.seeAllBtn}>
+                  <Text style={styles.seeAllText}>{t('feed_see_all_tasks', { n: hiddenTaskCount })}</Text>
+                  <ChevronRight color={ui.orangeText} size={16} />
+                </PressScale>
+              ) : showAllTasks && roomCards.length > TASK_CAP ? (
+                <PressScale testID="feed-see-less" onPress={() => setShowAllTasks(false)} style={styles.seeAllBtn}>
+                  <Text style={styles.seeAllText}>{t('feed_show_less')}</Text>
+                </PressScale>
+              ) : null}
+            </View>
+
             {notesForMe.map((note) => (
               <View key={note.note_id} testID={`note-for-me-${note.note_id}`} style={styles.noteStrip}>
                 <View style={styles.noteStripHead}>
@@ -1471,6 +1537,29 @@ export default function Feed() {
                 </View>
               </View>
             ))}
+
+            <HomeQuickActions
+              kidsShown={!kidsHidden && members.some(isChild)}
+              onEvent={openNewEvent}
+              onChore={() => (!kidsHidden && members.some(isChild)
+                ? router.navigate({ pathname: '/(tabs)/kids', params: { add: 'chore' } } as never)
+                : openManual())}
+              onMeal={() => router.navigate({ pathname: '/(tabs)/kitchen', params: { view: 'meal' } } as never)}
+              onScan={() => setShowCamera(true)}
+            />
+
+            {!loading ? (
+              <FamilyPulse
+                overdue={dashboard.overdue}
+                handed={handedFromOthers}
+                shopping={shopItems}
+                handedByName={(card) => memberName(card.created_by_user_id)}
+                dayLine={(card) => formatDayLine(card.due_date, t)}
+                onOpenCard={(card) => setSelectedCard(card)}
+                onOpenShopping={() => router.navigate({ pathname: '/(tabs)/kitchen', params: { view: 'shop' } } as never)}
+                onSeeAll={() => { setShowAlerts(true); markAlertsSeen(); }}
+              />
+            ) : null}
 
             <View style={styles.addBar}>
               {/* Typeable, not a button that opens a composer.
@@ -1521,149 +1610,6 @@ export default function Feed() {
               onManual={() => { setShowCaptureMenu(false); openManual(); }}
               onPhoto={() => { setShowCaptureMenu(false); setShowCamera(true); }}
             />
-
-            {!loading ? (
-              <FamilyPulse
-                overdue={dashboard.overdue}
-                handed={handedFromOthers}
-                shopping={shopItems}
-                handedByName={(card) => memberName(card.created_by_user_id)}
-                dayLine={(card) => formatDayLine(card.due_date, t)}
-                onOpenCard={(card) => setSelectedCard(card)}
-                onOpenShopping={() => router.navigate({ pathname: '/(tabs)/kitchen', params: { view: 'shop' } } as never)}
-                onSeeAll={() => { setShowAlerts(true); markAlertsSeen(); }}
-              />
-            ) : null}
-
-            <View style={styles.todayHead}>
-              <Text style={styles.todayTitle} accessibilityRole="header">{t('feed_today')}</Text>
-              <PressScale
-                testID="feed-open-calendar"
-                accessibilityRole="link"
-                onPress={() => router.navigate('/(tabs)/calendar')}
-              >
-                <Text style={styles.todayLink}>{t('feed_open_calendar')}</Text>
-              </PressScale>
-            </View>
-
-
-            {/* The stats strip lived here: "Due today / Sign slips / This
-                week" — three numbers sitting above the task list that shows
-                those same items, under a tab row that already splits them
-                Today / Upcoming / All. It spent about 90px of the first
-                screen restating what the next 90px showed properly.
-                Counting is not a feature when the things being counted are
-                right there. */}
-
-
-            {roomFilterWorthShowing(rooms) ? (
-              <View style={styles.roomRow}>
-                <PressScale
-                  testID="feed-room-all"
-                  accessibilityRole="button"
-                  accessibilityLabel={t('room_all')}
-                  accessibilityState={{ selected: roomFilter === '' }}
-                  onPress={() => setRoomFilter('')}
-                  style={[styles.roomChip, roomFilter === '' && styles.roomChipOn]}
-                >
-                  <Text style={[styles.roomChipText, roomFilter === '' && styles.roomChipTextOn]}>
-                    {t('room_all')}
-                  </Text>
-                </PressScale>
-                {rooms.map((r) => {
-                  const active = roomFilter === r;
-                  return (
-                    <PressScale
-                      key={r}
-                      testID={`feed-room-${r}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={t(`room_${r}`)}
-                      accessibilityState={{ selected: active }}
-                      onPress={() => setRoomFilter(active ? '' : r)}
-                      style={[styles.roomChip, active && styles.roomChipOn]}
-                    >
-                      <Text style={[styles.roomChipText, active && styles.roomChipTextOn]} numberOfLines={1}>
-                        {t(`room_${r}`)}
-                      </Text>
-                    </PressScale>
-                  );
-                })}
-              </View>
-            ) : null}
-
-            <View style={styles.listCard}>
-              {loading ? (
-                <ActivityIndicator color={ui.orange} style={{ paddingVertical: 32 }} />
-              ) : loadError && visibleCards.length === 0 ? (
-                <PressScale onPress={handleRefresh} style={styles.emptyBox}>
-                  <AlertTriangle color={ui.orange} size={22} />
-                  <Text style={styles.emptyTitle}>{t('feed_load_failed_title')}</Text>
-                  <Text style={styles.emptySub}>{t('feed_load_failed_sub')}</Text>
-                </PressScale>
-              ) : visibleCards.length === 0 ? (
-                <View style={styles.emptyBox}>
-                  <CheckCircle2 color={ui.mintText} size={22} />
-                  <Text style={styles.emptyTitle}>{t('feed_nothing_urgent')}</Text>
-                  <Text style={styles.emptySub}>{t('feed_empty_hint')}</Text>
-                  <PressScale
-                    testID="feed-empty-scan"
-                    onPress={() => setShowCamera(true)}
-                    style={[styles.emptyScanBtn, { backgroundColor: ui.orangeSoft, borderColor: ui.orange + '40' }]}
-                  >
-                    <Camera color={ui.orange} size={15} />
-                    <Text style={[styles.emptyScanText, { color: ui.orangeText }]}>{t('feed_try_scan')}</Text>
-                  </PressScale>
-                </View>
-              ) : (
-                <>
-                  {/* One list, in the order the day happens: timed things,
-                      then anything with no date under one "Any time" label.
-                      Overdue work and work somebody handed you are in the
-                      Family pulse above; what was ticked off is in the Done
-                      card below. Nothing is shown twice. */}
-                  {visibleCards.map((card, index) => {
-                    const undated = dueTime(card) === null;
-                    const firstUndated = undated && (index === 0 || dueTime(visibleCards[index - 1]) !== null);
-                    return (
-                      <View key={card.card_id}>
-                        {firstUndated ? (
-                          <Text style={[styles.anyTimeLabel, index > 0 && styles.anyTimeLabelAfter]} testID="feed-any-time">
-                            {t('feed_any_time')}
-                          </Text>
-                        ) : null}
-                        <View style={styles.todayRow}>
-                          {!undated ? (
-                            <Text style={styles.todayTime} numberOfLines={1}>{todayTimeLabel(card, t, lang)}</Text>
-                          ) : null}
-                          <View style={styles.todayRowBody}>
-                            <TaskRow
-                              card={card}
-                              tone={card.assignee?.trim() ? personTone(card.assignee, members) : null}
-                              compact={undated}
-                              onOpen={() => setSelectedCard(card)}
-                              onComplete={() => toggle(card)}
-                              styles={styles}
-                            />
-                            {index < visibleCards.length - 1 ? <View style={styles.rowDivider} /> : null}
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </>
-              )}
-            </View>
-
-            {hiddenTaskCount > 0 && !showAllTasks ? (
-              <PressScale testID="feed-see-all" onPress={() => setShowAllTasks(true)} style={styles.seeAllBtn}>
-                <Text style={styles.seeAllText}>{t('feed_see_all_tasks', { n: hiddenTaskCount })}</Text>
-                <ChevronRight color={ui.orangeText} size={16} />
-              </PressScale>
-            ) : showAllTasks && roomCards.length > TASK_CAP ? (
-              <PressScale testID="feed-see-less" onPress={() => setShowAllTasks(false)} style={styles.seeAllBtn}>
-                <Text style={styles.seeAllText}>{t('feed_show_less')}</Text>
-              </PressScale>
-            ) : null}
 
             {/* What the family is eating tonight, from the week's plan. */}
             <DinnerTonight meal={tonight} onOpen={() => router.navigate('/(tabs)/kitchen' as never)} />
@@ -2305,6 +2251,34 @@ export default function Feed() {
 }
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
+  // The top of Home, as in the reference Roland chose on 2026-10-31.
+  greet: { marginTop: 6, marginBottom: 6 },
+  greetLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tagline: {
+    color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14, lineHeight: 20, marginTop: 6,
+  },
+  dayCard: { paddingTop: 16, paddingHorizontal: 14, paddingBottom: 8, marginTop: 14 },
+  // Laid over the bottom of the picture, as the reference draws it, but not
+  // so far that it covers the family standing there.
+  dayCardOverHero: { marginTop: -34 },
+  dayCardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingHorizontal: 4 },
+  dayCardTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 19, lineHeight: 24 },
+  dayCardSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5, lineHeight: 19, marginTop: 2 },
+  dayCardCal: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeSoft },
+  custody: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, marginTop: 10 },
+  custodyText: { flexShrink: 1, color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 13.5, lineHeight: 19 },
+  dayList: { marginTop: 12, gap: 8 },
+  // Each thing of the day on its own soft ground inside the card.
+  dayRow: {
+    minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 10, paddingVertical: 9, borderRadius: 16, backgroundColor: ui.soft,
+  },
+  dayTile: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  dayRowTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15, lineHeight: 20 },
+  dayRowMeta: {
+    color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13, lineHeight: 18, marginTop: 1,
+    fontVariant: ['tabular-nums'],
+  },
   pastBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2388,14 +2362,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 2,
   },
-  weekLine: {
-    color: ui.muted,
-    fontFamily: 'Figtree_600SemiBold',
-    fontSize: 13,
-    lineHeight: 18,
-    letterSpacing: 0.1,
-    marginTop: 6,
-  },
   topActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   bellWrap: {
     width: 42,
@@ -2420,13 +2386,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Figtree_800ExtraBold',
     fontSize: 11,
   },
-  heroRow: {
-    flexDirection: 'row',
-    gap: 14,
-    alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 18,
-  },
   heroTitle: {
     color: ui.text,
     // Playfair carries the brand voice from the landing into the app — the
@@ -2435,13 +2394,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     letterSpacing: -0.3,
-  },
-  subtitle: {
-    marginTop: 8,
-    color: ui.muted,
-    fontFamily: 'Figtree_600SemiBold',
-    fontSize: 17,
-    letterSpacing: 0.2,
   },
   seeAllBtn: {
     flexDirection: 'row',
@@ -2632,26 +2584,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  todayHead: {
-    flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
-    paddingHorizontal: 4, marginBottom: 8,
-  },
-  todayTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 17 },
-  todayLink: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
-  todayRow: { flexDirection: 'row', alignItems: 'stretch' },
-  todayTime: {
-    // Wide enough for "11:00 AM" at this size; a time cut to "11:0…" is no time.
-    width: 76, paddingLeft: 14, paddingTop: 29, color: ui.text,
-    fontFamily: 'Figtree_700Bold', fontSize: 12.5, fontVariant: ['tabular-nums'],
-  },
-  todayRowBody: { flex: 1, minWidth: 0 },
-  // "Any time", once, above the undated rows — instead of once per row.
-  anyTimeLabel: {
-    color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 11.5, letterSpacing: 0.6,
-    textTransform: 'uppercase', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 2,
-  },
-  anyTimeLabelAfter: { borderTopWidth: 1, borderTopColor: ui.line, paddingTop: 10 },
-  taskRowCompact: { minHeight: 54, paddingVertical: 8 },
   listCard: {
     overflow: 'hidden',
     borderRadius: 24,
@@ -2664,62 +2596,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
-  taskRow: {
-    minHeight: 76,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  checkRing: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: ui.checkLine,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   taskBody: {
     flex: 1,
     minWidth: 0,
-  },
-  taskTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  taskTitle: {
-    color: ui.text,
-    fontFamily: 'Figtree_800ExtraBold',
-    fontSize: 15.5,
-    lineHeight: 20,
-  },
-  taskMeta: {
-    color: ui.muted,
-    fontFamily: 'Figtree_500Medium',
-    fontSize: 12.2,
-    lineHeight: 17,
-    marginTop: 2,
-  },
-  assigneeBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 2,
-  },
-  assigneeBadgeText: {
-    fontFamily: 'Figtree_800ExtraBold',
-    fontSize: 10.5,
-    letterSpacing: 0.2,
-  },
-  taskKind: {
-    fontFamily: 'Figtree_700Bold',
-  },
-  rowDivider: {
-    height: 1,
-    backgroundColor: ui.line,
-    marginLeft: 50,
   },
   emptyBox: {
     minHeight: 150,

@@ -25,7 +25,7 @@ const search = read('app', '(tabs)', 'search.tsx');
 describe('the Kitchen opens on the meals', () => {
   it('by default, and on the list only when a door asks for it', () => {
     expect(kitchen).toContain("const [chosenView, setView] = useState<KitchenView>('meal');");
-    expect(kitchen).toContain("const view: KitchenView = askedView === 'shop' || askedView === 'spend' ? askedView : chosenView;");
+    expect(kitchen).toContain("const view: KitchenView = askedView === 'shop' || askedView === 'spend' || askedView === 'meal' ? askedView : chosenView;");
     expect(kitchen).not.toContain("useState<KitchenView>('shop')");
   });
 

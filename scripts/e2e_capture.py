@@ -158,8 +158,11 @@ async def main():
         # row that was real but folded away.
         picked = await page.evaluate("""
           () => {
-            const el = document.querySelector('[data-testid^="feed-card-complete-"]');
-            return el ? el.dataset.testid.replace('feed-card-complete-', '') : null;
+            // A row of the day is "feed-card-<id>"; its grey line is
+            // "feed-card-meta-<id>" and the sheet's pencil "feed-card-edit".
+            const el = [...document.querySelectorAll('[data-testid^="feed-card-"]')]
+              .find((e) => !/^feed-card-(meta-|edit$)/.test(e.dataset.testid));
+            return el ? el.dataset.testid.replace('feed-card-', '') : null;
           }
         """)
         cards_before = len(api("GET", "/cards", None, tok))
@@ -167,7 +170,11 @@ async def main():
         if picked:
             title = next((c.get("title") or "" for c in api("GET", "/cards", None, tok)
                           if c["card_id"] == picked), "")
-            await page.click(f'[data-testid="feed-card-complete-{picked}"]')
+            # Since 2026-10-31 a row has no checkbox, as in the reference Roland
+            # chose: the row opens the card, and Complete is in its sheet.
+            await page.click(f'[data-testid="feed-card-{picked}"]')
+            await page.wait_for_timeout(800)
+            await page.click('[data-testid="feed-complete-card"]')
             await page.wait_for_timeout(2000)
             # A ticked task leaves the OPEN rows at once and reappears, with
             # an Undo, in the Done card under Today (Roland, 2026-10-09; it
@@ -195,7 +202,7 @@ async def main():
             # the feature; it is only a bug if the task itself comes back.
             r["and_no_task_row_carries_it_any_more"] = await page.evaluate("""
               (title) => [...document.querySelectorAll('[data-testid^="feed-card-"]')]
-                .filter((el) => !el.dataset.testid.includes('complete'))
+                .filter((el) => !/^feed-card-(meta-|edit$)/.test(el.dataset.testid))
                 .every((el) => !el.textContent.toLowerCase().includes(title.toLowerCase()))
             """, title or "")
 

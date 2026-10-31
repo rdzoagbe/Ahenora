@@ -69,6 +69,11 @@ export function FamilyPulse({
     ? t('pulse_all_calm')
     : count === 1 ? t('pulse_need_you_one') : t('pulse_need_you', { n: count });
 
+  // A quiet day says nothing. "Nothing needs you right now" was a whole card
+  // on Home every calm morning (Roland, 2026-10-31: the reference he chose has
+  // no such row), so the pulse appears only when something does need you.
+  if (count === 0) return null;
+
   const chevron = <ChevronRight color={ui.muted} size={18} />;
 
   const renderCardRow = (kind: 'overdue' | 'handed', card: Card, first: boolean) => {
