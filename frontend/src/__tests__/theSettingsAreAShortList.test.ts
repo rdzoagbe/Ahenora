@@ -28,7 +28,6 @@ const read = (...p: string[]) => fs.readFileSync(path.join(__dirname, '..', '..'
 const screen = read('app', '(tabs)', 'settings.tsx');
 const store = read('src', 'store.tsx');
 const calendar = read('app', '(tabs)', 'calendar.tsx');
-const account = read('app', '(tabs)', 'account.tsx');
 const t = (key: string) => key;
 const member = (name: string, is_me = false) => ({ name, is_me, role: 'parent', has_account: true }) as unknown as FamilyMember;
 
@@ -93,16 +92,17 @@ describe('the screen', () => {
     expect(screen).toContain('testID={`appearance-${mode}`}');
   });
 
-  it('reaches custody on the Calendar and support on the Account by a flag they act on', () => {
+  it('reaches custody on the Calendar by a flag it acts on, and opens support itself', () => {
     expect(screen).toContain("onPress={() => { requestCustody(); router.push('/(tabs)/calendar'); }}");
-    expect(screen).toContain("onPress={() => { requestSupport(); router.push('/account'); }}");
-    for (const name of ['custodyRequested', 'requestCustody', 'clearCustodyRequest', 'supportRequested', 'requestSupport', 'clearSupportRequest']) {
+    for (const name of ['custodyRequested', 'requestCustody', 'clearCustodyRequest']) {
       expect(store).toContain(`${name},`);
     }
     expect(calendar).toContain('if (!custodyRequested) return;');
     expect(calendar).toContain('openCustody();\n    clearCustodyRequest();\n  }, [custodyRequested');
-    expect(account).toContain('if (!supportRequested) return;');
-    expect(account).toContain('setSupportOpen(true);\n    clearSupportRequest();\n  }, [supportRequested');
+    // Support was reached by a flag the Account acted on; since 2026-10-31
+    // the form is a sheet on Settings itself (see settingsAbsorbsTheAccount).
+    expect(screen).toContain('onPress={() => setShowSupport(true)}');
+    expect(store).not.toContain('supportRequested');
   });
 
   it('says every new thing in all four languages', () => {
