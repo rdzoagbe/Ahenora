@@ -1432,6 +1432,9 @@ export default function Feed() {
               />
             ) : null}
 
+            {/* The rest of the day. Left out when "Next up" was the only thing
+                left, rather than a heading with nothing under it. */}
+            {next && !loading && rows.length === 0 ? null : (
             <View testID="home-today-card" style={styles.dayCard}>
               <View style={styles.todayHead}>
                 <Text style={styles.todayTitle} accessibilityRole="header">
@@ -1534,6 +1537,7 @@ export default function Feed() {
                 </PressScale>
               ) : null}
             </View>
+            )}
 
             <HomeTiles
               dinner={tonight?.title ?? null}

@@ -145,6 +145,10 @@ describe('the screen', () => {
     expect(feed).toMatch(/const kidsStars = kidsHidden\s*\? null/);
   });
 
+  it('leaves out the "Also today" heading when next up was the only thing left', () => {
+    expect(feed).toMatch(/\{next && !loading && rows\.length === 0 \? null : \(/);
+  });
+
   it('does not say the shopping list twice', () => {
     expect(feed).toMatch(/shopping=\{\[\]\}/);
   });
