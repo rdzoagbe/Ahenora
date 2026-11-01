@@ -62,7 +62,7 @@ describe('the row', () => {
   // exact view I wanted to have"): a coloured tile for what it is, the title,
   // then when and who in words. The person is said by name, not by a badge.
   it('gives a title two lines', () => {
-    expect(feed).toMatch(/<Text style=\{styles\.dayRowTitle\} numberOfLines=\{2\}>\{card\.title\}<\/Text>/);
+    expect(feed).toMatch(/<Text style=\{\[styles\.dayRowTitle, done && styles\.dayRowDone\]\} numberOfLines=\{2\}>\{card\.title\}<\/Text>/);
   });
 
   it('draws no kind pill', () => {
@@ -71,7 +71,7 @@ describe('the row', () => {
   });
 
   it('says when and who in the grey line', () => {
-    expect(feed).toMatch(/const meta = \[when, who, privacy\]\.filter\(Boolean\)\.join\(' · '\);/);
-    expect(feed).toMatch(/when=\{todayTimeLabel\(card, t, lang\)\}/);
+    expect(feed).toMatch(/const meta = \[when, who, privacy, done \? t\('home_done_mark'\) : null\]\.filter\(Boolean\)\.join\(' · '\);/);
+    expect(feed).toMatch(/when=\{todayTimeLabel\(row\.card, t, lang\)\}/);
   });
 });

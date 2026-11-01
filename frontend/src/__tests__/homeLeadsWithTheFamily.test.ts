@@ -105,9 +105,9 @@ describe("tonight's dinner is on Home", () => {
 describe('the screen', () => {
   const feed = read('app', '(tabs)', 'feed.tsx');
 
-  it('puts dinner under the day', () => {
+  it("puts tonight's dinner in a tile under the day", () => {
     const today = feed.indexOf('testID="home-today-card"');
-    const dinner = feed.indexOf('<DinnerTonight');
+    const dinner = feed.indexOf('dinner={tonight?.title ?? null}');
     expect(today).toBeGreaterThan(-1);
     expect(dinner).toBeGreaterThan(today);
   });
@@ -121,7 +121,7 @@ describe('the screen', () => {
   });
 
   it('says the schedule once: the week line only when no sentence names the children', () => {
-    expect(feed).toMatch(/subscription\?\.custody\?\.enabled && !custodyLine \? feedWeekLine\(/);
+    expect(feed).toMatch(/custodyLine \|\| \(subscription\?\.custody\?\.enabled \? feedWeekLine\(/);
   });
 });
 
