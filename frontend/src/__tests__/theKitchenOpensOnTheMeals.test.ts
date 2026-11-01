@@ -48,8 +48,10 @@ describe('the Kitchen opens on the meals', () => {
     expect(targetForNotification({ type: 'shopping_done', family_id: 'f' })).toEqual({ pathname: '/(tabs)/kitchen', params: { view: 'shop' } });
   });
 
-  it('is not asked for anything by a dinner door', () => {
-    expect(feed).toContain("<DinnerTonight meal={tonight} onOpen={() => router.navigate('/(tabs)/kitchen' as never)} />");
+  it('is asked for the meals, or for nothing, by a dinner door', () => {
+    // Home's dinner tile (2026-11-01) asks for the meals outright: the tab
+    // keeps whatever view it was left on, and the tile is about dinner.
+    expect(feed).toContain("onDinner={() => router.navigate({ pathname: '/(tabs)/kitchen', params: { view: 'meal' } } as never)}");
     expect(search).toContain("meal: '/(tabs)/kitchen',");
     expect(targetForNotification({ type: 'dinner_reminder', family_id: 'f' })).toEqual({ pathname: '/(tabs)/kitchen' });
   });

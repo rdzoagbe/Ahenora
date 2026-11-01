@@ -53,22 +53,23 @@ describe('the order of the screen', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it('greets the family (or you, when you live alone), with a sun by day and a moon in the evening', () => {
+  it('greets the family (or you, when you live alone), with the date and whose week it is under it', () => {
     expect(feed).toMatch(/const greetName = livesAlone\(members, kidsHidden\)/);
     expect(feed).toMatch(/: t\('home_family'\);/);
-    expect(feed).toMatch(/\? <Moon /);
-    expect(feed).toMatch(/: <Sun /);
-    expect(feed).toMatch(/evening \? t\('home_tagline_evening'\) : t\('home_tagline_day'\)/);
+    expect(feed).toMatch(/\{greetingWord \? `\$\{greetingWord\}, \$\{greetName\}` : greetName\}/);
+    expect(feed).toMatch(/testID="feed-week" numberOfLines=\{2\}>\{dayLine\}<\/Text>/);
   });
 
   it('renders no time of day before the clock is known, so the web page hydrates cleanly', () => {
     expect(feed).toMatch(/const greetingWord = hour === null\s*\? ''/);
-    expect(feed).toMatch(/const dateTitle = now\s*\?/);
+    expect(feed).toMatch(/const dateLong = now\s*\?/);
   });
 
-  it('titles the card with the date and counts the day under it', () => {
-    expect(feed).toMatch(/\{dateTitle\}<\/Text>/);
-    expect(feed).toMatch(/t\('home_things_many', \{ n: roomCards\.length \}\)/);
+  it('shows the week, then the next thing, then the rest of the day, then the tiles', () => {
+    const order = ['<HomeWeekStrip', '<HomeNextUp', 'testID="home-today-card"', '<HomeTiles', '<HomeQuickActions']
+      .map((needle) => feed.indexOf(needle));
+    order.forEach((at) => expect(at).toBeGreaterThan(-1));
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 });
 
@@ -77,7 +78,7 @@ describe('a row of the day', () => {
 
   it('starts with a tile in the colour of what it is, and ends with a chevron', () => {
     expect(row).toMatch(/const \{ icon, tile \} = tileFor\(card\);/);
-    expect(row).toMatch(/backgroundColor: tile\.solid/);
+    expect(row).toMatch(/backgroundColor: done \? ui\.muted : tile\.solid/);
     expect(row).toMatch(/<ChevronRight /);
   });
 
