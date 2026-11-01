@@ -105,17 +105,14 @@ describe("tonight's dinner is on Home", () => {
 describe('the screen', () => {
   const feed = read('app', '(tabs)', 'feed.tsx');
 
-  it('puts the family picture above the day, and dinner under it', () => {
-    const hero = feed.indexOf('<HomeHero');
+  it('puts dinner under the day', () => {
     const today = feed.indexOf('testID="home-today-card"');
     const dinner = feed.indexOf('<DinnerTonight');
-    expect(hero).toBeGreaterThan(-1);
-    expect(hero).toBeLessThan(today);
+    expect(today).toBeGreaterThan(-1);
     expect(dinner).toBeGreaterThan(today);
   });
 
   it('keeps the children off Home on a plan with their side put away', () => {
-    expect(feed).toMatch(/const heroScene = homeHeroScene\(members, kidsHidden\);/);
     expect(feed).toMatch(/const custodyLine = kidsHidden \? null :/);
   });
 
@@ -125,12 +122,6 @@ describe('the screen', () => {
 
   it('says the schedule once: the week line only when no sentence names the children', () => {
     expect(feed).toMatch(/subscription\?\.custody\?\.enabled && !custodyLine \? feedWeekLine\(/);
-  });
-
-  it('draws the stand-in picture in the repo instead of fetching one', () => {
-    const hero = read('src', 'components', 'HomeHero.tsx');
-    const urls = hero.match(/https?:\/\/[^\s"'`]+/g) || [];
-    expect(urls.filter((u) => !u.startsWith('http://www.w3.org/2000/svg'))).toEqual([]);
   });
 });
 
