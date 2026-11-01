@@ -74,7 +74,7 @@ import { heroHasPicture } from '../../src/homeHeroArt';
 import { HomeQuickActions } from '../../src/components/HomeQuickActions';
 import { tileFor, TileIconKey } from '../../src/homeTiles';
 import { DinnerTonight } from '../../src/components/DinnerTonight';
-import { custodySentence, dinnerTonight, homeHeroScene, isChild } from '../../src/homeFamily';
+import { custodySentence, dinnerTonight, homeHeroLook, homeHeroScene, isChild } from '../../src/homeFamily';
 import { activityPhrase } from '../../src/activityPhrase';
 import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
@@ -1032,12 +1032,14 @@ export default function Feed() {
   const custodyLine = kidsHidden ? null : custodySentence(members, subscription?.custody, now, t);
   // The picture fits the household: a family, children, a couple, one person.
   const heroScene = homeHeroScene(members, kidsHidden);
+  // ...and looks like it: the skin tones its people chose for their avatars.
+  const heroLook = homeHeroLook(members, kidsHidden);
   // "Family" to a household, and your own name when you live on your own:
   // "Good morning, Family" to one person reads as a mistake.
   const greetName = heroScene === 'solo'
     ? ((user?.name || '').trim().split(/\s+/)[0] || t('home_family'))
     : t('home_family');
-  const showFamilyPicture = members.length > 0 && heroHasPicture(heroScene, theme.mode === 'dark');
+  const showFamilyPicture = members.length > 0 && heroHasPicture(heroScene, theme.mode === 'dark', heroLook);
   const tonight = dinnerTonight(meals, now);
   const dateTitle = now
     ? now.toLocaleDateString(localeFor(lang), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
@@ -1390,7 +1392,7 @@ export default function Feed() {
                 shows nothing. */}
             {showFamilyPicture ? (
               <View style={{ marginHorizontal: -px }}>
-                <HomeHero scene={heroScene} label={t('home_illustration_label')} />
+                <HomeHero scene={heroScene} look={heroLook} label={t('home_illustration_label')} />
               </View>
             ) : null}
 

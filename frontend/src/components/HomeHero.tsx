@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { HeroScene, heroArtFor } from '../homeHeroArt';
+import { HeroLook, HeroScene, heroArtFor } from '../homeHeroArt';
 
 /**
  * The picture at the top of Home, as in the reference Roland chose on
@@ -71,12 +71,12 @@ export function familyIllustration(p: Palette): string {
 </g></svg>`;
 }
 
-export function HomeHero({ scene, label }: { scene: HeroScene; label: string }) {
+export function HomeHero({ scene, look, label }: { scene: HeroScene; look: HeroLook; label: string }) {
   const ui = useUI();
   const { theme } = useStore();
   const dark = theme.mode === 'dark';
   const styles = useMemo(() => createStyles(ui), [ui]);
-  const art = heroArtFor(scene, dark);
+  const art = heroArtFor(scene, dark, look);
   const xml = useMemo(() => (art ? null : familyIllustration(palette(dark, ui))), [art, dark, ui]);
 
   return (

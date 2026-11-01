@@ -1,6 +1,7 @@
 import type { CustodyConfig, FamilyMember, MealPlan } from './api';
 import { isoWeek } from './utils/date';
-import type { HeroScene } from './homeHeroArt';
+import type { HeroLook, HeroScene } from './homeHeroArt';
+import { parseAvatar } from './avatarValue';
 
 /**
  * What the top of Home says about the people in it. Pure, so it can be tested
@@ -123,4 +124,29 @@ export function homeHeroScene(members: FamilyMember[], kidsHidden: boolean): Her
     return adults.length >= 2 ? 'family' : 'children';
   }
   return adults.length >= 2 ? 'couple' : 'solo';
+}
+
+/**
+ * Which family the picture shows: the look of the household's own avatars.
+ *
+ * Each illustrated avatar carries the skin tone its person chose (five, from
+ * lightest to deepest, src/avatarValue.ts). The two lightest are `light`, the
+ * middle one `medium`, the two deepest `deep`. A household whose people all
+ * sit in one group sees that group; one whose people span groups sees the
+ * mixed family, as does one where nobody has chosen an illustrated avatar.
+ * Never read from a name, a photo or anything else: only what people chose
+ * for themselves. Helpers are not the household; children whose side of the
+ * app is put away are left out, as they are from the scene.
+ */
+export function homeHeroLook(members: FamilyMember[], kidsHidden: boolean): HeroLook {
+  const helper = (m: FamilyMember) => (m.standing || '').toLowerCase() === 'helper';
+  const groups = new Set<HeroLook>();
+  members
+    .filter((m) => !helper(m) && !(kidsHidden && isChild(m)))
+    .forEach((m) => {
+      const parsed = parseAvatar(m.avatar);
+      if (!parsed) return;
+      groups.add(parsed.tone <= 1 ? 'light' : parsed.tone === 2 ? 'medium' : 'deep');
+    });
+  return groups.size === 1 ? [...groups][0] : 'mixed';
 }

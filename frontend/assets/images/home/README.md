@@ -6,6 +6,23 @@ on 2026-10-31). Each scene has a day version (light mode) and a night version
 the stand-in drawing made in code for scenes with children, and no picture for
 the others.
 
+## Looks (since 2026-11-01)
+
+Ahenora is for every family (Roland, 2026-11-01: "It's a family app and for
+every family, not just Black or mixed race"). Every scene exists in four
+looks, and a household sees the look of the skin tones its people chose for
+their own avatars (`homeHeroLook` in `src/homeFamily.ts`):
+
+| Look | Shown to | Files |
+|---|---|---|
+| `mixed` | people of several skin tones, or nobody has chosen an avatar yet (the default) | `home-mixed-<scene>-light.webp`, `-dark.webp` |
+| `light` | everyone chose one of the two lightest tones | `home-light-<scene>-light.webp`, `-dark.webp` |
+| `medium` | everyone chose the middle tone | `home-medium-<scene>-light.webp`, `-dark.webp` |
+| `deep` | everyone chose one of the two deepest tones | the first set, `home-<scene>-light.webp`, `-dark.webp` |
+
+A look still missing a scene falls back to the mixed family, then to any
+look that has it.
+
 ## Rights: read before adding a file
 
 Only add a picture the household holds the rights to use in an app it sells.
@@ -26,7 +43,7 @@ Only add a picture the household holds the rights to use in an app it sells.
 
 Fill in the record table below for every file before it is committed.
 
-## Files
+## Files of the first set (the `deep` look)
 
 Landscape 3:2, the largest size the tool offers, saved as WebP or PNG.
 
@@ -42,8 +59,8 @@ Landscape 3:2, the largest size the tool offers, saved as WebP or PNG.
 
 ## Prompts
 
-Start every image with the style, then add one people line. For the night
-version, add the night line too.
+Use one ChatGPT conversation per look so every picture in a look matches.
+Start it with the style and the look line, then ask for the scenes one by one.
 
 ```
 STYLE:
@@ -53,11 +70,21 @@ home. Everyone smiling and relaxed. Landscape 3:2. Keep the people in the
 middle; nothing important in the top fifth or the bottom sixth. The top edge
 fades into plain cream #FAF6F1. No text, no logo, no watermark.
 
+LOOK (pick one per conversation):
+mixed   A family whose members have different skin tones: one parent with
+        fair skin, one with deep brown skin, children with in-between warm
+        tones; varied hair (straight, wavy, curly).
+light   A family with fair to light skin tones and varied hair colours
+        (blond, light brown, dark brown, red).
+medium  A family with olive to tan skin tones, dark brown eyes and dark hair
+        (straight, wavy or curly).
+deep    A family with deep brown skin tones and natural hair (the first set).
+
 NIGHT:
 Same scene in the evening, warm lamp light, a window with stars, and the top
 edge fades into very dark brown #15120F instead.
 
-PEOPLE:
+PEOPLE (one per image):
 family      A mother and father with two girls and a boy, reading a picture book on a sofa.
 children    A girl and a boy playing happily together on a living-room rug with books and toys.
 mum         A mother with a girl and a boy, reading a picture book on a sofa.

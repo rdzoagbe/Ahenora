@@ -22,8 +22,9 @@ import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
 import { QUICK_TILE, TILE, tileFor } from '../homeTiles';
-import { HERO_SCENES, HOME_HERO_ART, SCENES_WITH_CHILDREN, heroArtFor } from '../homeHeroArt';
-import { homeHeroScene } from '../homeFamily';
+import { HERO_LOOKS, HERO_SCENES, HOME_HERO_ART, SCENES_WITH_CHILDREN, heroArtFor } from '../homeHeroArt';
+import { avatarValue } from '../avatarValue';
+import { homeHeroLook, homeHeroScene } from '../homeFamily';
 import type { CardType, FamilyMember } from '../api';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
@@ -140,9 +141,10 @@ describe('the picture', () => {
   const art = read('src', 'homeHeroArt.ts');
   const brief = read('assets', 'images', 'home', 'README.md');
 
-  it('has a slot per kind of household', () => {
-    expect(Object.keys(HOME_HERO_ART).sort()).toEqual([...HERO_SCENES].sort());
-    expect(hero).toMatch(/const art = heroArtFor\(scene, dark\);/);
+  it('has a slot per kind of household, in every look', () => {
+    expect(Object.keys(HOME_HERO_ART).sort()).toEqual([...HERO_LOOKS].sort());
+    HERO_LOOKS.forEach((look) => expect(Object.keys(HOME_HERO_ART[look]).sort()).toEqual([...HERO_SCENES].sort()));
+    expect(hero).toMatch(/const art = heroArtFor\(scene, dark, look\);/);
   });
 
   it('ships only pictures that are on disk and on the record of where they came from', () => {
@@ -156,19 +158,55 @@ describe('the picture', () => {
   });
 
   it('shows a scene\'s day or night picture in both modes rather than the stand-in drawing', () => {
-    HERO_SCENES.forEach((scene) => {
-      const { light, dark } = HOME_HERO_ART[scene];
+    HERO_LOOKS.forEach((look) => HERO_SCENES.forEach((scene) => {
+      const { light, dark } = HOME_HERO_ART[look][scene];
       if (light || dark) {
-        expect(heroArtFor(scene, false)).toBeTruthy();
-        expect(heroArtFor(scene, true)).toBeTruthy();
+        expect(heroArtFor(scene, false, look)).toBeTruthy();
+        expect(heroArtFor(scene, true, look)).toBeTruthy();
       }
-    });
+    }));
   });
 
   it('never draws children into a household that has none', () => {
     expect(SCENES_WITH_CHILDREN).not.toContain('couple');
     expect(SCENES_WITH_CHILDREN).not.toContain('solo');
-    expect(art).toMatch(/return !!heroArtFor\(scene, dark\) \|\| SCENES_WITH_CHILDREN\.includes\(scene\);/);
+    expect(art).toMatch(/return !!heroArtFor\(scene, dark, look\) \|\| SCENES_WITH_CHILDREN\.includes\(scene\);/);
+  });
+
+  it("prefers the household's own look, then the mixed family, before any other", () => {
+    const art2 = art.slice(art.indexOf('export function heroArtFor'));
+    expect(art2).toMatch(/const order: HeroLook\[\] = \[look, 'mixed', \.\.\.HERO_LOOKS\.filter/);
+  });
+});
+
+describe('which family the picture shows', () => {
+  const m = (over: Partial<FamilyMember>): FamilyMember =>
+    ({ member_id: over.name || 'x', family_id: 'f', name: 'X', role: 'parent', stars: 0, ...over }) as FamilyMember;
+  const tone = (t: number) => avatarValue('short', t, 0);
+
+  it('the look of the avatars people chose: light, medium or deep', () => {
+    expect(homeHeroLook([m({ avatar: tone(0) }), m({ avatar: tone(1) })], false)).toBe('light');
+    expect(homeHeroLook([m({ avatar: tone(2) })], false)).toBe('medium');
+    expect(homeHeroLook([m({ avatar: tone(3) }), m({ avatar: tone(4) })], false)).toBe('deep');
+  });
+
+  it('the mixed family when people span several looks, or nobody chose an avatar', () => {
+    expect(homeHeroLook([m({ avatar: tone(0) }), m({ avatar: tone(4) })], false)).toBe('mixed');
+    expect(homeHeroLook([m({}), m({ avatar: 'https://photo.example/me.jpg' })], false)).toBe('mixed');
+    expect(homeHeroLook([], false)).toBe('mixed');
+  });
+
+  it('leaves helpers out, and children whose side is put away', () => {
+    const helper = m({ standing: 'helper', avatar: tone(4) });
+    const child = m({ standing: 'child', role: 'child', avatar: tone(4) });
+    expect(homeHeroLook([m({ avatar: tone(0) }), helper], false)).toBe('light');
+    expect(homeHeroLook([m({ avatar: tone(0) }), child], true)).toBe('light');
+    expect(homeHeroLook([m({ avatar: tone(0) }), child], false)).toBe('mixed');
+  });
+
+  it('never reads a name', () => {
+    const fam = read('src', 'homeFamily.ts');
+    expect(fam.slice(fam.indexOf('export function homeHeroLook'))).not.toMatch(/\.name\b/);
   });
 });
 
