@@ -69,12 +69,10 @@ import { GiftingStrip } from '../../src/components/GiftingStrip';
 import { CoParentBalance } from '../../src/components/CoParentBalance';
 import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
 import { DoneCard, completedForHome } from '../../src/components/DoneCard';
-import { HomeHero } from '../../src/components/HomeHero';
-import { heroHasPicture } from '../../src/homeHeroArt';
 import { HomeQuickActions } from '../../src/components/HomeQuickActions';
 import { tileFor, TileIconKey } from '../../src/homeTiles';
 import { DinnerTonight } from '../../src/components/DinnerTonight';
-import { custodySentence, dinnerTonight, homeHeroScene, isChild } from '../../src/homeFamily';
+import { custodySentence, dinnerTonight, isChild, livesAlone } from '../../src/homeFamily';
 import { activityPhrase } from '../../src/activityPhrase';
 import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
@@ -332,7 +330,7 @@ const ANN_SEEN_KEY = 'coo_family_board_seen_at';
 const SEEN_ALERTS_KEY = 'coo_seen_alert_ids';
 
 export default function Feed() {
-  const { user, t, lang, theme, subscription, dataVersion, requestInvite, refreshSubscription } = useStore();
+  const { user, t, lang, subscription, dataVersion, requestInvite, refreshSubscription } = useStore();
   // On Duo the children's side is put away: no custody line, no stars.
   const kidsHidden = !!subscription?.kids_sections_hidden;
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -1030,14 +1028,11 @@ export default function Feed() {
   // day holds. Whose week it is reads as a sentence on the card when there are
   // children to name; a co-parent without one keeps the week's parity here.
   const custodyLine = kidsHidden ? null : custodySentence(members, subscription?.custody, now, t);
-  // The picture fits the household: a family, children, a couple, one person.
-  const heroScene = homeHeroScene(members, kidsHidden);
   // "Family" to a household, and your own name when you live on your own:
   // "Good morning, Family" to one person reads as a mistake.
-  const greetName = heroScene === 'solo'
+  const greetName = livesAlone(members, kidsHidden)
     ? ((user?.name || '').trim().split(/\s+/)[0] || t('home_family'))
     : t('home_family');
-  const showFamilyPicture = members.length > 0 && heroHasPicture(heroScene, theme.mode === 'dark');
   const tonight = dinnerTonight(meals, now);
   const dateTitle = now
     ? now.toLocaleDateString(localeFor(lang), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
@@ -1385,17 +1380,11 @@ export default function Feed() {
               <Text style={styles.tagline}>{evening ? t('home_tagline_evening') : t('home_tagline_day')}</Text>
             </View>
 
-            {/* The household's picture, edge to edge, with the day laid over
-                its bottom. A scene with no artwork yet and no children in it
-                shows nothing. */}
-            {showFamilyPicture ? (
-              <View style={{ marginHorizontal: -px }}>
-                <HomeHero scene={heroScene} label={t('home_illustration_label')} />
-              </View>
-            ) : null}
-
+            {/* No picture of a family here since 2026-11-01 (Roland: "Let's
+                remove the family pictures"): a painted family is one family,
+                and Ahenora is for every family. */}
             <View
-              style={[styles.listCard, styles.dayCard, showFamilyPicture && styles.dayCardOverHero]}
+              style={[styles.listCard, styles.dayCard]}
               testID="home-today-card"
             >
               <View style={styles.dayCardHead}>
@@ -2258,9 +2247,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14, lineHeight: 20, marginTop: 6,
   },
   dayCard: { paddingTop: 16, paddingHorizontal: 14, paddingBottom: 8, marginTop: 14 },
-  // Laid over the bottom of the picture, as the reference draws it, but not
-  // so far that it covers the family standing there.
-  dayCardOverHero: { marginTop: -34 },
   dayCardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingHorizontal: 4 },
   dayCardTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 19, lineHeight: 24 },
   dayCardSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5, lineHeight: 19, marginTop: 2 },

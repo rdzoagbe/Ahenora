@@ -1,6 +1,5 @@
 import type { CustodyConfig, FamilyMember, MealPlan } from './api';
 import { isoWeek } from './utils/date';
-import type { HeroScene } from './homeHeroArt';
 
 /**
  * What the top of Home says about the people in it. Pure, so it can be tested
@@ -104,23 +103,13 @@ export function personTone(name: string, members: FamilyMember[]): PersonTone {
 }
 
 /**
- * Which picture greets a household at the top of Home.
- *
- * Read from who is in it, never from a name: a name says nothing reliable
- * about whether someone is a mum or a dad, so one adult with children gets the
- * children on their own, which is right for either. Two adults or more with
- * children get the whole family; a grandparent is someone whose own stated
- * relationship says so. Without children (or with their side of the app put
- * away) it is a couple, or one person at home. Helpers are not the household.
+ * Whether someone lives on their own: one adult, and no children whose side of
+ * the app is on. Home greets them by name instead of "Family". Helpers are not
+ * the household.
  */
-export function homeHeroScene(members: FamilyMember[], kidsHidden: boolean): HeroScene {
+export function livesAlone(members: FamilyMember[], kidsHidden: boolean): boolean {
   const helper = (m: FamilyMember) => (m.standing || '').toLowerCase() === 'helper';
   const adults = members.filter((m) => !isChild(m) && !helper(m));
   const kids = kidsHidden ? [] : members.filter(isChild);
-  const me = members.find((m) => m.is_me);
-  if (kids.length > 0) {
-    if (me && /grand/i.test(me.role || '')) return 'grandparent';
-    return adults.length >= 2 ? 'family' : 'children';
-  }
-  return adults.length >= 2 ? 'couple' : 'solo';
+  return adults.length <= 1 && kids.length === 0;
 }

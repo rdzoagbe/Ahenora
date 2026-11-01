@@ -22,8 +22,7 @@ import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
 import { QUICK_TILE, TILE, tileFor } from '../homeTiles';
-import { HERO_SCENES, HOME_HERO_ART, SCENES_WITH_CHILDREN, heroArtFor } from '../homeHeroArt';
-import { homeHeroScene } from '../homeFamily';
+import { livesAlone } from '../homeFamily';
 import type { CardType, FamilyMember } from '../api';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
@@ -42,10 +41,9 @@ function contrast(a: string, b: string): number {
 }
 
 describe('the order of the screen', () => {
-  it('greeting, picture, the day, then the quick actions', () => {
+  it('greeting, the day, then the quick actions', () => {
     const order = [
       'styles.greet}',
-      '<HomeHero',
       'testID="home-today-card"',
       '<HomeQuickActions',
       '<FamilyPulse',
@@ -56,7 +54,7 @@ describe('the order of the screen', () => {
   });
 
   it('greets the family (or you, when you live alone), with a sun by day and a moon in the evening', () => {
-    expect(feed).toMatch(/const greetName = heroScene === 'solo'/);
+    expect(feed).toMatch(/const greetName = livesAlone\(members, kidsHidden\)/);
     expect(feed).toMatch(/: t\('home_family'\);/);
     expect(feed).toMatch(/\? <Moon /);
     expect(feed).toMatch(/: <Sun /);
@@ -66,10 +64,6 @@ describe('the order of the screen', () => {
   it('renders no time of day before the clock is known, so the web page hydrates cleanly', () => {
     expect(feed).toMatch(/const greetingWord = hour === null\s*\? ''/);
     expect(feed).toMatch(/const dateTitle = now\s*\?/);
-  });
-
-  it('lays the card over the bottom of the picture only when there is one', () => {
-    expect(feed).toMatch(/showFamilyPicture && styles\.dayCardOverHero/);
   });
 
   it('titles the card with the date and counts the day under it', () => {
@@ -135,44 +129,17 @@ describe('a calm day', () => {
   });
 });
 
-describe('the picture', () => {
-  const hero = read('src', 'components', 'HomeHero.tsx');
-  const art = read('src', 'homeHeroArt.ts');
-  const brief = read('assets', 'images', 'home', 'README.md');
-
-  it('has a slot per kind of household', () => {
-    expect(Object.keys(HOME_HERO_ART).sort()).toEqual([...HERO_SCENES].sort());
-    expect(hero).toMatch(/const art = heroArtFor\(scene, dark\);/);
-  });
-
-  it('ships only pictures that are on disk and on the record of where they came from', () => {
-    const files = [...art.matchAll(/require\('\.\.\/assets\/images\/home\/([^']+)'\)/g)].map((m) => m[1]);
-    expect(files.length).toBeGreaterThan(0);
-    files.forEach((file) => {
-      expect(fs.existsSync(path.join(__dirname, '..', '..', 'assets', 'images', 'home', file))).toBe(true);
-      // A row of the record table names the file, the tool and the date.
-      expect(brief).toMatch(new RegExp(`\\| \`${file.replace('.', '\\.')}\` \\| ChatGPT \\|[^\\n]*\\| 2026-`));
-    });
-  });
-
-  it('shows a scene\'s day or night picture in both modes rather than the stand-in drawing', () => {
-    HERO_SCENES.forEach((scene) => {
-      const { light, dark } = HOME_HERO_ART[scene];
-      if (light || dark) {
-        expect(heroArtFor(scene, false)).toBeTruthy();
-        expect(heroArtFor(scene, true)).toBeTruthy();
-      }
-    });
-  });
-
-  it('never draws children into a household that has none', () => {
-    expect(SCENES_WITH_CHILDREN).not.toContain('couple');
-    expect(SCENES_WITH_CHILDREN).not.toContain('solo');
-    expect(art).toMatch(/return !!heroArtFor\(scene, dark\) \|\| SCENES_WITH_CHILDREN\.includes\(scene\);/);
+describe('no family picture', () => {
+  // Roland, 2026-11-01: "Let's remove the family pictures". A painted family
+  // is one family, and Ahenora is for every family.
+  it('draws no picture of people at the top of Home', () => {
+    expect(feed).not.toMatch(/HomeHero|homeHeroArt|showFamilyPicture/);
+    expect(fs.existsSync(path.join(__dirname, '..', 'components', 'HomeHero.tsx'))).toBe(false);
+    expect(fs.existsSync(path.join(__dirname, '..', '..', 'assets', 'images', 'home'))).toBe(false);
   });
 });
 
-describe('which picture a household gets', () => {
+describe('who Home greets', () => {
   const m = (over: Partial<FamilyMember>): FamilyMember =>
     ({ member_id: over.name || 'x', family_id: 'f', name: 'X', role: 'parent', stars: 0, ...over }) as FamilyMember;
   const me = m({ name: 'Jordan', standing: 'owner', is_me: true });
@@ -180,27 +147,13 @@ describe('which picture a household gets', () => {
   const ama = m({ name: 'Ama', standing: 'child', role: 'child' });
   const nanny = m({ name: 'Efua', standing: 'helper', role: 'helper' });
 
-  it('two adults with children: the whole family', () => {
-    expect(homeHeroScene([me, sam, ama], false)).toBe('family');
-  });
-
-  it('one adult with children: the children, which is right for a mum or a dad alike', () => {
-    expect(homeHeroScene([me, ama], false)).toBe('children');
-    expect(homeHeroScene([me, ama, nanny], false)).toBe('children');
-  });
-
-  it('a grandparent, when their own relationship says so', () => {
-    expect(homeHeroScene([m({ name: 'Nana', standing: 'owner', is_me: true, role: 'Grandmother' }), ama], false)).toBe('grandparent');
-  });
-
-  it('without children, or with their side put away: a couple, or one person', () => {
-    expect(homeHeroScene([me, sam], false)).toBe('couple');
-    expect(homeHeroScene([me], false)).toBe('solo');
-    expect(homeHeroScene([me, ama], true)).toBe('solo');
-  });
-
-  it('never reads a name to decide', () => {
-    expect(read('src', 'homeFamily.ts').slice(read('src', 'homeFamily.ts').indexOf('export function homeHeroScene'))).not.toMatch(/\.name\b/);
+  it('you by name when you live on your own, "Family" otherwise', () => {
+    expect(livesAlone([me], false)).toBe(true);
+    expect(livesAlone([me, nanny], false)).toBe(true);
+    expect(livesAlone([me, ama], true)).toBe(true);
+    expect(livesAlone([me, sam], false)).toBe(false);
+    expect(livesAlone([me, ama], false)).toBe(false);
+    expect(feed).toMatch(/const greetName = livesAlone\(members, kidsHidden\)/);
   });
 });
 
