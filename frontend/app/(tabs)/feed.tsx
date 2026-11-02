@@ -68,6 +68,7 @@ import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
 import { DoneCard, completedForHome } from '../../src/components/DoneCard';
 import { HomeQuickActions } from '../../src/components/HomeQuickActions';
 import { HomeNextUp, HomeTiles, HomeWeekStrip } from '../../src/components/HomeDay';
+import { PopIn, PulseDot, successTap } from '../../src/components/Motion';
 import { dayRows, doneToday, nextUp, nowLineAt, weekAhead, weekPlans } from '../../src/homeDay';
 import { tileFor, TileIconKey } from '../../src/homeTiles';
 import { custodySentence, dinnerTonight, isChild, livesAlone } from '../../src/homeFamily';
@@ -288,13 +289,15 @@ const TILE_ICON: Record<TileIconKey, typeof CalendarDays> = {
  * ticked off (Complete) — the reference has no checkbox on the row. A ticked
  * card leaves this list for the Done card further down.
  */
-function TaskRow({ card, onOpen, styles, when, done = false }: {
+function TaskRow({ card, onOpen, styles, when, done = false, justDone = false }: {
   card: Card; onOpen: () => void; styles: ReturnType<typeof createStyles>;
   /** "5:00 PM", "All day", "Any time", or a weekday. */
   when: string;
   /** Finished today: shown crossed out where it happened in the day (B's touch,
    *  2026-11-01), not tappable; Undo is in the Done card further down. */
   done?: boolean;
+  /** Finished this moment: its tick pops in (2026-11-02, small touches of life). */
+  justDone?: boolean;
 }) {
   const ui = useUI();
   const { t } = useStore();
@@ -307,9 +310,9 @@ function TaskRow({ card, onOpen, styles, when, done = false }: {
   const meta = [when, who, privacy, done ? t('home_done_mark') : null].filter(Boolean).join(' · ');
   const body = (
     <>
-      <View style={[styles.dayTile, { backgroundColor: done ? ui.muted : tile.solid }]}>
-        <Icon color="#FFFFFF" size={19} strokeWidth={2.2} />
-      </View>
+      <PopIn active={justDone} style={[styles.dayTile, { backgroundColor: done ? (justDone ? ui.doneFill : ui.muted) : tile.solid }]}>
+        <Icon color={done && justDone ? ui.doneTick : '#FFFFFF'} size={19} strokeWidth={2.2} />
+      </PopIn>
       <View style={styles.taskBody}>
         {/* Two lines, so a title is read, not guessed at. */}
         <Text style={[styles.dayRowTitle, done && styles.dayRowDone]} numberOfLines={2}>{card.title}</Text>
@@ -346,8 +349,10 @@ function TaskRow({ card, onOpen, styles, when, done = false }: {
 /** Where "now" falls in the day: a short orange rule with the word on it. */
 function NowLine({ styles }: { styles: ReturnType<typeof createStyles> }) {
   const { t } = useStore();
+  const ui = useUI();
   return (
     <View style={styles.nowLine} testID="home-now-line" accessibilityRole="text" accessibilityLabel={t('home_now')}>
+      <PulseDot color={ui.orange} testID="home-now-dot" />
       <Text style={styles.nowLabel}>{t('home_now').toUpperCase()}</Text>
       <View style={styles.nowRule} />
     </View>
@@ -383,6 +388,8 @@ export default function Feed() {
   // hydration mismatch. So the first paint carries nothing time-dependent and
   // this fills it in immediately after.
   const [now, setNow] = useState<Date | null>(null);
+  // The card ticked off this moment, for its tick to pop in (see completeSelected).
+  const [justDone, setJustDone] = useState<string | null>(null);
   const { isLocked, promptUpgrade } = usePremiumGate();
   const reportPlanLocked = isLocked('weekly_report');
   // Free reads one week's report a month (FREE_TASTES on the server). Opening
@@ -1230,6 +1237,12 @@ export default function Feed() {
     const card = selectedCard;
     setSelectedCard(null);
     toggle(card);
+    // The tick pops in where the task now sits, crossed out, and the phone
+    // gives a light tap. Cleared after the movement so a later redraw does
+    // not replay it.
+    setJustDone(card.card_id);
+    successTap();
+    setTimeout(() => setJustDone((current) => (current === card.card_id ? null : current)), 1500);
   };
 
   // The "before" count, held in a ref so the handler is not rebuilt on every
@@ -1515,6 +1528,7 @@ export default function Feed() {
                         <TaskRow
                           card={row.card}
                           done={row.done}
+                          justDone={row.done && row.card.card_id === justDone}
                           when={todayTimeLabel(row.card, t, lang)}
                           onOpen={() => setSelectedCard(row.card)}
                           styles={styles}

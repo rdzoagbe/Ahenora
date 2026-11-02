@@ -78,7 +78,7 @@ describe('a row of the day', () => {
 
   it('starts with a tile in the colour of what it is, and ends with a chevron', () => {
     expect(row).toMatch(/const \{ icon, tile \} = tileFor\(card\);/);
-    expect(row).toMatch(/backgroundColor: done \? ui\.muted : tile\.solid/);
+    expect(row).toMatch(/backgroundColor: done \? \(justDone \? ui\.doneFill : ui\.muted\) : tile\.solid/);
     expect(row).toMatch(/<ChevronRight /);
   });
 

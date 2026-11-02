@@ -108,7 +108,9 @@ describe('the page', () => {
   });
 
   it('writes "+1 Well done!" to the ledger as those words', () => {
-    expect(top).toContain("onPress={() => onGive(1, t('hub_well_done'))}");
+    // Through give(), which celebrates the tap and then calls onGive (2026-11-02).
+    expect(top).toContain("onPress={() => give(1, t('hub_well_done'))}");
+    expect(top).toMatch(/const give = \(n: number, reason: string\) => \{\s*celebrate\(n\);\s*onGive\(n, reason\);/);
     expect(page).toMatch(/reason: reason \|\| t\('kids_parent_added_stars'\)/);
   });
 
