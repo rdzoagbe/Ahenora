@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Check, ChevronLeft, Gift, Star, Ticket } from 'lucide-react-native';
 
@@ -10,6 +10,7 @@ import type { FamilyMember, MemberJob, Redemption, Reward } from '../api';
 import type { PersonTone } from '../homeFamily';
 import { glyphFor } from '../cardIcons';
 import { earnedAndReady, savingFor } from '../kidPage';
+import { Bump, StarBurst, successTap } from './Motion';
 
 /**
  * The top of a child's page: their face and their stars in their own colour,
@@ -64,6 +65,19 @@ export function KidPageTop({
   const ink = ui[tone.fg];
 
   const stars = member?.stars ?? 0;
+  // Stars just given, so the count bumps and "+3 ★" floats up from it. Set in
+  // the tap itself, not after the server answers: the movement belongs to the
+  // moment a parent says well done.
+  const [burst, setBurst] = useState<{ n: number; key: number } | null>(null);
+  const celebrate = (n: number) => {
+    if (n <= 0) return;
+    setBurst((last) => ({ n, key: (last?.key ?? 0) + 1 }));
+    successTap();
+  };
+  const give = (n: number, reason: string) => {
+    celebrate(n);
+    onGive(n, reason);
+  };
   const goal = member ? savingFor(member, rewards) : null;
   const ready = member ? earnedAndReady(owed, member.member_id) : [];
   const progress = goal ? Math.min(1, goal.need > 0 ? goal.have / goal.need : 0) : 0;
@@ -87,9 +101,16 @@ export function KidPageTop({
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.name} numberOfLines={1}>{name}</Text>
             <View style={styles.starsRow} accessible accessibilityLabel={`${stars} ${t('kid_stars_label')}`}>
-              <Text testID="kid-page-stars" style={styles.starsNum}>{stars}</Text>
+              <Bump trigger={burst?.key}>
+                <Text testID="kid-page-stars" style={styles.starsNum}>{stars}</Text>
+              </Bump>
               <Star color={ui.goldText} fill={ui.goldText} size={26} strokeWidth={1.6} />
               <Text style={styles.starsWord}>{t('kid_stars_label')}</Text>
+              {/* "+3 ★" rises from the empty space beside the count, not over
+                  the digits, where it could not be read. */}
+              <View style={styles.burstAnchor}>
+                <StarBurst burst={burst} color={ink} />
+              </View>
             </View>
           </View>
         </View>
@@ -165,7 +186,7 @@ export function KidPageTop({
                   accessibilityState={{ checked: j.done, disabled: j.done || busy }}
                   accessibilityLabel={j.done ? `${j.title}, ${t('hub_job_done')}` : j.title}
                   disabled={j.done || busy}
-                  onPress={() => onDoJob(j)}
+                  onPress={() => { celebrate(j.star_reward); onDoJob(j); }}
                   style={[styles.job, { width: tile }, j.done ? styles.jobDone : styles.jobOpen, !j.done && busy && { opacity: 0.5 }]}
                 >
                   <Text style={styles.jobGlyph}>{glyphFor(j.icon) || '✅'}</Text>
@@ -195,7 +216,7 @@ export function KidPageTop({
             testID="member-give-1"
             accessibilityRole="button"
             disabled={busy}
-            onPress={() => onGive(1, t('hub_well_done'))}
+            onPress={() => give(1, t('hub_well_done'))}
             style={[styles.giveMain, busy && { opacity: 0.5 }]}
           >
             <Text style={styles.giveMainText}>+1</Text>
@@ -209,7 +230,7 @@ export function KidPageTop({
               accessibilityRole="button"
               accessibilityLabel={`+${n} ${t('kid_stars_label')}`}
               disabled={busy}
-              onPress={() => onGive(n, t('kids_parent_added_stars'))}
+              onPress={() => give(n, t('kids_parent_added_stars'))}
               style={[styles.giveSmall, busy && { opacity: 0.5 }]}
             >
               <Text style={styles.giveSmallText}>+{n}</Text>
@@ -234,6 +255,7 @@ function createStyles(ui: UIColors) {
     avatarRing: { padding: 4, borderRadius: 999, backgroundColor: ui.card },
     name: { fontFamily: 'Figtree_800ExtraBold', fontSize: 28, letterSpacing: -0.5, color: ui.text },
     starsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    burstAnchor: { width: 0, height: 24, marginLeft: 10 },
     starsNum: { fontFamily: 'Figtree_800ExtraBold', fontSize: 32, lineHeight: 40, color: ui.text },
     starsWord: { fontFamily: 'Figtree_700Bold', fontSize: 16, color: ui.muted },
 
