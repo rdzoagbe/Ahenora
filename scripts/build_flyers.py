@@ -648,7 +648,8 @@ GLOSSY_COPY = {
         "web": "Sur ordinateur&nbsp;: ahenora.com/app",
         "promise": "Sans publicité · Les données de votre famille ne sont jamais vendues",
         "demo": "Écran réel de l’application, avec une famille fictive.",
-        "legal": "",
+        "infotri": "Emplacement du logo Triman + Info-tri papier (fichier Citeo)",
+        "legal": "Édité par <mark>[nom de l’entreprise, forme&nbsp;: EI ou société]</mark> · SIREN <mark>[à compléter]</mark> · <mark>[adresse du siège]</mark> · Imprimé par <mark>[nom et adresse de l’imprimeur]</mark> · Ne pas jeter sur la voie publique. App Store, iPhone et iPad sont des marques d’Apple Inc., déposées aux États-Unis et dans d’autres pays. Google Play et Android sont des marques de Google LLC.",
     },
     "en": {
         "lang": "en",
@@ -696,7 +697,8 @@ GLOSSY_COPY = {
         "web": "On a computer: ahenora.com/app",
         "promise": "No ads · Your family’s data is never sold",
         "demo": "A real screen from the app, with a made-up family.",
-        "legal": "",
+        "infotri": "Space for the Triman + Info-tri paper marking (Citeo artwork)",
+        "legal": "Published by <mark>[company name, form: EI or company]</mark> · SIREN <mark>[to fill in]</mark> · <mark>[registered address]</mark> · Printed by <mark>[printer name and address]</mark> · Do not litter. App Store, iPhone and iPad are trademarks of Apple Inc., registered in the U.S. and other countries. Google Play and Android are trademarks of Google LLC.",
     },
 }
 
@@ -796,14 +798,23 @@ GLOSSY_TEMPLATE = """<!doctype html>
   .get {{ left: 0; right: 0; top: 154mm; bottom: 0; background: #22201D; color: #fff;
          padding: 4.2mm 12mm 0; }}
   .get h2 {{ font-size: 5mm; color: #fff; }}
-  .stores {{ display: flex; gap: 5mm; margin: 2.4mm 0 0; }}
+  .stores {{ display: flex; gap: 5mm; margin: 2.4mm 0 0; padding-right: 30mm; }}
   .store {{ flex: 1; display: flex; align-items: center; gap: 3mm; }}
   .store .qr {{ background: #fff; border-radius: 2mm; padding: .8mm; line-height: 0; }}
   .store b {{ display: block; font-size: 4mm; }}
   .store span {{ display: block; font-size: 2.9mm; color: #CFC7BE; margin-top: .3mm; }}
   .get .web {{ margin: 2.2mm 0 0; font-size: 3.1mm; color: #FFB27F; font-weight: 700; }}
   .promise {{ margin: 1mm 0 0; font-size: 2.5mm; color: #CFC7BE; }}
-  .legal {{ margin: 1mm 0 0; font-size: 2.1mm; line-height: 1.3; color: #A59C92; }}
+  .legal {{ margin: 1.2mm 0 0; font-size: 2.05mm; line-height: 1.32; color: #A59C92; }}
+  /* Blanks the publisher must fill in before this goes to print. Bright on
+     purpose: a flyer printed with them showing is a flyer to throw away. */
+  .legal mark {{ background: #FFE14D; color: #22201D; padding: 0 .4mm; }}
+  /* Room for Citeo's Info-tri marking (Code de l'environnement L541-9-3),
+     which has to be Citeo's own artwork, so it is not drawn here. */
+  .infotri {{ position: absolute; right: 12mm; top: 4.2mm; width: 34mm; height: 16mm;
+             border: .35mm dashed #FFE14D; border-radius: 2mm; color: #FFE14D;
+             font-size: 2.2mm; line-height: 1.25; display: flex; align-items: center;
+             justify-content: center; text-align: center; padding: 1mm; }}
 </style>
 </head>
 <body>
@@ -842,6 +853,7 @@ GLOSSY_TEMPLATE = """<!doctype html>
   </div>
   <div class="abs get">
     <h2>{get_title}</h2>
+    <div class="infotri">{infotri}</div>
     <div class="stores">
       <div class="store"><div class="qr">{qr_apple}</div><div><b>{app_store}</b><span>{app_store_sub}</span></div></div>
       <div class="store"><div class="qr">{qr_play}</div><div><b>{google_play}</b><span>{google_play_sub}</span></div></div>
