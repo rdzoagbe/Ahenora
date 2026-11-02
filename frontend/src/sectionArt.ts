@@ -15,7 +15,8 @@ export const SECTION_ART: Record<Section, ImageSourcePropType | null> = {
   family: require('../assets/images/sections/section-family.webp'),
   kitchen: require('../assets/images/sections/section-kitchen.webp'),
   shopping: require('../assets/images/sections/section-shopping.webp'),
-  // Being redone: the first version printed English words on the documents.
-  vault: null,
+  // Redone without words on 2026-11-02 (the first version printed English
+  // words on the documents, which read wrong in French, Spanish and German).
+  vault: require('../assets/images/sections/section-vault.webp'),
   settings: require('../assets/images/sections/section-settings.webp'),
 };

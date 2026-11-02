@@ -38,16 +38,15 @@ describe('the pictures', () => {
 
   it('are on disk and on the record of where they came from', () => {
     const files = [...art.matchAll(/require\('\.\.\/assets\/images\/sections\/([^']+)'\)/g)].map((m) => m[1]);
-    expect(files.length).toBe(5);
+    expect(files.length).toBe(6);
     files.forEach((file) => {
       expect(fs.existsSync(path.join(__dirname, '..', '..', 'assets', 'images', 'sections', file))).toBe(true);
       expect(record).toMatch(new RegExp(`\\| \`${file.replace('.', '\\.')}\` \\| ChatGPT \\|[^\\n]*\\| 2026-`));
     });
   });
 
-  it('leave the Vault without one until it is redone without words', () => {
-    expect(SECTION_ART.vault).toBeNull();
-    expect(SECTION_ART.calendar).toBeTruthy();
+  it('give every page one, the Vault included since it was redone without words', () => {
+    Object.values(SECTION_ART).forEach((picture) => expect(picture).toBeTruthy());
   });
 });
 

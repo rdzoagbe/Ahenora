@@ -6,7 +6,7 @@ pictures (brief and rights: `../home/README.md`).
 Roland confirmed on 2026-10-31 that every picture was made by him in ChatGPT,
 in his own account. Saved as WebP at 768×768. Shown since 2026-10-31 as a
 tile in the page header (`src/sectionArt.ts`): Calendar, Family, Kitchen (the
-basket on the shopping list) and Settings.
+basket on the shopping list), Vault (since 2026-11-02) and Settings.
 
 | File | Tool | Account | Date | Subject | Edits made by hand |
 |---|---|---|---|---|---|
@@ -15,6 +15,7 @@ basket on the shopping list) and Settings.
 | `section-shopping.webp` | ChatGPT | Roland's own | 2026-10-31 | a market basket | resized to 768×768 WebP |
 | `section-family.webp` | ChatGPT | Roland's own | 2026-10-31 | a star chart and a trophy (the second, painterly version) | resized to 768×768 WebP |
 | `section-settings.webp` | ChatGPT | Roland's own | 2026-10-31 | an armchair, a lamp and a plant | resized to 768×768 WebP |
+| `section-vault.webp` | ChatGPT | Roland's own | 2026-11-02 | a passport and a certificate in a leather folder, no words on them | resized to 768×768 WebP |
 
-Still to make (2026-10-31): the Vault picture again, with no words on the
-passport or the certificate (the first version printed English words).
+The Vault picture was made again on 2026-11-02 with no words on the passport
+or the certificate (the first version printed English words).
