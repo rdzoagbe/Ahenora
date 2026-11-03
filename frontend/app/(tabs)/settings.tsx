@@ -834,7 +834,7 @@ export default function Settings() {
         scrollViewProps={{ contentContainerStyle: styles.scroll, keyboardShouldPersistTaps: 'handled' }}
       >
           <ScreenHeader
-          showAdd={false} showSettings={false} eyebrow={t('set_manage')} title={t('set_settings')} art={SECTION_ART.settings} />
+          showAdd={false} eyebrow={t('set_manage')} title={t('set_settings')} art={SECTION_ART.settings} />
 
           {/* Profile: who is signed in, in their own colour, and the door to
               their account. */}
