@@ -23,6 +23,13 @@ updates:
       # because today's code still compiles. eslint-config-expo has the same
       # gap. Pinned to the SDK like the rest; moved by `npx expo install --fix`.
       - dependency-name: "*-expo"
+      # zod reaches us only inside the Expo toolchain (@expo/cli keeps zod 3
+      # on every SDK 57 release). Its security fix is zod 4, which Dependabot
+      # can only reach by also moving expo 57 -> 58: #750 (2026-11-03) did
+      # exactly that, as a security update, because the rule above names expo
+      # and this one did not. SDK 58 is a planned upgrade that needs new store
+      # builds, done by hand with `npx expo install --fix`, never a bump PR.
+      - dependency-name: "zod"
       - dependency-name: "react"
       - dependency-name: "react-dom"
       - dependency-name: "react-native"
