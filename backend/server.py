@@ -4848,6 +4848,19 @@ async def backfill_icons(database=None) -> dict:
                     {key: row.get(key)},
                     {"$set": {"icon": icon, "icon_auto": True}})
                 done += 1
+            # A key that was split in two after rows were written: a guessed
+            # "pet" on a title about a cat is looked at again, so "Feed the
+            # cat" stops being drawn as a dog. Only guesses, never a choice a
+            # person made, and only rows the new guess actually changes.
+            cursor = database[collection].find({"icon_auto": True, "icon": "pet"}, fields)
+            async for row in cursor:
+                icon = guess_icon(row.get(text_field) or "",
+                                  row.get(type_field) if type_field else None)
+                if icon != "pet":
+                    await database[collection].update_one(
+                        {key: row.get(key), "icon_auto": True, "icon": "pet"},
+                        {"$set": {"icon": icon}})
+                    done += 1
         except Exception as e:
             log.warning("icon backfill of %s stopped: %s", collection, e)
         counts[collection] = done

@@ -19,7 +19,7 @@ WHY A CLOSED SET, STORED AS A KEY
 
 The card stores "birthday", not the cake. The glyph is the app's choice —
 this emoji today, a drawn icon if that ever looks better — and a key survives
-that change where a stored emoji would not. Twenty keys cover household life;
+that change where a stored emoji would not. A score of keys cover household life;
 a free emoji keyboard would put a random sticker on every card and the column
 would stop meaning anything.
 
@@ -51,6 +51,7 @@ ICONS = {
     "laundry": "🧺",
     "bins": "🗑️",
     "pet": "🐶",
+    "cat": "🐱",
     "music": "🎵",
     "party": "🎉",
     "travel": "✈️",
@@ -164,14 +165,26 @@ _KEYWORDS = [
         "asda", "costco", "walmart", "mercadona", "rewe", "edeka", "ikea",
         "pharmacy run",
     ]),
+    # A cat is its own picture: "Feed the cat" drawn as a dog was the first
+    # thing Roland noticed on the child's screen (2026-11-03). Before "pet",
+    # so a title naming a cat gets the cat, and the dog stays for the rest.
+    # Never the bare French "chat": it is also the English word, and "Family
+    # chat" must not grow whiskers. With its article it can only be the cat.
+    ("cat", [
+        "feed the cat", "nourrir le chat", "dar de comer al gato",
+        "katze futtern", "cat", "cats", "kitten", "le chat", "du chat",
+        "au chat", "les chats", "chaton",
+        "gato", "gata", "gatito", "katze", "katzen", "katzchen", "litter",
+        "litiere", "arenero", "katzenklo",
+    ]),
     ("pet", [
-        "walk the dog", "feed the cat", "feed the dog", "feed the fish",
-        "promener le chien", "sortir le chien", "nourrir le chat",
-        "pasear al perro", "gassi", "dog", "puppy", "cat", "kitten", "pet",
-        "pets", "vet", "chien", "chat", "chaton", "chiot", "veterinaire",
-        "veto", "perro", "gato", "mascota", "veterinario", "hund", "katze",
+        "walk the dog", "feed the dog", "feed the fish",
+        "promener le chien", "sortir le chien",
+        "pasear al perro", "gassi", "dog", "puppy", "pet",
+        "pets", "vet", "chien", "chiot", "veterinaire",
+        "veto", "perro", "mascota", "veterinario", "hund",
         "tierarzt", "hamster", "rabbit", "lapin", "conejo", "kaninchen",
-        "litter", "litiere", "guinea pig", "cochon d'inde",
+        "guinea pig", "cochon d'inde",
     ]),
     ("sport", [
         "football", "soccer", "foot", "futbol", "fussball", "basket",

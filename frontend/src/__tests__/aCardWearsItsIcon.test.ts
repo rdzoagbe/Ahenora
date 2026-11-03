@@ -27,9 +27,10 @@ function serverIcons(): { key: string; glyph: string }[] {
 }
 
 describe('the app and the server agree on what an icon is', () => {
-  it('has the same twenty keys, the same glyphs, in the same order', () => {
+  it('has the same keys, the same glyphs, in the same order', () => {
     const server = serverIcons();
-    expect(server.length).toBe(20);
+    // Twenty at first; the cat was split from the dog on 2026-11-03.
+    expect(server.length).toBe(21);
     expect(CARD_ICONS.map((i) => i.key)).toEqual(server.map((i) => i.key));
     expect(CARD_ICONS.map((i) => i.glyph)).toEqual(server.map((i) => i.glyph));
   });

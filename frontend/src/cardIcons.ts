@@ -3,7 +3,7 @@
  *
  * The server stores a KEY ("birthday"), never the glyph, and guesses one from
  * the title when nobody chose (backend/card_icons.py). This is the app's side
- * of that contract: the same twenty keys, in the same order the picker shows
+ * of that contract: the same keys, in the same order the picker shows
  * them, and the glyph each one is drawn with today. Changing a glyph here
  * changes it on every card at once; a card the server labelled with a key
  * this list does not know renders as it did before icons existed.
@@ -22,6 +22,7 @@ export const CARD_ICONS: { key: string; glyph: string; labelKey: string }[] = [
   { key: 'laundry', glyph: '🧺', labelKey: 'icon_laundry' },
   { key: 'bins', glyph: '🗑️', labelKey: 'icon_bins' },
   { key: 'pet', glyph: '🐶', labelKey: 'icon_pet' },
+  { key: 'cat', glyph: '🐱', labelKey: 'icon_cat' },
   { key: 'music', glyph: '🎵', labelKey: 'icon_music' },
   { key: 'party', glyph: '🎉', labelKey: 'icon_party' },
   { key: 'travel', glyph: '✈️', labelKey: 'icon_travel' },
