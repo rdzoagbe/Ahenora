@@ -122,10 +122,12 @@
   .single .t4 { top: 121mm; }
   .single .scanbox { top: 159mm; height: 27mm; }
   .single .trial { top: 188.5mm; }
-  .strip { left: 12mm; right: 12mm; top: 194mm; display: flex; gap: 3mm; align-items: flex-start; }
-  .strip .infotri { position: static; flex: none; width: 30mm; height: 12.5mm;
-                    border-color: #fff; color: #fff; }
-  .strip p { margin: 0; font-size: 2.05mm; line-height: 1.32; color: #FFE7D6; }
+  /* The legal line: required, so present, but as quiet as it can be while
+     staying readable (about 5pt). Citeo's mark is a small icon, not a box. */
+  .strip { left: 12mm; right: 12mm; top: 197mm; display: flex; gap: 2.4mm; align-items: center; }
+  .strip .infotri { position: static; flex: none; width: 18mm; height: 8mm; border-radius: 1.2mm;
+                    border-color: rgba(255,255,255,.6); color: rgba(255,255,255,.8); font-size: 1.6mm; }
+  .strip p { margin: 0; font-size: 1.8mm; line-height: 1.3; color: rgba(255,255,255,.72); }
   .strip mark { background: #FFE14D; color: #22201D; padding: 0 .4mm; }
 </style>
 </head>
@@ -152,7 +154,7 @@
     </div>
   </div>
   <p class="abs trial">The whole app free for 14&nbsp;days, no card. Nothing charged when it ends.</p>
-  <div class="abs strip"><div class="infotri">Triman + Info-tri paper marking (Citeo artwork)</div><p>Published by <mark>[company name, form: EI or company]</mark> · SIREN <mark>[to fill in]</mark> · <mark>[registered address]</mark> · Printed by <mark>[printer name and address]</mark> · A real screen from the app, with a made-up family. Do not litter.</p></div>
+  <div class="abs strip"><div class="infotri">Info-tri (Citeo)</div><p>Published by <mark>[company name, form: EI or company]</mark> · SIREN <mark>[to fill in]</mark> · <mark>[registered address]</mark> · Printed by <mark>[printer name and address]</mark> · A real screen from the app, with a made-up family. Do not litter.</p></div>
  </section>
 </body>
 </html>

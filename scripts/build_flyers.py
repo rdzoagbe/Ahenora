@@ -909,7 +909,7 @@ SINGLE_EXTRA = {
                   '<mark>[à compléter]</mark> · <mark>[adresse du siège]</mark> · Imprimé par '
                   '<mark>[nom et adresse de l’imprimeur]</mark> · Écran réel de l’application, avec '
                   'une famille fictive. Ne pas jeter sur la voie publique.'),
-        "infotri": "Logo Triman + Info-tri papier (fichier Citeo)",
+        "infotri": "Info-tri (Citeo)",
         "title": "Ahenora — flyer A5 recto",
     },
     "en": {
@@ -918,7 +918,7 @@ SINGLE_EXTRA = {
                   '<mark>[to fill in]</mark> · <mark>[registered address]</mark> · Printed by '
                   '<mark>[printer name and address]</mark> · A real screen from the app, with a '
                   'made-up family. Do not litter.'),
-        "infotri": "Triman + Info-tri paper marking (Citeo artwork)",
+        "infotri": "Info-tri (Citeo)",
         "title": "Ahenora — one-sided A5 flyer",
     },
 }
@@ -934,10 +934,12 @@ SINGLE_CSS = """
   .single .t4 {{ top: 121mm; }}
   .single .scanbox {{ top: 159mm; height: 27mm; }}
   .single .trial {{ top: 188.5mm; }}
-  .strip {{ left: 12mm; right: 12mm; top: 194mm; display: flex; gap: 3mm; align-items: flex-start; }}
-  .strip .infotri {{ position: static; flex: none; width: 30mm; height: 12.5mm;
-                    border-color: #fff; color: #fff; }}
-  .strip p {{ margin: 0; font-size: 2.05mm; line-height: 1.32; color: #FFE7D6; }}
+  /* The legal line: required, so present, but as quiet as it can be while
+     staying readable (about 5pt). Citeo's mark is a small icon, not a box. */
+  .strip {{ left: 12mm; right: 12mm; top: 197mm; display: flex; gap: 2.4mm; align-items: center; }}
+  .strip .infotri {{ position: static; flex: none; width: 18mm; height: 8mm; border-radius: 1.2mm;
+                    border-color: rgba(255,255,255,.6); color: rgba(255,255,255,.8); font-size: 1.6mm; }}
+  .strip p {{ margin: 0; font-size: 1.8mm; line-height: 1.3; color: rgba(255,255,255,.72); }}
   .strip mark {{ background: #FFE14D; color: #22201D; padding: 0 .4mm; }}
 """
 
