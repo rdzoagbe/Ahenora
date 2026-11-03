@@ -69,6 +69,7 @@ import { FamilyPulse, PulseShopItem } from '../../src/components/FamilyPulse';
 import { DoneCard, completedForHome } from '../../src/components/DoneCard';
 import { HomeQuickActions } from '../../src/components/HomeQuickActions';
 import { HomeNextUp, HomeTiles, HomeWeekStrip } from '../../src/components/HomeDay';
+import { HomeApprovals, ApprovalRow } from '../../src/components/HomeApprovals';
 import { PopIn, PulseDot, successTap } from '../../src/components/Motion';
 import { dayRows, doneToday, nextUp, nowLineAt, weekAhead, weekPlans } from '../../src/homeDay';
 import { tileFor, TileIconKey } from '../../src/homeTiles';
@@ -374,6 +375,9 @@ export default function Feed() {
   // The week's meals, for "Dinner tonight" under the day's list.
   const [meals, setMeals] = useState<MealPlan[]>([]);
   const [assigned, setAssigned] = useState<Card[]>([]);
+  // What the children finished and is waiting for a grown-up's OK.
+  const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   // Someone this household invited who never made it in. Only the household
   // that sent an invitation can send it again, so the prompt belongs here.
   const [stranded, setStranded] = useState<{
@@ -582,6 +586,8 @@ export default function Feed() {
       // What was handed to me. Same best-effort rule: this strip never gets
       // to take the feed down with it.
       api.listAssignedToMe().then(setAssigned).catch(() => undefined);
+      // What the children finished, waiting for a grown-up. Best effort too.
+      api.getTeenApprovals().then((r) => setApprovals(r.approvals)).catch(() => undefined);
       // Best-effort: a nudge is never worth failing the Feed for.
       api.strandedInvites()
         .then((rows) => setStranded(rows?.[0] ? {
@@ -1369,6 +1375,25 @@ export default function Feed() {
     ]);
   }, [t, load]);
 
+  // Approve or dismiss from Home. Taken off the card at once so a second tap
+  // has nothing to press; put back with a word if the server said no.
+  const resolveApproval = async (id: string, approve: boolean, stars = 1) => {
+    if (approvingId) return;
+    const row = approvals.find((a) => a.card_id === id);
+    setApprovingId(id);
+    setApprovals((prev) => prev.filter((a) => a.card_id !== id));
+    try {
+      await api.resolveTeenApproval(id, approve, stars);
+      if (approve) { successTap(); showToast(t('teen_star_awarded', { count: stars }), 'success'); }
+      load();
+    } catch (e) {
+      if (row) setApprovals((prev) => [row, ...prev]);
+      showToast(apiErrorText(e, t, 'set_error'), 'error');
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   return (
     <SwipeableTabView style={styles.container}>
       <TabScreen
@@ -1453,6 +1478,16 @@ export default function Feed() {
                 onOpen={() => setSelectedCard(next)}
               />
             ) : null}
+
+            {kidsHidden ? null : (
+              <HomeApprovals
+                rows={approvals}
+                busyId={approvingId}
+                onApprove={(id, n) => resolveApproval(id, true, n)}
+                onDismiss={(id) => resolveApproval(id, false)}
+                onMore={() => router.navigate('/(tabs)/kids' as never)}
+              />
+            )}
 
             {/* The rest of the day. Left out when "Next up" was the only thing
                 left, rather than a heading with nothing under it. */}
