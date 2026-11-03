@@ -54,6 +54,11 @@ async def main():
     api("POST", "/rewards", {"title": "Ice cream", "cost_stars": 10, "icon": "🍦"}, tok)
     api("POST", "/cards", {"type": "TASK", "title": "Tidy your room",
                            "assignee": "Ama", "shared": True}, tok)
+    # Her daily job on the chore wheel, where onboarding puts a child's jobs.
+    # Kid mode used to show only tasks, so she saw none of these.
+    bed = api("POST", "/chores", {"title": "Make your bed", "frequency": "daily",
+                                  "assigned_members": [ama["member_id"]], "rotate": False,
+                                  "star_reward": 2, "icon": "bed"}, tok)
     api("POST", "/cards", {"type": "TASK", "title": "Pay the mortgage",
                            "assignee": "Roland K", "shared": True}, tok)
     api("POST", "/vault", {"title": "Passports", "category": "Legal",
@@ -135,7 +140,24 @@ async def main():
         r["shows_her_job"] = "Tidy your room" in body
         r["hides_the_parents_job"] = "Pay the mortgage" not in body
         r["shows_the_reward"] = "Ice cream" in body
+        r["shows_her_wheel_job"] = await p.locator(
+            f'[data-testid="kid-job-{bed["chore_id"]}"]').count() == 1
         await p.screenshot(path="kid_home.png")
+
+        # --- her wheel job: ticked, it waits for a grown-up -----------------
+        await p.click(f'[data-testid="kid-job-{bed["chore_id"]}"]')
+        await p.wait_for_timeout(3000)
+        r["the_tile_says_it_is_waiting"] = "waiting for a grown-up" in (
+            await p.inner_text(f'[data-testid="kid-job-{bed["chore_id"]}"]')).lower()
+        still = [m for m in api("GET", "/family/members", None, tok)
+                 if m["member_id"] == ama["member_id"]][0]
+        r["ticking_her_job_pays_nothing_yet"] = still["stars"] == 30
+        queue = api("GET", "/family/teen-approvals", None, tok)["approvals"]
+        r["her_job_waits_on_a_parent"] = any(
+            a["card_id"] == f"job:{bed['chore_id']}" and a.get("who") == "Ama" for a in queue)
+        await p.screenshot(path="kid_job_waiting.png")
+        # A grown-up declines it here, so the star sums below stay the task's.
+        api("POST", f"/family/teen-approvals/job:{bed['chore_id']}", {"approve": False}, tok)
 
         # --- the wall -------------------------------------------------------
         kid_token = await p.evaluate("localStorage.getItem('coo_session_token')")

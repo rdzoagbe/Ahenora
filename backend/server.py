@@ -9665,16 +9665,52 @@ async def exit_kid_forgot_pin(payload: KidForgotPinIn, child=Depends(require_chi
     return {"ok": True}
 
 
+async def _kid_jobs_today(database, family_id: str, member_id: str, zone: Optional[str]) -> list:
+    """A child's chore-wheel jobs today, read the way their parent's page reads
+    them (member_jobs_today), plus whether one they ticked is waiting on a
+    grown-up. Only this child's: a sibling's jobs never reach their screen."""
+    local = _local_now(zone, utcnow())
+    day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    done_today: dict = {}
+    async for log_row in database["chore_logs"].find(
+            {"family_id": family_id, "member_id": member_id, "completed_at": {"$gte": day_start}},
+            {"_id": 0, "chore_id": 1, "stars_awarded": 1}):
+        done_today[log_row["chore_id"]] = int(log_row.get("stars_awarded") or 0)
+    jobs = []
+    async for chore in database["chores"].find({"family_id": family_id}, {"_id": 0}):
+        mine = chore.get("current_assignee") == member_id
+        done = chore["chore_id"] in done_today
+        waiting = bool(chore.get("kid_claim_pending")) and chore.get("kid_claim_member") == member_id
+        if not (mine or done or waiting):
+            continue
+        jobs.append({
+            "chore_id": chore["chore_id"],
+            "title": chore.get("title") or "",
+            "icon": chore.get("icon"),
+            "star_reward": int(chore.get("star_reward", 3) or 0),
+            "done": done,
+            "stars_awarded": done_today.get(chore["chore_id"], 0),
+            "waiting": waiting and not done,
+        })
+    jobs.sort(key=lambda j: (j["done"], j["waiting"], j["title"].lower()))
+    return jobs
+
+
 @app.get("/api/kid/home")
-async def kid_home(child=Depends(require_child)):
+async def kid_home(timezone_name: Optional[str] = Query(default=None, alias="timezone"),
+                   child=Depends(require_child)):
     """Everything a child's app shows, in one call.
 
     Scoped to this child on the server, not filtered on the device: their
-    stars, the chores with their name on them, what they can spend on, and
-    what they are still owed.
+    stars, the chores with their name on them, their jobs on the chore wheel
+    today, what they can spend on, and what they are still owed. "Today" is
+    the zone the device sends, else the parent's who opened kid mode.
     """
     database = get_db()
     member = await roll_week_if_stale(database, child["member"])
+    zone = _valid_timezone(timezone_name if isinstance(timezone_name, str) else None) \
+        or await _zone_of(database, child.get("parent_user_id"))
+    jobs = await _kid_jobs_today(database, child["family_id"], member["member_id"], zone)
     name = (member.get("name") or "").strip().lower()
 
     chores = []
@@ -9698,7 +9734,7 @@ async def kid_home(child=Depends(require_child)):
 
     return {"name": member.get("name") or "", "stars": int(member.get("stars") or 0),
             "week_earned": max(0, int(member.get("week_earned") or 0)),
-            "chores": chores, "rewards": rewards, "owed": owed}
+            "chores": chores, "jobs": jobs, "rewards": rewards, "owed": owed}
 
 
 # ── Teen mode: a restricted 13-17 account. The ONLY endpoints a teen token can
@@ -9872,6 +9908,9 @@ async def teen_finish_task(card_id: str, teen=Depends(require_teen)):
     return {"ok": True}
 
 
+JOB_APPROVAL_PREFIX = "job:"
+
+
 class TeenApprovalIn(BaseModel):
     approve: bool = True
     stars: int = 1
@@ -9894,6 +9933,18 @@ async def teen_approvals(user=Depends(require_user)):
             "who": card.get("completed_by_name") or card.get("assignee") or "",
             "completed_at": iso(card.get("completed_at")),
         })
+    # A young child's ticked chore-wheel job waits here too, under an id the
+    # resolve endpoint knows to read as a job ("job:<chore_id>"): the parent's
+    # screen lists and answers it the way it answers a task, unchanged.
+    async for chore in database["chores"].find(
+            {"family_id": user["family_id"], "kid_claim_pending": True}, {"_id": 0}):
+        rows.append({
+            "card_id": JOB_APPROVAL_PREFIX + chore["chore_id"],
+            "title": chore.get("title") or "",
+            "teen_name": chore.get("kid_claim_name") or "",
+            "who": chore.get("kid_claim_name") or "",
+            "completed_at": iso(chore.get("kid_claim_at")),
+        })
     rows.sort(key=lambda r: (r["completed_at"] is None, r["completed_at"] or ""), reverse=True)
     return {"approvals": rows}
 
@@ -9902,6 +9953,8 @@ async def teen_approvals(user=Depends(require_user)):
 async def resolve_teen_approval(card_id: str, payload: TeenApprovalIn, user=Depends(require_user)):
     """Approve (award the star to the teen) or dismiss a finished teen task."""
     database = get_db()
+    if card_id.startswith(JOB_APPROVAL_PREFIX):
+        return await _resolve_kid_job(database, card_id[len(JOB_APPROVAL_PREFIX):], payload, user)
     new_status = "approved" if payload.approve else "declined"
     # Claim the pending card atomically: the status flip IS the guard, so two
     # near-simultaneous taps can't both award the star (only the first matches).
@@ -9949,6 +10002,37 @@ async def resolve_teen_approval(card_id: str, payload: TeenApprovalIn, user=Depe
             except Exception as e:
                 log.warning("teen star notify failed: %s", e)
     return {"ok": True, "status": new_status}
+
+
+async def _resolve_kid_job(database, chore_id: str, payload: "TeenApprovalIn", user: dict) -> dict:
+    """Approve or decline a chore-wheel job a child ticked in kid mode.
+
+    The claim is taken off the chore atomically first, so two taps cannot both
+    pay. Approving pays the child who ticked it what the parent chose, logs it
+    as done today, and turns the wheel the way a parent's own tick does.
+    """
+    chore = await database["chores"].find_one(
+        {"chore_id": chore_id, "family_id": user["family_id"]}, {"_id": 0})
+    claim = await database["chores"].update_one(
+        {"chore_id": chore_id, "family_id": user["family_id"], "kid_claim_pending": True},
+        {"$set": {"kid_claim_pending": False}})
+    if not chore or claim.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Nothing to approve")
+    if not payload.approve:
+        return {"ok": True, "status": "declined"}
+    doer = chore.get("kid_claim_member")
+    stars = max(1, min(int(payload.stars or 1), 20))
+    txn = await award_stars_to_member(
+        database, user["family_id"], doer, stars, chore.get("title") or "Chore done",
+        {"family_id": user["family_id"], "user_id": user["user_id"], "name": user.get("name")})
+    await database["chore_logs"].insert_one({
+        "log_id": new_id("clog"), "chore_id": chore_id, "family_id": user["family_id"],
+        "member_id": doer, "completed_at": utcnow(),
+        "stars_awarded": txn["delta"] if txn else 0,
+    })
+    if doer == chore.get("current_assignee"):
+        await _turn_the_wheel(database, chore, doer)
+    return {"ok": True, "status": "approved"}
 
 
 # -----------------------------------------------------------------------------
@@ -10782,6 +10866,45 @@ async def kid_finish_chore(card_id: str, child=Depends(require_child)):
         except Exception as e:
             log.warning("kid approval alert failed: %s", e)
     return {"ok": True, "awaiting_approval": not already}
+
+
+@app.post("/api/kid/jobs/{chore_id}/done")
+async def kid_finish_job(chore_id: str, child=Depends(require_child)):
+    """A child ticks one of their chore-wheel jobs.
+
+    Same rule as a finished task (kid_finish_chore): it pays nothing until a
+    grown-up approves it, and the parent chooses what it was worth. The claim
+    sits on the chore itself and the guard rides in the filter, so a double
+    tap queues it once. Only a job sitting with this child can be ticked.
+    """
+    database = get_db()
+    member = child["member"]
+    chore = await database["chores"].find_one(
+        {"chore_id": chore_id, "family_id": child["family_id"]}, {"_id": 0})
+    if not chore:
+        raise HTTPException(status_code=404, detail="Not found")
+    if chore.get("current_assignee") != member["member_id"]:
+        raise HTTPException(status_code=403, detail="That is not yours to finish")
+    claim = await database["chores"].update_one(
+        {"chore_id": chore_id, "family_id": child["family_id"],
+         "current_assignee": member["member_id"], "kid_claim_pending": {"$ne": True}},
+        {"$set": {"kid_claim_pending": True, "kid_claim_member": member["member_id"],
+                  "kid_claim_name": member.get("name") or "", "kid_claim_at": utcnow()}})
+    queued = claim.matched_count > 0
+    if queued:
+        try:
+            who = member.get("name") or "Your child"
+            title = (chore.get("title") or "").strip()
+            await send_coparent_alert(
+                child["family_id"],
+                f"{who} finished a job",
+                (f"“{title}” — approve their stars?" if title else "Approve their stars?"),
+                "teen_approval",
+                member_id=member.get("member_id"),
+            )
+        except Exception as e:
+            log.warning("kid job approval alert failed: %s", e)
+    return {"ok": True, "awaiting_approval": True}
 
 
 @app.post("/api/kid/rewards/{reward_id}/request")
@@ -20389,6 +20512,22 @@ async def create_chore(body: ChoreIn, user: dict = Depends(require_user), databa
     return public_chore(chore)
 
 
+async def _turn_the_wheel(database, chore: dict, doer: Optional[str]) -> None:
+    """Pass a finished chore to the next child on its wheel, in place."""
+    members = chore.get("assigned_members", [])
+    if chore.get("rotate", True) and len(members) >= 2:
+        try:
+            next_idx = (members.index(doer) + 1) % len(members)
+        except ValueError:
+            next_idx = 0
+        await database["chores"].update_one(
+            {"chore_id": chore["chore_id"]},
+            {"$set": {"current_assignee": members[next_idx], "last_rotated": utcnow()}},
+        )
+        chore["current_assignee"] = members[next_idx]
+        chore["last_rotated"] = utcnow()
+
+
 @app.post("/api/chores/{chore_id}/complete")
 async def complete_chore(chore_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
     """Mark a chore done: award the person who did it, then pass it on.
@@ -20416,10 +20555,13 @@ async def complete_chore(chore_id: str, user: dict = Depends(require_user), data
     # days apart — falls in a new bucket and pays normally.
     now = utcnow()
     bucket = int(now.timestamp()) // 2
+    # A parent ticking it settles any tick the child left waiting: otherwise
+    # approving that later would pay the same job a second time.
     claim = await database["chores"].update_one(
         {"chore_id": chore_id, "family_id": user["family_id"],
          "last_completed_bucket": {"$ne": bucket}},
-        {"$set": {"last_completed_bucket": bucket, "last_completed_at": now}},
+        {"$set": {"last_completed_bucket": bucket, "last_completed_at": now,
+                  "kid_claim_pending": False}},
     )
     if claim.matched_count == 0:
         return {"ok": True, "chore": public_chore(chore), "stars_awarded": 0, "member_id": doer}
@@ -20442,18 +20584,7 @@ async def complete_chore(chore_id: str, user: dict = Depends(require_user), data
         "stars_awarded": txn["delta"] if txn else 0,
     })
 
-    members = chore.get("assigned_members", [])
-    if chore.get("rotate", True) and len(members) >= 2:
-        try:
-            next_idx = (members.index(doer) + 1) % len(members)
-        except ValueError:
-            next_idx = 0
-        await database["chores"].update_one(
-            {"chore_id": chore_id},
-            {"$set": {"current_assignee": members[next_idx], "last_rotated": utcnow()}},
-        )
-        chore["current_assignee"] = members[next_idx]
-        chore["last_rotated"] = utcnow()
+    await _turn_the_wheel(database, chore, doer)
 
     return {
         "ok": True,
