@@ -23,6 +23,7 @@ import {
   PenLine,
   Plane,
   Search as SearchIcon,
+  Settings as SettingsIcon,
   CalendarDays,
   Camera,
   Check,
@@ -1400,10 +1401,11 @@ export default function Feed() {
                     <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{Math.min(unseenAlertCount, 9)}</Text></View>
                   ) : null}
                 </PressScale>
-                {/* Your portrait is the one door to your account and settings,
-                    as the design canvas draws it: Settings opens on you, with
-                    Manage account on its first card. The More button that used
-                    to sit beside the bar is gone (2026-10-31). */}
+                {/* Your portrait opens Settings, as the design canvas draws it:
+                    Settings opens on you, with Manage account on its first
+                    card. A gear sits on it since Roland could not find
+                    Settings (2026-11-03): a face alone did not say "settings".
+                    The other pages name it in their header. */}
                 <PressScale
                   testID="feed-portrait"
                   onPress={() => router.navigate('/(tabs)/settings' as never)}
@@ -1411,7 +1413,12 @@ export default function Feed() {
                   accessibilityRole="button"
                   accessibilityLabel={t('settings')}
                 >
-                  <PersonAvatar name={user?.name} avatar={myAvatar} size={30} />
+                  <View>
+                    <PersonAvatar name={user?.name} avatar={myAvatar} size={30} />
+                    <View style={styles.portraitGear} testID="feed-portrait-gear">
+                      <SettingsIcon color={ui.text} size={11} strokeWidth={2.6} />
+                    </View>
+                  </View>
                 </PressScale>
               </View>
             </View>
@@ -2425,6 +2432,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     marginTop: 2,
   },
   topActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  portraitGear: {
+    position: 'absolute', right: -5, bottom: -4, width: 17, height: 17, borderRadius: 9,
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line,
+    alignItems: 'center', justifyContent: 'center',
+  },
   bellWrap: {
     width: 42,
     height: 42,

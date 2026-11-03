@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Image, ImageSourcePropType, StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Plus, Settings as SettingsIcon } from 'lucide-react-native';
 import { PressScale } from './PressScale';
 import { useStore } from '../store';
 
@@ -101,12 +101,25 @@ export function useUI(): UIColors {
 
 export const SERIF = 'PlayfairDisplay_700Bold';
 
+/**
+ * Open Settings from a header. The router is required when the button is
+ * pressed rather than imported at the top: this file is the app's shared kit,
+ * rendered by component tests that have no navigation, and importing
+ * expo-router here pulled its whole navigation stack into every one of them.
+ */
+function openSettings() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { router } = require('expo-router');
+  router.navigate('/(tabs)/settings');
+}
+
 export function ScreenHeader({
   eyebrow,
   title,
   right,
   titleSize = 30,
   showAdd = true,
+  showSettings = true,
   art,
 }: {
   eyebrow: string;
@@ -118,6 +131,8 @@ export function ScreenHeader({
   /** Off where "add" has no obvious meaning — Settings, Search, Chat. More is
    *  in the tab bar now, so those headers simply carry nothing on the right. */
   showAdd?: boolean;
+  /** Off on Settings itself. Everywhere else the corner says where it is. */
+  showSettings?: boolean;
 }) {
   const ui = useUI();
   const { openQuickAdd, t } = useStore();
@@ -166,6 +181,21 @@ export function ScreenHeader({
             >
               <Plus color={ui.orangeText} size={19} />
               <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('a11y_add')}</Text>
+            </PressScale>
+          ) : null}
+          {/* Roland, 2026-11-03: "I do not know where the settings button
+              is". Behind the portrait on Home alone it was a door nobody
+              could see, so every page names it, the way Add is named. */}
+          {showSettings ? (
+            <PressScale
+              testID="header-settings"
+              onPress={openSettings}
+              style={kit.hubBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('settings')}
+            >
+              <SettingsIcon color={ui.text} size={19} />
+              <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('settings')}</Text>
             </PressScale>
           ) : null}
         </View>
