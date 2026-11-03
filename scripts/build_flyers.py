@@ -892,6 +892,74 @@ def glossy_html(copy):
         **tags, **fields)
 
 
+# --- The one-sided glossy A5 ---------------------------------------------------
+#
+# Just the front, for letterboxes and for folding into a bag: one sheet, one
+# side, no back to print. With no back, what the law asks of a printed ad has
+# to fit on the front: who publishes it (Code de commerce R123-237), who
+# printed it (loi du 29 juillet 1881, art. 3) and Citeo's Info-tri marking
+# (Code de l'environnement L541-9-3). It names no store and no price, so it
+# carries no trademark lines and no price wording; the QR still opens the
+# right store for each phone.
+
+SINGLE_EXTRA = {
+    "fr": {
+        "scan_sub": "Le code ouvre la bonne boutique d’applications, ou l’app web sur ordinateur.",
+        "legal": ('Édité par <mark>[nom de l’entreprise, forme&nbsp;: EI ou société]</mark> · SIREN '
+                  '<mark>[à compléter]</mark> · <mark>[adresse du siège]</mark> · Imprimé par '
+                  '<mark>[nom et adresse de l’imprimeur]</mark> · Écran réel de l’application, avec '
+                  'une famille fictive. Ne pas jeter sur la voie publique.'),
+        "infotri": "Logo Triman + Info-tri papier (fichier Citeo)",
+        "title": "Ahenora — flyer A5 recto",
+    },
+    "en": {
+        "scan_sub": "The code opens the right app store, or the web app on a computer.",
+        "legal": ('Published by <mark>[company name, form: EI or company]</mark> · SIREN '
+                  '<mark>[to fill in]</mark> · <mark>[registered address]</mark> · Printed by '
+                  '<mark>[printer name and address]</mark> · A real screen from the app, with a '
+                  'made-up family. Do not litter.'),
+        "infotri": "Triman + Info-tri paper marking (Citeo artwork)",
+        "title": "Ahenora — one-sided A5 flyer",
+    },
+}
+
+SINGLE_CSS = """
+  /* One side only: everything moves up to make room for the legal strip. */
+  .single .head {{ top: 24mm; }}
+  .single .field {{ top: 84mm; }}
+  .single .phone {{ left: 55.5mm; top: 64mm; width: 43mm; height: 93.1mm; }}
+  .single .t1 {{ top: 89mm; }}
+  .single .t2 {{ top: 123mm; }}
+  .single .t3 {{ top: 87mm; }}
+  .single .t4 {{ top: 121mm; }}
+  .single .scanbox {{ top: 159mm; height: 27mm; }}
+  .single .trial {{ top: 188.5mm; }}
+  .strip {{ left: 12mm; right: 12mm; top: 194mm; display: flex; gap: 3mm; align-items: flex-start; }}
+  .strip .infotri {{ position: static; flex: none; width: 30mm; height: 12.5mm;
+                    border-color: #fff; color: #fff; }}
+  .strip p {{ margin: 0; font-size: 2.05mm; line-height: 1.32; color: #FFE7D6; }}
+  .strip mark {{ background: #FFE14D; color: #22201D; padding: 0 .4mm; }}
+"""
+
+
+def single_html(copy, extra):
+    """The front alone, with the legal strip the back used to carry."""
+    page = GLOSSY_TEMPLATE
+    head, rest = page.split(" <section class=\"page front\">", 1)
+    front = rest.split(" <section class=\"page back\">", 1)[0]
+    head = head.replace("</style>", SINGLE_CSS + "</style>")
+    front = front.replace('<section class="page front">', "")
+    front = ' <section class="page front single">' + front.replace(
+        '  <p class="abs trial">{trial}</p>\n',
+        '  <p class="abs trial">{trial}</p>\n'
+        '  <div class="abs strip"><div class="infotri">{infotri}</div><p>{legal}</p></div>\n')
+    template = head + front.rstrip() + "\n</body>\n</html>\n"
+    fields = {k: v for k, v in copy.items() if k not in ("features", "plans", "tags")}
+    fields.update(extra)
+    tags = {f"tag{i + 1}": t for i, t in enumerate(copy["tags"])}
+    return template.format(qr_get=qr_svg(GET_URL, 22), **tags, **fields)
+
+
 def build():
     os.makedirs(OUT, exist_ok=True)
     written = []
@@ -904,6 +972,11 @@ def build():
         path = os.path.join(OUT, f"glossy-a5-{code}.html")
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(glossy_html(copy))
+        written.append(path)
+    for code, copy in GLOSSY_COPY.items():
+        path = os.path.join(OUT, f"glossy-a5-recto-{code}.html")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(single_html(copy, SINGLE_EXTRA[code]))
         written.append(path)
     for code, copy in COPY.items():
         cards = "".join(
