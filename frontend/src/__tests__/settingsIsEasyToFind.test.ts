@@ -22,6 +22,14 @@ const settings = read('app', '(tabs)', 'settings.tsx');
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
 
 describe('the way to Settings', () => {
+  it('sits right under the painting, and nowhere else on a page that has one', () => {
+    const top = kit.slice(kit.indexOf('<View style={kit.headerArtCol}>'), kit.indexOf('<View style={kit.headerRow}>'));
+    expect(top).toContain('testID="screen-header-art"');
+    expect(top.indexOf('{settingsButton}')).toBeGreaterThan(top.indexOf('testID="screen-header-art"'));
+    expect(kit).toContain('{art ? null : settingsButton}');
+    expect(kit.match(/testID="header-settings"/g)).toHaveLength(1);
+  });
+
   it("is in every page's header, with its name under the gear", () => {
     const button = kit.slice(kit.indexOf('testID="header-settings"'), kit.indexOf('testID="header-settings"') + 500);
     expect(button).toContain('onPress={openSettings}');

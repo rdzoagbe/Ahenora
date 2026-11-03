@@ -136,6 +136,22 @@ export function ScreenHeader({
 }) {
   const ui = useUI();
   const { openQuickAdd, t } = useStore();
+  // Roland, 2026-11-03: "I do not know where the settings button is", then,
+  // seeing it beside Add: "it should sit right under the image at the top but
+  // that's it". So with a painting it sits under the painting and nowhere
+  // else; a page without one keeps it in the corner.
+  const settingsButton = showSettings ? (
+    <PressScale
+      testID="header-settings"
+      onPress={openSettings}
+      style={kit.hubBtn}
+      accessibilityRole="button"
+      accessibilityLabel={t('settings')}
+    >
+      <SettingsIcon color={ui.text} size={19} />
+      <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('settings')}</Text>
+    </PressScale>
+  ) : null;
   return (
     <View>
       {/* With a painting, the brand and the section's name sit beside it and
@@ -147,14 +163,17 @@ export function ScreenHeader({
             <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
             <Text style={[kit.eyebrow, { color: ui.muted }]}>{eyebrow}</Text>
           </View>
-          {/* Decoration only: screen readers skip it. */}
-          <View
-            style={[kit.headerArt, { borderColor: ui.line }]}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-            testID="screen-header-art"
-          >
-            <Image source={art} style={kit.headerArtImg} resizeMode="cover" />
+          <View style={kit.headerArtCol}>
+            {/* Decoration only: screen readers skip it. */}
+            <View
+              style={[kit.headerArt, { borderColor: ui.line }]}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              testID="screen-header-art"
+            >
+              <Image source={art} style={kit.headerArtImg} resizeMode="cover" />
+            </View>
+            {settingsButton}
           </View>
         </View>
       ) : (
@@ -183,21 +202,7 @@ export function ScreenHeader({
               <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('a11y_add')}</Text>
             </PressScale>
           ) : null}
-          {/* Roland, 2026-11-03: "I do not know where the settings button
-              is". Behind the portrait on Home alone it was a door nobody
-              could see, so every page names it, the way Add is named. */}
-          {showSettings ? (
-            <PressScale
-              testID="header-settings"
-              onPress={openSettings}
-              style={kit.hubBtn}
-              accessibilityRole="button"
-              accessibilityLabel={t('settings')}
-            >
-              <SettingsIcon color={ui.text} size={19} />
-              <Text style={[kit.hubLabel, { color: ui.muted }]}>{t('settings')}</Text>
-            </PressScale>
-          ) : null}
+          {art ? null : settingsButton}
         </View>
       </View>
     </View>
@@ -326,6 +331,7 @@ const kit = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   headerTop: { flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginBottom: 2 },
+  headerArtCol: { alignItems: 'center', gap: 2 },
   headerArt: { width: 76, height: 76, borderRadius: 20, overflow: 'hidden', borderWidth: 1 },
   headerArtImg: { width: '100%', height: '100%' },
   hubBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
