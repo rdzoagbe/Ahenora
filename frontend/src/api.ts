@@ -1699,11 +1699,19 @@ export interface MemberJobsToday {
   total: number;
 }
 
+/** One of a child's chore-wheel jobs today, as their own screen reads it. */
+export interface KidJob extends MemberJob {
+  /** Ticked by the child and waiting for a grown-up to approve it. */
+  waiting: boolean;
+}
+
 export interface KidHome {
   name: string;
   stars: number;
   week_earned?: number;
   chores: KidChore[];
+  /** Absent from a server older than the jobs on the kid screen. */
+  jobs?: KidJob[];
   rewards: Reward[];
   owed: Redemption[];
 }
@@ -2758,11 +2766,14 @@ export const api = {
       '/teen/chat', { method: 'POST', body: { text, reply_to: replyTo } }),
   teenChatRead: () => request<{ ok: boolean }>('/teen/chat/read', { method: 'POST' }),
 
-  kidHome: () => request<KidHome>('/kid/home'),
+  kidHome: () => request<KidHome>(`/kid/home?timezone=${encodeURIComponent(deviceTimeZone() || '')}`),
   /** Notes a parent has written to this child, read in kid mode. */
   kidNotes: () => request<{ messages: ChatMessage[] }>('/kid/notes'),
   kidFinishChore: (cardId: string) =>
     request<{ ok: boolean }>(`/kid/chores/${cardId}/done`, { method: 'POST' }),
+  /** A child ticks a chore-wheel job: it waits for a grown-up, paying nothing yet. */
+  kidFinishJob: (choreId: string) =>
+    request<{ ok: boolean; awaiting_approval: boolean }>(`/kid/jobs/${choreId}/done`, { method: 'POST' }),
   kidRequestReward: (rewardId: string) =>
     request<{ ok: boolean; stars: number; redemption: Redemption }>(
       `/kid/rewards/${rewardId}/request`, { method: 'POST' }),
