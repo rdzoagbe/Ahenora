@@ -112,6 +112,48 @@ class ShoppingPrices(unittest.TestCase):
         [row] = self.prices()
         self.assertEqual(row["seen"], 1)
 
+    # ── From a saved receipt, end to end ──
+    # The same path the app takes after a scan: POST /api/expenses with the
+    # lines the parent kept. Whatever the list shows must be findable on that
+    # ticket: the shop and date confirmed, the line's own price, and a price
+    # per kilo or litre only as the line divided by what the ticket says.
+
+    def save_receipt(self, shop, days_ago, lines):
+        payload = server.ExpenseIn(
+            description=shop, merchant=shop, category="Groceries",
+            amount=round(sum(l["line_total"] for l in lines), 2),
+            spent_on=(self.now - timedelta(days=days_ago)).strftime("%Y-%m-%d"),
+            items=[server.ExpenseLineIn(**l) for l in lines])
+        return asyncio.run(server.add_expense(payload, user=dict(ME)))
+
+    def test_a_saved_receipt_shows_what_the_ticket_printed(self):
+        self.save_receipt("Carrefour", 3, [
+            {"name": "Sel fin", "qty": 1, "unit": "piece", "line_total": 0.89},
+            {"name": "Tomates grappe", "qty": 1.234, "unit": "kg", "line_total": 3.69},
+            {"name": "Volvic 6 x 1,5 L", "qty": 9, "unit": "l", "line_total": 2.40},
+        ])
+        rows = {r["name"]: r for r in self.prices()}
+        self.assertEqual(set(rows), {"Sel fin", "Tomates grappe", "Volvic 6 x 1,5 L"})
+        for row in rows.values():
+            self.assertEqual(row["shop"], "Carrefour")
+            self.assertEqual(row["seen"], 1)
+            self.assertEqual(row["last_seen"][:10],
+                             (self.now - timedelta(days=3)).strftime("%Y-%m-%d"))
+        self.assertAlmostEqual(rows["Sel fin"]["price"], 0.89)
+        self.assertAlmostEqual(rows["Sel fin"]["line_total"], 0.89)
+        # 3,69 for 1,234 kg: the ticket prints 2,99 €/kg.
+        self.assertAlmostEqual(rows["Tomates grappe"]["line_total"], 3.69)
+        self.assertAlmostEqual(rows["Tomates grappe"]["price"], 2.99, places=2)
+        self.assertTrue(rows["Tomates grappe"]["per_unit"])
+        self.assertAlmostEqual(rows["Volvic 6 x 1,5 L"]["line_total"], 2.40)
+
+    def test_a_deleted_receipt_takes_its_prices_with_it(self):
+        exp = self.save_receipt("Lidl", 2, [
+            {"name": "Lait", "qty": 1, "unit": "piece", "line_total": 0.99}])
+        self.assertEqual(len(self.prices()), 1)
+        asyncio.run(server.delete_expense(exp["expense_id"], user=dict(ME)))
+        self.assertEqual(self.prices(), [])
+
     def test_newest_first(self):
         self.line("Riz", "Lidl", 1.10, days_ago=40)
         self.line("Lait", "Lidl", 0.99, days_ago=2)

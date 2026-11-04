@@ -17582,7 +17582,12 @@ async def shopping_prices(user=Depends(require_full_member)):
         if row["line"] is None or when >= row["when"]:
             row["when"] = when
             row["line"] = {"name": line.get("name") or name_key, "shop": shop,
-                           "price": round(price, 4), "per_unit": per_unit}
+                           "price": round(price, 4), "per_unit": per_unit,
+                           # What the receipt itself printed for that line, so
+                           # the app can show a figure the family can find on
+                           # the ticket, not only one worked out from it.
+                           "line_total": round(float(total), 2) if total else None,
+                           "qty": line.get("qty")}
 
     sure = {}
     for row in (await price_compare(user=user))["comparable"]:
@@ -17602,6 +17607,8 @@ async def shopping_prices(user=Depends(require_full_member)):
             "unit": unit,
             "price": row["line"]["price"],
             "per_unit": row["line"]["per_unit"],
+            "line_total": row["line"]["line_total"],
+            "qty": row["line"]["qty"],
             "shop": row["line"]["shop"],
             "last_seen": iso(row["when"]),
             "seen": len(row["receipts"]),

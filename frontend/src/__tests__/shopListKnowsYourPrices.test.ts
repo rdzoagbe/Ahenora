@@ -18,6 +18,7 @@ const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOStr
 function p(name: string, extra: Partial<ShopPrice> = {}): ShopPrice {
   return {
     name, name_key: name.toLowerCase(), unit: 'piece', price: 1, per_unit: false,
+    line_total: 1, qty: 1,
     shop: 'Carrefour', last_seen: daysAgo(14), seen: 2, cheapest: null, ...extra,
   };
 }
@@ -38,7 +39,7 @@ const RECEIPTS = [
   p('Sel fin', { price: 0.89 }),
   p('Persil'),
   p('Sel de Guérande', { price: 2.15, shop: 'Marché Frais', last_seen: daysAgo(31) }),
-  p('Tomates', { unit: 'kg', price: 2.99, per_unit: true, shop: 'Lidl', seen: 1, last_seen: daysAgo(42) }),
+  p('Tomates', { unit: 'kg', price: 2.99, per_unit: true, line_total: 3.69, qty: 1.234, shop: 'Lidl', seen: 1, last_seen: daysAgo(42) }),
 ];
 
 describe('suggestions while typing', () => {
@@ -102,8 +103,20 @@ describe('how a price reads', () => {
     expect(priceLabel(0.27, 'l', true, 'en')).toBe('€0.27/L');
   });
 
+  it('grams and millilitres read per kilo and per litre, never 0,00 €/g', () => {
+    expect(priceLabel(0.0035, 'g', true, 'fr')).toBe('3,50 €/kg');
+    expect(priceLabel(0.0012, 'ml', true, 'fr')).toBe('1,20 €/L');
+  });
+
+  it('leads with the price printed on the ticket', () => {
+    const pasta = p('Pâtes 500 g', { unit: 'g', price: 0.0035, per_unit: true, line_total: 1.75, qty: 500 });
+    expect(lastPriceLine(pasta, t, 'fr', NOW)).toBe('1,75 € (3,50 €/kg) · Carrefour · il y a 2 semaines');
+    const water = p('Volvic', { unit: 'l', price: 2.4 / 9, per_unit: true, line_total: 2.4, qty: 9 });
+    expect(lastPriceLine(water, t, 'fr', NOW)).toBe('2,40 € (0,27 €/L) · Carrefour · il y a 2 semaines');
+  });
+
   it('one receipt says so, with its date', () => {
-    expect(lastPriceLine(RECEIPTS[3], t, 'fr', NOW)).toBe('2,99 €/kg · Lidl · vu une fois, il y a 6 semaines');
+    expect(lastPriceLine(RECEIPTS[3], t, 'fr', NOW)).toBe('3,69 € (2,99 €/kg) · Lidl · vu une fois, il y a 6 semaines');
     expect(lastPriceLine(RECEIPTS[0], t, 'fr', NOW)).toBe('0,89 € · Carrefour · il y a 2 semaines');
   });
 

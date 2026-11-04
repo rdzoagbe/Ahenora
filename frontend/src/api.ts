@@ -1492,6 +1492,9 @@ export interface ShopPrice {
   /** Per `unit` when `per_unit`, otherwise what one line cost. */
   price: number;
   per_unit: boolean;
+  /** What the receipt printed for that line, and the amount it was for. */
+  line_total: number | null;
+  qty: number | null;
   shop: string;
   last_seen: string;
   /** How many receipts inside the window: 1 is shown as "seen once". */

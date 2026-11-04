@@ -137,12 +137,30 @@ export function money(amount: number, lang: string): string {
   return lang === 'en' ? `€${fixed}` : `${fixed.replace('.', ',')} €`;
 }
 
-const UNIT_LABEL: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' };
+// Grams and millilitres are shown per kilo and per litre: a "500 g" line is
+// 0,0035 €/g, which rounds to a meaningless "0,00 €/g".
+const PER_UNIT: Record<string, { label: string; factor: number }> = {
+  kg: { label: 'kg', factor: 1 },
+  g: { label: 'kg', factor: 1000 },
+  l: { label: 'L', factor: 1 },
+  ml: { label: 'L', factor: 1000 },
+};
 
 /** "2,99 €/kg" for a weighed price, "0,89 €" for a piece or a whole line. */
 export function priceLabel(amount: number, unit: string, perUnit: boolean, lang: string): string {
-  const base = money(amount, lang);
-  return perUnit && UNIT_LABEL[unit] ? `${base}/${UNIT_LABEL[unit]}` : base;
+  const per = perUnit ? PER_UNIT[unit] : undefined;
+  return per ? `${money(amount * per.factor, lang)}/${per.label}` : money(amount, lang);
+}
+
+/**
+ * The price as the ticket shows it. A packet or a weighed line leads with what
+ * that line cost, the figure printed on the receipt, and gives the price per
+ * kilo or litre beside it: "2,40 € (0,27 €/L)", "3,69 € (2,99 €/kg)".
+ */
+export function receiptPrice(item: ShopPrice, lang: string): string {
+  const per = priceLabel(item.price, item.unit, item.per_unit, lang);
+  if (item.per_unit && item.line_total) return `${money(item.line_total, lang)} (${per})`;
+  return per;
 }
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
@@ -170,7 +188,7 @@ export function whenLabel(iso: string, t: T, now: Date = new Date()): string {
 export function lastPriceLine(item: ShopPrice, t: T, lang: string, now?: Date): string {
   const when = whenLabel(item.last_seen, t, now);
   const date = item.seen === 1 ? t('shop_price_seen_once', { when }) : when;
-  return [priceLabel(item.price, item.unit, item.per_unit, lang), item.shop, date]
+  return [receiptPrice(item, lang), item.shop, date]
     .filter(Boolean)
     .join(' · ');
 }
