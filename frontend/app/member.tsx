@@ -1189,7 +1189,7 @@ export default function MemberProfile() {
               <Text style={styles.rowSub} numberOfLines={2}>{t('hub_picture_sub')}</Text>
             </View>
           </View>
-          <AvatarPicker name={displayName} value={avatar} onPick={saveAvatar} busy={savingAvatar} />
+          <AvatarPicker name={displayName} value={avatar} onPick={saveAvatar} busy={savingAvatar} forChild={showsStars} />
         </View>
 
         {renaming ? (
