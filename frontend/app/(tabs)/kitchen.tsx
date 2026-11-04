@@ -23,7 +23,8 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
-  FamilyAllergy, FrequentItem, PriceCompare } from '../../src/api';
+  FamilyAllergy, FrequentItem, ShopPrices } from '../../src/api';
+import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped } from '../../src/shopPrices';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { refreshOutcome } from '../../src/refreshOutcome';
@@ -431,27 +432,14 @@ export default function Kitchen() {
   // not appending to it — offered right where the decision is made.
   const [scanReplace, setScanReplace] = useState(false);
 
-  // What the household's own receipts say each thing costs, per shop. Loaded
-  // once with the list because the moment it is worth knowing is BEFORE the
-  // trip — a saving reported afterwards is a post-mortem.
-  const [prices, setPrices] = useState<PriceCompare | null>(null);
+  // What the household's own receipts say things cost: the last price, the
+  // shop and the date, plus a "cheapest" only where the server's comparison is
+  // sure. Loaded once with the list because the moment it is worth knowing is
+  // BEFORE the trip. Helpers and children get a 403 and simply see no prices.
+  const [shopPrices, setShopPrices] = useState<ShopPrices | null>(null);
   useEffect(() => {
-    api.getPriceCompare().then(setPrices).catch(() => setPrices(null));
+    api.getShopPrices().then(setShopPrices).catch(() => setShopPrices(null));
   }, [dataVersion]);
-
-  // Item name -> the cheaper shop, when the receipts can honestly say. The
-  // server has already refused anything thin: one visit, mismatched units,
-  // stale prices. So anything here is safe to show.
-  const cheaperBy = useMemo(() => {
-    const out = new Map<string, { shop: string; saving: number; unit: string }>();
-    (prices?.comparable ?? []).forEach((row) => {
-      if (!row.saving) return;
-      out.set(row.name_key, {
-        shop: row.cheapest, saving: row.saving.per_unit, unit: row.unit,
-      });
-    });
-    return out;
-  }, [prices]);
 
   const addScannedItems = useCallback(async () => {
     const picked = scanItems.filter((i) => i.checked).map((i) => i.name);
@@ -551,10 +539,19 @@ export default function Kitchen() {
     }
   }, [captured, captureAdding, captureDay, suggestLang, showToast, t]);
 
-  const addShopItem = useCallback(async () => {
-    // "milk, eggs, bread" (or one per line) adds them all in one tap.
-    const names = shopInput.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
-    if (names.length === 0) return;
+  // One add at a time. The + button and the suggestions are disabled while
+  // one is in flight, but the keyboard's done key is not, and a second submit
+  // before the box clears would add the same things twice.
+  const addingShopRef = useRef(false);
+  // `picked` comes from a receipt suggestion, already split. Otherwise (or
+  // when the keyboard's done key passes its event) it is whatever was typed.
+  const addShopItem = useCallback(async (picked?: unknown) => {
+    // "milk, eggs, bread" (or one per line) adds them all in one tap; a
+    // decimal comma ("Volvic 6 x 1,5 L") stays inside its item.
+    const names = (Array.isArray(picked) ? picked as string[] : splitTyped(shopInput))
+      .map((s) => s.trim()).filter(Boolean);
+    if (names.length === 0 || addingShopRef.current) return;
+    addingShopRef.current = true;
     setAddingShop(true);
     try {
       if (names.length === 1) {
@@ -572,9 +569,26 @@ export default function Kitchen() {
     } catch {
       showToast(t('vault_could_not_add_item'), 'error');
     } finally {
+      addingShopRef.current = false;
       setAddingShop(false);
     }
   }, [shopInput, showToast, t]);
+
+  // Receipt products for what is being typed, minus what is already on the
+  // list. Empty when nothing matches, and then nothing extra is shown.
+  const receiptSuggestions = useMemo(() => {
+    if (!shopPrices) return [];
+    const onList = shopItems.filter((i) => !i.checked).map((i) => splitQuantity(i.name).label);
+    return suggestFromReceipts(shopInput, shopPrices.items, onList);
+  }, [shopInput, shopPrices, shopItems]);
+
+  // A suggestion replaces the word being typed, keeping anything typed before
+  // a comma, and adds the lot.
+  const addSuggestion = useCallback((name: string) => {
+    const parts = splitTyped(shopInput);
+    parts[parts.length - 1] = name;
+    addShopItem(parts);
+  }, [shopInput, addShopItem]);
 
   // Add a regular back to the list in one tap. Drop it from the row straight
   // away so it feels instant, and it stays gone because it is now on the list.
@@ -1508,7 +1522,68 @@ export default function Kitchen() {
               </View>
               {/* The legend: without it a camera next to a shopping list could
                   mean anything. One line says exactly what it does. */}
-              {addedNote ? (
+              {!selectMode && receiptSuggestions.length > 0 ? (
+                <View testID="shop-suggest-panel" style={styles.tixPanel}>
+                  <Text style={styles.tixHead}>{t('shop_suggest_title')}</Text>
+                  {receiptSuggestions.map((s, i) => {
+                    const sure = s.cheapest;
+                    return (
+                      <PressScale
+                        key={s.name_key + s.unit}
+                        testID={`shop-suggest-${i}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('shop_suggest_add', { name: s.name })}
+                        onPress={() => addSuggestion(s.name)}
+                        disabled={addingShop}
+                        style={[styles.tixRow, i > 0 && styles.tixRowLine, i === 0 && styles.tixRowFirst]}
+                      >
+                        <View style={styles.tixTop}>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.tixName} numberOfLines={1}>{s.name}</Text>
+                            <Text style={styles.tixSub} numberOfLines={2}>{lastPriceLine(s, t, lang)}</Text>
+                          </View>
+                          <Plus color={ui.orange} size={20} />
+                        </View>
+                        {/* Only when the server's comparison is sure: same
+                            unit, several receipts at each shop, last months. */}
+                        {i === 0 && sure ? (
+                          <View testID="shop-suggest-compare" style={styles.compareBox}>
+                            {sure.shops.slice(0, 3).map((row, k) => (
+                              <View key={row.shop} style={styles.compareRow}>
+                                {k === 0 ? (
+                                  <Text style={styles.comparePill}>{t('shop_price_cheapest_pill')}</Text>
+                                ) : null}
+                                <Text style={[styles.compareShop, k === 0 && styles.compareShopBest]} numberOfLines={1}>{row.shop}</Text>
+                                <Text style={[styles.comparePrice, k === 0 && styles.comparePriceBest]}>
+                                  {priceLabel(row.unit_price, s.unit, s.unit !== 'piece', lang)}
+                                </Text>
+                              </View>
+                            ))}
+                            <Text style={styles.compareNote}>
+                              {t('shop_price_compare_note', {
+                                amount: priceLabel(sure.saving, s.unit, s.unit !== 'piece', lang),
+                                n: Math.min(...sure.shops.map((r) => r.visits)),
+                                months: Math.max(1, Math.round((shopPrices?.window_days ?? 90) / 30)),
+                              })}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </PressScale>
+                    );
+                  })}
+                  <PressScale
+                    testID="shop-add-typed"
+                    accessibilityRole="button"
+                    onPress={() => addShopItem()}
+                    disabled={addingShop}
+                    style={[styles.tixRow, styles.tixRowLine]}
+                  >
+                    <Text style={styles.tixTyped} numberOfLines={1}>
+                      {t('shop_add_as_typed', { text: shopInput.trim() })}
+                    </Text>
+                  </PressScale>
+                </View>
+              ) : addedNote ? (
                 <View testID="shop-added-note" style={styles.addedNote} accessibilityLiveRegion="polite">
                   <Check color={ui.mintText} size={15} />
                   <Text style={styles.addedNoteText}>{addedNote}</Text>
@@ -1589,18 +1664,27 @@ export default function Kitchen() {
                         <Text style={styles.rowText}>{label}</Text>
                         {/* What the family's own receipts say. Shown here, on the
                             list, because the decision this can change is made
-                            before leaving the house — the Spending tab reports
-                            the same thing after the money is gone. */}
+                            before leaving the house. A receipt with a longer
+                            name ("Sel fin" for "Sel") says whose price it is. */}
                         {(() => {
-                          const tip = cheaperBy.get(item.name.trim().toLowerCase());
-                          if (!tip) return null;
+                          if (!shopPrices || shopPrices.items.length === 0) return null;
+                          const hit = priceForItem(label, shopPrices.items);
+                          if (!hit) {
+                            return <Text testID={`shop-price-${item.item_id}`} style={styles.rowNoPrice}>{t('shop_price_none')}</Text>;
+                          }
+                          const p = hit.price;
+                          const named = hit.exact ? '' : t('shop_price_named', { name: p.name });
+                          if (p.cheapest) {
+                            const best = p.cheapest.shops[0];
+                            return (
+                              <Text testID={`shop-price-${item.item_id}`} style={styles.rowPrice} numberOfLines={2}>
+                                {named}{priceLabel(best.unit_price, p.unit, p.unit !== 'piece', lang)} · {p.cheapest.shop} · <Text style={styles.rowCheapest}>{t('shop_price_cheapest')}</Text>
+                              </Text>
+                            );
+                          }
                           return (
-                            <Text style={styles.rowCheaper} numberOfLines={1}>
-                              {t('kit_cheaper_at', {
-                                shop: tip.shop,
-                                amount: `${t('currency_symbol')}${tip.saving.toFixed(2)}`,
-                                unit: tip.unit,
-                              })}
+                            <Text testID={`shop-price-${item.item_id}`} style={styles.rowPrice} numberOfLines={2}>
+                              {named}{lastPriceLine(p, t, lang)}
                             </Text>
                           );
                         })()}
@@ -3145,8 +3229,41 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   hint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
   rowText: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
-  rowCheaper: {
-    color: ui.mintText, fontFamily: 'Figtree_500Medium', fontSize: 11.5, marginTop: 1,
+  rowPrice: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 2 },
+  rowCheapest: { color: ui.mintText, fontFamily: 'Figtree_700Bold' },
+  rowNoPrice: { color: ui.muted, opacity: 0.75, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 2 },
+  // "From your receipts", under the add box while typing.
+  tixPanel: {
+    marginTop: 10, marginBottom: 10, borderWidth: 1, borderColor: ui.line, borderRadius: 16,
+    backgroundColor: ui.soft, overflow: 'hidden',
+  },
+  tixHead: {
+    color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 11, letterSpacing: 1,
+    textTransform: 'uppercase', paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4,
+  },
+  tixRow: { paddingHorizontal: 14, paddingVertical: 11, gap: 10 },
+  tixRowFirst: { backgroundColor: ui.orangeSoft },
+  tixRowLine: { borderTopWidth: 1, borderTopColor: ui.line },
+  tixTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tixName: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15 },
+  tixSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 2 },
+  tixTyped: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
+  compareBox: {
+    backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10, gap: 6,
+  },
+  compareRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  comparePill: {
+    color: ui.doneTick, backgroundColor: ui.doneFill, fontFamily: 'Figtree_700Bold', fontSize: 11.5,
+    borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, overflow: 'hidden',
+  },
+  compareShop: { flex: 1, color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5 },
+  compareShopBest: { color: ui.text, fontFamily: 'Figtree_700Bold' },
+  comparePrice: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5 },
+  comparePriceBest: { color: ui.mintText, fontFamily: 'Figtree_700Bold' },
+  compareNote: {
+    color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, borderTopWidth: 1,
+    borderTopColor: ui.line, paddingTop: 6,
   },
   rowTextDone: { textDecorationLine: 'line-through', color: ui.muted },
   rowCat: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12 },

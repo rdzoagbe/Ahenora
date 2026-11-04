@@ -17522,6 +17522,96 @@ async def price_compare(user=Depends(require_full_member)):
     }
 
 
+# How many products the shopping list is told about. Newest first, so a family
+# with years of receipts still gets the things they buy now, and the list page
+# never downloads a history it cannot show.
+SHOPPING_PRICES_LIMIT = 400
+
+
+@app.get("/api/shopping/prices")
+async def shopping_prices(user=Depends(require_full_member)):
+    """The last price paid for each thing, for the shopping list.
+
+    The list is where the decision is made: what to buy and where, before
+    leaving the house. So it gets, for every product on the household's own
+    receipts, the last price, the shop and the date, and nothing it cannot
+    stand behind:
+
+      * only this family's receipt lines, and only inside PRICE_WINDOW_DAYS.
+        An older price is not a fact about this week.
+      * the date always comes back, so the app never shows a price without
+        saying how old it is.
+      * "seen" says how many receipts that is. One receipt is shown as one
+        receipt, never as a habit.
+      * a "cheapest" only when price_compare would say so too: the same unit,
+        at least PRICE_MIN_OBSERVATIONS visits at each shop, the median. This
+        endpoint re-uses it rather than inventing a looser rule.
+
+    Full members only, like every other money screen: helpers and children do
+    not see what the family spends.
+    """
+    database = get_db()
+    cutoff = utcnow() - timedelta(days=PRICE_WINDOW_DAYS)
+
+    latest: dict = {}
+    async for line in database["expense_items"].find(
+            {"family_id": user["family_id"]}, {"_id": 0}):
+        name_key = (line.get("name_key") or "").strip()
+        shop = (line.get("shop") or "").strip()
+        when = _coerce_dt(line.get("spent_on"))
+        if not name_key or not shop or not when or when < cutoff:
+            continue
+        unit = line.get("unit") or "piece"
+        unit_price = line.get("unit_price")
+        total = line.get("line_total")
+        if unit_price:
+            price, per_unit = float(unit_price), unit != "piece"
+        elif total:
+            # No quantity on the line: what it cost is all that is known. It
+            # is shown as a plain price, never as a price per kilo.
+            price, per_unit = float(total), False
+        else:
+            continue
+        key = (name_key, unit)
+        row = latest.get(key)
+        if row is None:
+            latest[key] = row = {"receipts": set(), "when": when, "line": None}
+        # Receipts, not lines: one ticket with the same thing on two lines is
+        # still one ticket, and must still read as "seen once".
+        row["receipts"].add(line.get("expense_id") or line.get("line_id"))
+        if row["line"] is None or when >= row["when"]:
+            row["when"] = when
+            row["line"] = {"name": line.get("name") or name_key, "shop": shop,
+                           "price": round(price, 4), "per_unit": per_unit}
+
+    sure = {}
+    for row in (await price_compare(user=user))["comparable"]:
+        sure[(row["name_key"], row["unit"])] = {
+            "shop": row["cheapest"],
+            "saving": row["saving"]["per_unit"],
+            "against": row["saving"]["against"],
+            "shops": [{"shop": s["shop"], "unit_price": s["unit_price"],
+                       "visits": s["visits"]} for s in row["shops"]],
+        }
+
+    items = []
+    for (name_key, unit), row in latest.items():
+        items.append({
+            "name": row["line"]["name"],
+            "name_key": name_key,
+            "unit": unit,
+            "price": row["line"]["price"],
+            "per_unit": row["line"]["per_unit"],
+            "shop": row["line"]["shop"],
+            "last_seen": iso(row["when"]),
+            "seen": len(row["receipts"]),
+            "cheapest": sure.get((name_key, unit)),
+        })
+    items.sort(key=lambda r: r["last_seen"], reverse=True)
+    return {"window_days": PRICE_WINDOW_DAYS,
+            "items": items[:SHOPPING_PRICES_LIMIT]}
+
+
 @app.post("/api/expenses/scan-receipt")
 async def scan_receipt(
     payload: dict = Body(...),
