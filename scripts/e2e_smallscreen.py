@@ -104,31 +104,23 @@ async def main():
         r["member_page_fits"] = await fits("member page")
         r["member_page_has_manage"] = await page.locator('[data-testid="member-rename"]').count() >= 1
 
-        # The picture holder: five choices, and the one you tap has to survive
-        # the round trip. A picker that looks chosen but saves nothing is the
-        # failure mode worth a harness — it is invisible until you come back.
-        # The set was man/woman/boy/girl until 2026-09-09, all four wearing the
-        # same fixed brown hair — so a household could pick a deep skin tone and
-        # get their own face back under somebody else's hair. The axis is hair
-        # now, and these are the styles that make the tones mean anything.
+        # The picture holder: the one you tap has to survive the round trip.
+        # A picker that looks chosen but saves nothing is the failure mode
+        # worth a harness — it is invisible until you come back.
+        # Since 2026-11-04 the choices are the 3D faces Roland made in Gemini
+        # (src/faces.ts), grouped, plus the initial; the drawn heads (and their
+        # tone and hair swatches) are no longer offered.
         offered = True
-        for k in ("coils", "locs", "curls", "waves", "short", "long", "bun", "hijab", "none"):
+        for k in ("face-woman-hijab", "face-man-locs", "face-girl-puffs", "face-boy-cap",
+                  "face-teen-girl", "face-grandma-headscarf", "none"):
             if await page.locator(f'[data-testid="avatar-{k}"]').count() != 1:
                 offered = False
-        r["member_page_offers_pictures"] = offered
-        textured = True
-        for k in ("coils", "locs", "curls"):
-            if await page.locator(f'[data-testid="avatar-{k}"]').count() != 1:
-                textured = False
-        r["textured_hair_is_offered"] = textured
-
-        # The skin tones only appear once a drawing is chosen — a tone over a
-        # letter would be a control with nothing to change.
-        r["no_tones_before_a_drawing_is_chosen"] = await page.locator(
-            '[data-testid="avatar-tone-0"]').count() == 0
-        r["no_hair_colours_before_that_either"] = await page.locator(
-            '[data-testid="avatar-hair-0"]').count() == 0
-        await page.click('[data-testid="avatar-coils"]')
+        r["member_page_offers_faces"] = offered
+        r["all_24_faces_are_offered"] = await page.locator('[data-testid^="avatar-face-"]').count() == 24
+        r["no_drawings_or_swatches_any_more"] = (
+            await page.locator('[data-testid="avatar-coils"]').count() == 0
+            and await page.locator('[data-testid^="avatar-tone-"]').count() == 0)
+        await page.click('[data-testid="avatar-face-girl-puffs"]')
         await page.wait_for_timeout(1400)
 
         def saved_avatar():
@@ -136,32 +128,17 @@ async def main():
                         if m["member_id"] == mid), None)
             return (row or {}).get("avatar")
 
-        r["picking_a_drawing_saves_it"] = saved_avatar() == "illus:coils:1:2"
-        tones = await page.locator('[data-testid^="avatar-tone-"]').count()
-        r["five_skin_tones_are_offered"] = tones == 5
-        hairs = await page.locator('[data-testid^="avatar-hair-"]').count()
-        r["six_hair_colours_are_offered"] = hairs == 6
-
-        # Changing the tone must keep the person you already chose. Rebuilding
-        # the value from scratch here is how you lose the drawing on a recolour.
-        await page.click('[data-testid="avatar-tone-4"]')
-        await page.wait_for_timeout(1400)
-        r["changing_tone_keeps_the_person"] = saved_avatar() == "illus:coils:4:2"
-
-        # And a hair colour must keep BOTH the person and the tone. Rebuilding
-        # the value from one axis is how the other two get lost.
-        await page.click('[data-testid="avatar-hair-0"]')
-        await page.wait_for_timeout(1400)
-        r["changing_hair_keeps_person_and_tone"] = saved_avatar() == "illus:coils:4:0"
+        r["picking_a_face_saves_it"] = saved_avatar() == "face:girl-puffs"
 
         await page.reload(wait_until="domcontentloaded")
         await page.wait_for_timeout(2200)
         r["and_it_is_still_chosen_on_return"] = await page.get_attribute(
-            '[data-testid="avatar-coils"]', "aria-checked") == "true"
-        r["the_tone_survives_too"] = await page.get_attribute(
-            '[data-testid="avatar-tone-4"]', "aria-checked") == "true"
-        r["the_hair_colour_survives_too"] = await page.get_attribute(
-            '[data-testid="avatar-hair-0"]', "aria-checked") == "true"
+            '[data-testid="avatar-face-girl-puffs"]', "aria-checked") == "true"
+
+        # Back to the initial: a person can always take the picture off.
+        await page.click('[data-testid="avatar-none"]')
+        await page.wait_for_timeout(1400)
+        r["the_initial_takes_it_off"] = saved_avatar() in (None, "")
         r["member_page_still_fits_with_a_picture"] = await fits("member page + picture")
 
         await page.screenshot(path="smallscreen_member.png", full_page=True)

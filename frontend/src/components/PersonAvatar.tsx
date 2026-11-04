@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import { useStore } from '../store';
-import { AVATAR_ART, SKIN_TOKEN, HAIR_TOKEN } from '../avatarArt';
+import { FACES, faceFor, faceGroupOrder, faceValue, type FaceGroup } from '../faces';
 import {
   AVATAR_KINDS, LEGACY_KINDS, SKIN_TONES, HAIR_COLOURS, DEFAULT_TONE, DEFAULT_HAIR,
   ILLUS_PREFIX, avatarValue, parseAvatar, avatarKind, hasHairColour, illustrationXml,
@@ -60,14 +60,24 @@ export function PersonAvatar({
 }) {
   const { theme } = useStore();
   const ui = theme.colors;
-  const illus = parseAvatar(avatar);
-  const isPhoto = !!avatar && !illus && /^https?:\/\//.test(avatar);
+  const face = faceFor(avatar);
+  const illus = face ? null : parseAvatar(avatar);
+  const isPhoto = !!avatar && !face && !illus && /^https?:\/\//.test(avatar);
   const box = [
     styles.box,
     { width: size, height: size, borderRadius: size / 2, backgroundColor: ui.accentSoft },
     ring ? { borderWidth: 1.5, borderColor: ui.cardBorder } : null,
   ];
 
+  if (face) {
+    return (
+      // One of the 3D faces (src/faces.ts). Each file is a face on its own
+      // cream disc, so it is drawn edge to edge and the round box clips it.
+      <View style={[box, { backgroundColor: ILLUSTRATION_GROUND }]}>
+        <Image source={face.src} style={{ width: size, height: size }} accessibilityIgnoresInvertColors />
+      </View>
+    );
+  }
   if (illus) {
     return (
       // The light ground goes HERE and not on the shared `box`, because a
@@ -98,128 +108,80 @@ export function PersonAvatar({
 }
 
 /**
- * Two axes, not twenty tiles.
+ * The faces, grouped.
  *
- * Who you are and what you look like are separate questions, so the picker
- * asks them separately: four people on one row, five tones on the next. A
- * twenty-tile grid would be the same information laid out as a puzzle.
+ * Roland, 2026-11-03/04: the drawn heads did not look good beside the app's
+ * paintings; the 3D faces he made in Gemini did (src/faces.ts). Everyone picks
+ * one, or keeps their initial. A child's page shows the children's faces
+ * first, everyone else's the grown-ups'. A drawing chosen before this still
+ * shows on its owner until they pick a face; it is simply no longer offered.
  */
 export function AvatarPicker({
   name,
   value,
   onPick,
   busy = false,
+  forChild = false,
 }: {
   name?: string | null;
   value?: string | null;
   onPick: (next: string | null) => void;
   busy?: boolean;
+  /** A child's page: their faces come first. */
+  forChild?: boolean;
 }) {
   const { theme, t } = useStore();
   const ui = theme.colors;
-  const current = parseAvatar(value);
-  const tone = current?.tone ?? DEFAULT_TONE;
-  const hair = current?.hair ?? DEFAULT_HAIR;
+  const current = faceFor(value)?.id ?? null;
+  const hasNothing = !value;
 
-  const person = (kind: AvatarKind | null) => {
-    const selected = kind === (current?.kind ?? null);
+  const option = (id: string | null, label: string) => {
+    const selected = id ? id === current : hasNothing;
     return (
       <TouchableOpacity
-        key={kind || 'none'}
-        // radio, not button: these are one-of-N choices, and a screen reader
-        // should say "selected" for the one in force. It is also the only role
-        // that carries the state — aria-selected is not valid on a button, so
-        // React Native Web drops it and the choice becomes invisible to
-        // assistive tech (and to a harness reading the same attribute).
-        testID={`avatar-${kind || 'none'}`}
+        key={id || 'none'}
+        // radio, not button: one of N, and the role that carries the state.
+        // Both spellings of checked on purpose: react-native-web does not map
+        // accessibilityState.checked to aria-checked.
+        testID={`avatar-${id ? `face-${id}` : 'none'}`}
         accessibilityRole="radio"
-        // Both spellings on purpose. accessibilityState is what native reads;
-        // react-native-web 0.21 does NOT map its `checked` to aria-checked, so
-        // on the web the state simply never reached the DOM and the choice was
-        // invisible to a screen reader. The direct aria- prop is what does.
         accessibilityState={{ checked: selected }}
         aria-checked={selected}
-        accessibilityLabel={t(kind ? `avatar_${kind}` : 'avatar_none')}
+        accessibilityLabel={label}
         disabled={busy}
         activeOpacity={0.8}
-        onPress={() => onPick(kind ? avatarValue(kind, tone, hair) : null)}
+        onPress={() => onPick(id ? faceValue(id) : null)}
         style={[
           pickerStyles.option,
           { borderColor: selected ? ui.accent : ui.cardBorder, opacity: busy ? 0.6 : 1 },
           selected ? pickerStyles.optionOn : null,
         ]}
       >
-        {/* The picker draws its own ring, so the avatars inside go without —
-            two concentric rings on a 46pt target reads as a target, not a face. */}
-        <PersonAvatar
-          name={name}
-          avatar={kind ? avatarValue(kind, tone, hair) : null}
-          size={52}
-          ring={false}
-        />
+        {/* The picker draws its own ring, so the face inside goes without. */}
+        <PersonAvatar name={name} avatar={id ? faceValue(id) : null} size={60} ring={false} />
       </TouchableOpacity>
     );
   };
 
+  const groupLabel = (g: FaceGroup) => t(`avatar_group_${g}`);
+
   return (
     <View style={pickerStyles.wrap}>
-      <View style={pickerStyles.row} accessibilityRole="radiogroup" accessibilityLabel={t('hub_picture')}>
-        {AVATAR_KINDS.map((k) => person(k))}
-        {person(null)}
+      {faceGroupOrder(forChild).map((g) => {
+        const faces = FACES.filter((f) => f.group === g);
+        return (
+          <View key={g} style={pickerStyles.group}>
+            <Text style={[pickerStyles.label, { color: ui.textMuted }]}>{groupLabel(g)}</Text>
+            <View style={pickerStyles.row} accessibilityRole="radiogroup" accessibilityLabel={groupLabel(g)}>
+              {faces.map((f, i) => option(f.id, t('avatar_face_n', { group: groupLabel(g), n: i + 1 })))}
+            </View>
+          </View>
+        );
+      })}
+      <View style={pickerStyles.group}>
+        <Text style={[pickerStyles.label, { color: ui.textMuted }]}>{t('avatar_none')}</Text>
+        <View style={pickerStyles.row}>{option(null, t('avatar_none'))}</View>
       </View>
-
-      {/* The tones only mean something once a drawing is chosen — offering
-          them over a letter would be a control with nothing to change. */}
-      {current ? (
-        <View style={pickerStyles.row} accessibilityRole="radiogroup" accessibilityLabel={t('avatar_skin')}>
-          <Text style={[pickerStyles.label, { color: ui.textMuted }]}>{t('avatar_skin')}</Text>
-          {SKIN_TONES.map((hex, i) => (
-            <TouchableOpacity
-              key={hex}
-              testID={`avatar-tone-${i}`}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: i === tone }}
-              aria-checked={i === tone}
-              accessibilityLabel={t('avatar_skin_n', { n: i + 1 })}
-              disabled={busy}
-              activeOpacity={0.8}
-              onPress={() => onPick(avatarValue(current.kind, i, hair))}
-              style={[
-                pickerStyles.swatch,
-                { backgroundColor: `#${hex}`, borderColor: i === tone ? ui.accent : ui.cardBorder },
-                i === tone ? pickerStyles.optionOn : null,
-              ]}
-            />
-          ))}
-        </View>
-      ) : null}
-
-      {/* Hair colour, which is the half of this that was missing. Skin alone
-          gave a household their own tone under somebody else's hair. Hidden
-          for a drawing that has no hair to colour. */}
-      {current && hasHairColour(current.kind) ? (
-        <View style={pickerStyles.row} accessibilityRole="radiogroup" accessibilityLabel={t('avatar_hair')}>
-          <Text style={[pickerStyles.label, { color: ui.textMuted }]}>{t('avatar_hair')}</Text>
-          {HAIR_COLOURS.map((hex, i) => (
-            <TouchableOpacity
-              key={hex}
-              testID={`avatar-hair-${i}`}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: i === hair }}
-              aria-checked={i === hair}
-              accessibilityLabel={t('avatar_hair_n', { n: i + 1 })}
-              disabled={busy}
-              activeOpacity={0.8}
-              onPress={() => onPick(avatarValue(current.kind, tone, i))}
-              style={[
-                pickerStyles.swatch,
-                { backgroundColor: `#${hex}`, borderColor: i === hair ? ui.accent : ui.cardBorder },
-                i === hair ? pickerStyles.optionOn : null,
-              ]}
-            />
-          ))}
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -230,12 +192,11 @@ const styles = StyleSheet.create({
 });
 
 const pickerStyles = StyleSheet.create({
-  wrap: { gap: 12 },
+  wrap: { gap: 14 },
+  group: { gap: 8 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
-  // 58, not 46. Eight hair styles cannot be told apart in a 46pt circle —
-  // Roland's screenshot of the picker was eight identical dark discs.
-  option: { width: 58, height: 58, borderRadius: 29, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  optionOn: { borderWidth: 2.5 },
-  swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5 },
-  label: { fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, marginRight: 2 },
+  // 64: a face has to be recognisable at a glance, not squinted at.
+  option: { width: 64, height: 64, borderRadius: 32, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  optionOn: { borderWidth: 3 },
+  label: { fontFamily: 'Figtree_700Bold', fontSize: 13 },
 });
