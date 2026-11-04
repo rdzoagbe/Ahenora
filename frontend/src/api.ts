@@ -1484,31 +1484,33 @@ export interface ScannedReceipt {
   items: ScannedReceiptItem[];
 }
 
-/** What one shop charges this household for one thing, per unit. */
-export interface PriceShop {
-  shop: string;
-  unit_price: number;
-  /** Separate visits behind the figure. Below the server's minimum it is not reported at all. */
-  visits: number;
-  last_seen: string | null;
-}
-
-export interface PriceItem {
+/** The last price this household paid for one thing, for the shopping list. */
+export interface ShopPrice {
   name: string;
   name_key: string;
   unit: string;
-  shops: PriceShop[];
-  cheapest: string;
-  /** null when only one shop qualifies — known, but nothing to compare against. */
-  saving: { per_unit: number; against: string; percent: number } | null;
+  /** Per `unit` when `per_unit`, otherwise what one line cost. */
+  price: number;
+  per_unit: boolean;
+  /** What the receipt printed for that line, and the amount it was for. */
+  line_total: number | null;
+  qty: number | null;
+  shop: string;
+  last_seen: string;
+  /** How many receipts inside the window: 1 is shown as "seen once". */
+  seen: number;
+  /** Only when the price comparison itself is sure; null otherwise. */
+  cheapest: {
+    shop: string;
+    saving: number;
+    against: string;
+    shops: { shop: string; unit_price: number; visits: number }[];
+  } | null;
 }
 
-export interface PriceCompare {
+export interface ShopPrices {
   window_days: number;
-  min_observations: number;
-  items: PriceItem[];
-  /** Only the rows that can actually advise. */
-  comparable: PriceItem[];
+  items: ShopPrice[];
 }
 
 export interface Subscriber {
@@ -3114,7 +3116,7 @@ export const api = {
       body: { image_base64: imageBase64 },
       timeoutMs: VISION_TIMEOUT_MS,
     }),
-  getPriceCompare: () => request<PriceCompare>('/expenses/price-compare'),
+  getShopPrices: () => request<ShopPrices>('/shopping/prices'),
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
   getExpenseSummary: (days = 30) => request<ExpenseSummary>(`/expenses/summary?days=${days}`),
   getExpenseOverview: (months = 6, category?: string) =>
