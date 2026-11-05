@@ -54,8 +54,12 @@ function todayISO(): string {
 /** What a saved receipt ticked on the shopping list. */
 type TickedNote = { shop: string; items: { id: string; name: string }[] };
 // Kept for the app's session, outside the view, which unmounts when the
-// Dépenses tab is left. Cleared by the next scan or by Annuler.
-let lastTicked: TickedNote | null = null;
+// Dépenses tab is left. Cleared by the next scan or by Annuler, and tied to
+// the account that made it: another account signed in on the same phone
+// never sees it.
+let lastTicked: { owner: string; note: TickedNote } | null = null;
+// More names than this and the note says "…" instead of a paragraph.
+const TICKED_NAMES_SHOWN = 5;
 
 // Short unit labels for a receipt line: "1,234 kg", "500 g", "1 L".
 const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' };
@@ -81,7 +85,8 @@ const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' 
  */
 export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const ui = useUI();
-  const { t, lang, bumpData } = useStore();
+  const { t, lang, bumpData, user } = useStore();
+  const owner = user?.user_id ?? '';
   const styles = createStyles(ui);
   const locale = localeFor(lang);
   const money = (n: number) => formatMoney(n, lang);
@@ -117,11 +122,12 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   // What the last save ticked, for the note with its Annuler. Remembered past
   // this view: switching to the list to look, then back, must not lose the
   // way to undo it.
-  const [ticked, setTickedState] = useState<TickedNote | null>(() => lastTicked);
+  const [ticked, setTickedState] = useState<TickedNote | null>(
+    () => (lastTicked && lastTicked.owner === owner ? lastTicked.note : null));
   const setTicked = useCallback((next: TickedNote | null) => {
-    lastTicked = next;
+    lastTicked = next ? { owner, note: next } : null;
     setTickedState(next);
-  }, []);
+  }, [owner]);
   const [undoing, setUndoing] = useState(false);
 
 
@@ -211,8 +217,10 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       if (!base64) return;
 
       setScanning(true);
-      setTicked(null);
       const read = await api.scanReceipt(base64);
+      // The last receipt's note goes only once this one has been read: a
+      // failed scan must not take away the way to undo the previous one.
+      setTicked(null);
       setScan(read);
       setUntick(new Set());
       // Only for the review: without the list, nothing is offered to tick.
@@ -248,8 +256,12 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     if (!ticked || undoing) return;
     setUndoing(true);
     try {
-      await Promise.all(ticked.items.map((i) => api.updateShoppingItem(i.id, { checked: false }).catch(() => null)));
-      setTicked(null);
+      const failed = (await Promise.all(ticked.items.map((i) =>
+        api.updateShoppingItem(i.id, { checked: false }).then(() => null).catch(() => i))))
+        .filter((i): i is NonNullable<typeof i> => i !== null);
+      // Whatever could not be put back stays in the note, so Annuler can be
+      // tried again and nobody believes it worked when it did not.
+      setTicked(failed.length > 0 ? { ...ticked, items: failed } : null);
       bumpData();
     } finally {
       setUndoing(false);
@@ -393,7 +405,11 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                 <Text style={styles.tickedBody}>
                   {ticked.items.length === 1
                     ? t('exp_ticked_one', { names: ticked.items[0].name })
-                    : t('exp_ticked_n', { n: ticked.items.length, names: ticked.items.map((i) => i.name).join(', ') })}
+                    : t('exp_ticked_n', {
+                      n: ticked.items.length,
+                      names: ticked.items.slice(0, TICKED_NAMES_SHOWN).map((i) => i.name).join(', ')
+                        + (ticked.items.length > TICKED_NAMES_SHOWN ? ', …' : ''),
+                    })}
                 </Text>
               </View>
               <PressScale

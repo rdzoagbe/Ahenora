@@ -623,7 +623,8 @@ export default function Kitchen() {
   }, [showToast, t]);
 
   const toggleShopItem = useCallback(async (item: ShoppingItem) => {
-    setShopItems((prev) => prev.map((i) => i.item_id === item.item_id ? { ...i, checked: !i.checked } : i));
+    // A tick by hand is not the receipt's: the server forgets the shop, and so does the row.
+    setShopItems((prev) => prev.map((i) => i.item_id === item.item_id ? { ...i, checked: !i.checked, ticked_from: null } : i));
     try {
       await api.updateShoppingItem(item.item_id, { checked: !item.checked });
     } catch {

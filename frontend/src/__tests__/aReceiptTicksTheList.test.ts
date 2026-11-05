@@ -69,3 +69,29 @@ describe('the receipt review', () => {
     expect(src).toContain('{ checked: false }');
   });
 });
+
+describe('the note after saving', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'components', 'SpendingView.tsx'), 'utf8');
+  it('belongs to the account that made it', () => {
+    expect(src).toContain('lastTicked.owner === owner');
+  });
+  it('keeps whatever could not be put back, so Annuler can be tried again', () => {
+    expect(src).toContain('setTicked(failed.length > 0 ? { ...ticked, items: failed } : null);');
+  });
+  it('is only replaced once a new receipt has been read', () => {
+    const read = src.indexOf('const read = await api.scanReceipt(base64);');
+    const clear = src.indexOf('setTicked(null);', read);
+    expect(read).toBeGreaterThan(0);
+    expect(clear).toBeGreaterThan(read);
+  });
+  it('names at most five things', () => {
+    expect(src).toContain('ticked.items.slice(0, TICKED_NAMES_SHOWN)');
+  });
+});
+
+describe('a tick by hand', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
+  it('drops the receipt shop on the row, as the server does', () => {
+    expect(src).toContain('checked: !i.checked, ticked_from: null');
+  });
+});
