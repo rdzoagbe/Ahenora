@@ -816,47 +816,62 @@ class UnsafeRecipe(Exception):
         self.reason = reason
 
 
-# Things that are weighed or poured, never counted, by the first word of an
-# ingredient's name (folded: lower case, no accents). "piece" on one of these
-# is the model counting yoghurt pots or cups, which reads as "farine ×2½" and
-# tells nobody how much flour to buy. First word only, so "pain au lait" (a
-# counted brioche) and "sachet de levure" are left alone.
-WEIGHED_STAPLES = frozenset({
-    # flour, sugar
-    "flour", "farine", "harina", "mehl",
-    "sugar", "sucre", "azucar", "zucker",
-    # fats
-    "butter", "beurre", "mantequilla",
-    "oil", "huile", "aceite", "ol",
-    # dairy that is poured
-    "milk", "lait", "leche", "milch",
-    "cream", "creme", "nata", "sahne",
-    # grains and powders
-    "rice", "riz", "arroz", "reis",
-    "semolina", "semoule", "semola", "griess",
-    "cocoa", "cacao", "kakao",
-    "cornstarch", "cornflour", "maizena", "speisestarke",
-    # liquids and syrups
-    "honey", "miel", "honig",
-    "water", "eau", "agua", "wasser",
+# Things that are weighed or poured, never counted. "piece" on one of these is
+# the model counting yoghurt pots or cups, which reads as "farine ×2½" and
+# tells nobody how much flour to buy.
+#
+# Matched the way each language names an ingredient, so counted things that
+# merely start or end with a staple word are left alone:
+#   - French and Spanish put the noun first: "farine de blé", "aceite de oliva"
+#     ("pain au lait", a counted brioche, starts with "pain").
+#   - English puts it last: "plain flour", "caster sugar", "olive oil"
+#     ("sugar snap peas", "rice paper" and "water chestnuts" are counted).
+#   - German compounds end with it: "Weizenmehl", "Puderzucker", "Rapsöl".
+_STAPLES_FIRST = frozenset({
+    "farine", "sucre", "beurre", "huile", "lait", "creme", "riz", "semoule",
+    "cacao", "maizena", "miel", "eau",
+    "harina", "azucar", "mantequilla", "aceite", "leche", "nata", "arroz",
+    "semola", "maicena", "agua",
 })
+_STAPLES_LAST = frozenset({
+    "flour", "sugar", "butter", "oil", "milk", "cream", "rice", "semolina",
+    "cocoa", "cornstarch", "cornflour", "honey", "water",
+})
+_STAPLES_DE_SUFFIX = ("mehl", "zucker", "butter", "ol", "milch", "sahne", "reis",
+                      "griess", "kakao", "starke", "honig", "wasser")
 
 
-def _first_word(name: str) -> str:
-    folded = unicodedata.normalize("NFKD", (name or "").lower())
+def _words(name: str) -> list:
+    # casefold, not lower: "Grieß" becomes "griess".
+    folded = unicodedata.normalize("NFKD", (name or "").casefold())
     folded = "".join(c for c in folded if not unicodedata.combining(c))
-    words = re.findall(r"[a-z]+", folded)
-    return words[0] if words else ""
+    return re.findall(r"[a-z]+", folded)
 
 
-def weighed_as_pieces(recipe: dict) -> list:
+def _is_weighed(name: str, language: Optional[str]) -> bool:
+    words = _words(name)
+    if not words:
+        return False
+    checks = {
+        "fr": lambda: words[0] in _STAPLES_FIRST,
+        "es": lambda: words[0] in _STAPLES_FIRST,
+        "en": lambda: words[-1] in _STAPLES_LAST,
+        "de": lambda: words[-1].endswith(_STAPLES_DE_SUFFIX),
+    }
+    if language in checks:
+        return checks[language]()
+    # Language unknown (an old cached recipe): any of the four.
+    return any(check() for check in checks.values())
+
+
+def weighed_as_pieces(recipe: dict, language: Optional[str] = None) -> list:
     """The ingredients a recipe counts in pieces that are weighed or poured.
 
     Empty means the amounts can go on a shopping list as they are.
     """
     out = []
     for ing in (recipe or {}).get("ingredients") or []:
-        if ing.get("unit") == "piece" and _first_word(ing.get("name", "")) in WEIGHED_STAPLES:
+        if ing.get("unit") == "piece" and _is_weighed(ing.get("name", ""), language):
             out.append(ing.get("name", ""))
     return out
 

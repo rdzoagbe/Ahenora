@@ -68,15 +68,50 @@ class TheChecker(unittest.TestCase):
         self.assertEqual(weighed_as_pieces(GRAMS), [])
         self.assertEqual(weighed_as_pieces(recipe(("pain au lait", 4, "piece"))), [])
 
-    def test_other_languages(self):
-        r = recipe(("Mehl", 2, "piece"), ("azúcar", 1, "piece"), ("flour", 2, "piece"))
-        self.assertEqual(len(weighed_as_pieces(r)), 3)
+    def test_other_languages_by_their_word_order(self):
+        # English names the noun last, German compounds end with it.
+        en = recipe(("plain flour", 2, "piece"), ("caster sugar", 1, "piece"), ("olive oil", 1, "piece"))
+        self.assertEqual(len(weighed_as_pieces(en, "en")), 3)
+        de = recipe(("Weizenmehl", 2, "piece"), ("Puderzucker", 1, "piece"), ("Grieß", 1, "piece"))
+        self.assertEqual(len(weighed_as_pieces(de, "de")), 3)
+        es = recipe(("harina de trigo", 2, "piece"), ("azúcar", 1, "piece"))
+        self.assertEqual(len(weighed_as_pieces(es, "es")), 2)
+
+    def test_counted_things_named_after_a_staple_are_left_alone(self):
+        en = recipe(("sugar snap peas", 200, "piece"), ("rice paper", 8, "piece"),
+                    ("water chestnuts", 6, "piece"))
+        self.assertEqual(weighed_as_pieces(en, "en"), [])
+
+    def test_language_unknown_still_catches_english(self):
+        self.assertEqual(weighed_as_pieces(recipe(("plain flour", 2, "piece"))), ["plain flour"])
 
     def test_both_prompts_say_it(self):
         for prompt in (RECIPE_SYSTEM_PROMPT, RECIPE_PHOTO_SYSTEM_PROMPT):
             prompt = " ".join(prompt.split())
             self.assertIn('never "piece"', prompt)
             self.assertIn("yoghurt pot holds 125 ml", prompt)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class TheSecondAnswer(unittest.TestCase):
+    def test_it_wins_only_as_the_same_recipe_better_weighed(self):
+        self.assertEqual(server.better_weighed(POTS, json.dumps(GRAMS), "fr")["ingredients"][1]["unit"], "g")
+
+    def test_dropping_the_flour_does_not_win(self):
+        no_flour = dict(GRAMS, ingredients=[i for i in GRAMS["ingredients"] if i["name"] != "farine de blé"])
+        self.assertEqual(server.better_weighed(POTS, json.dumps(no_flour), "fr"), POTS)
+
+    def test_it_keeps_the_sides_if_the_second_lost_them(self):
+        bare = dict(GRAMS)
+        bare.pop("serve_with")
+        out = server.better_weighed(POTS, json.dumps(bare), "fr")
+        self.assertEqual(out["serve_with"], POTS["serve_with"])
+
+    def test_the_ask_carries_the_first_ingredients(self):
+        text = server.weigh_again_prompt("PROMPT", POTS, ["farine de blé"])
+        self.assertIn("PROMPT", text)
+        self.assertIn('"farine de blé"', text)
+        self.assertIn("125 ml", text)
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
@@ -157,6 +192,60 @@ class AskingForADish(unittest.TestCase):
         # And the shared copy is healed for the next family.
         healed = run(server.recipe_from_library(self.db, key))
         self.assertEqual(weighed_as_pieces(healed), [])
+
+    def test_a_recipe_without_sides_is_kept_not_written_on_every_ask(self):
+        bare = dict(GRAMS)
+        bare.pop("serve_with")
+        self.answers(bare)
+        out = self.ask()
+        self.assertTrue(out["recipe"].get("serve_with_unavailable"))
+        self.ask()  # second ask: served from the library, no new call
+        self.assertEqual(len(self.prompts), 1)
+
+    def test_at_the_monthly_limit_the_saved_recipe_is_served_not_an_error(self):
+        key = server.recipe_library_key("Gâteau yaourt", "fr", "")
+        run(server.store_recipe_in_library(self.db, key, POTS))
+        run(self.db["families"].update_one({"family_id": "fam_1"}, {"$set": {"ai_scans_used": 10 ** 6, "ai_scans_period_start": server.utcnow()}}))
+        self.answers()
+        out = self.ask()
+        self.assertEqual(self.prompts, [])
+        self.assertTrue(out["cached"])
+        self.assertEqual(self.amounts(out)["farine de blé"], (3, "piece"))
+
+    def test_when_the_ai_fails_the_saved_recipe_is_served(self):
+        key = server.recipe_library_key("Gâteau yaourt", "fr", "")
+        run(server.store_recipe_in_library(self.db, key, POTS))
+
+        async def broken(*a, **k):
+            raise RuntimeError("model unavailable")
+        server._gemini_text = broken
+        out = self.ask()
+        self.assertTrue(out["cached"])
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class CookingAPlannedMeal(AskingForADish):
+    """The same, through the meal planner's "Cook it" (the busier route)."""
+
+    def setUp(self):
+        super().setUp()
+        run(self.db["meals"].insert_one({
+            "meal_id": "meal_1", "family_id": "fam_1", "title": "Gâteau yaourt",
+            "date": "2026-11-05", "created_at": server.utcnow()}))
+
+    def ask(self, title="Gâteau yaourt"):
+        return run(server.generate_meal_recipe(
+            "meal_1", lang="fr", user=dict(USER), database=self.db))
+
+    def test_an_old_copy_on_the_meal_heals_and_is_kept_on_the_meal(self):
+        run(self.db["meals"].update_one({"meal_id": "meal_1"}, {"$set": {"ai_recipe.fr": POTS}}))
+        self.answers(GRAMS)
+        out = self.ask()
+        self.assertEqual(self.amounts(out)["farine de blé"], (210, "g"))
+        self.answers()
+        again = self.ask()  # now cached on the meal: no call
+        self.assertEqual(self.amounts(again)["farine de blé"], (210, "g"))
+        self.assertEqual(len(self.prompts), 1)
 
 
 if __name__ == "__main__":
