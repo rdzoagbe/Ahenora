@@ -27,9 +27,17 @@ describe('due again soon', () => {
   });
 
   it('is worded in all four languages', () => {
-    for (const key of ['shop_due_title', 'shop_due_line', 'shop_due_add']) {
+    for (const key of ['shop_due_title', 'shop_due_every_one', 'shop_due_every_n', 'shop_due_last_one', 'shop_due_last_n', 'shop_due_add']) {
       expect((i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length).toBe(4);
     }
     expect(i18n).toContain('"À racheter bientôt"');
+    // A daily purchase reads "tous les jours · dernier achat hier", not "~1 jours".
+    expect(i18n).toContain('"tous les jours"');
+    expect(src).toContain("d.every_days === 1 ? t('shop_due_every_one')");
+  });
+
+  it('a pack size in a receipt name is not read as a count in the total', () => {
+    // "Oeufs x12" added from here is one box of twelve.
+    expect(src).toContain('receiptNames.has(fold(i.name)) ? null : parseNeed(');
   });
 });

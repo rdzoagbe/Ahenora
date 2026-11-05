@@ -24,7 +24,7 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices, ShopDue } from '../../src/api';
-import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed, findNameMatch } from '../../src/shopPrices';
+import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed, findNameMatch, fold } from '../../src/shopPrices';
 import { formatMoney } from '../../src/money';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
@@ -1376,15 +1376,24 @@ export default function Kitchen() {
   // so the windowed list can measure and scroll headings and items alike.
   // "By shop" needs prices to say anything; without them it is not offered.
   const byStore = shopView === 'store' && !!shopPrices && shopPrices.items.length > 0;
+  // Every receipt product name, folded, to tell "Oeufs x12" the product from
+  // "Oeufs x12" the quantity.
+  const receiptNames = useMemo(
+    () => new Set((shopPrices?.items ?? []).map((p) => fold(p.name))),
+    [shopPrices],
+  );
   // The list by where to buy it, computed once for both the "By shop"
   // sections and the total above the list, so the two always agree. A
   // quantity written on the item ("Lait x6", "Tomates 400g") is priced in.
   const shopGroups = useMemo(
     () => (shopPrices && shopPrices.items.length > 0
       ? groupByShop(uncheckedItems, (i) => splitQuantity(i.name).label, shopPrices.items,
-        (i) => parseNeed(splitQuantity(i.name).qty))
+        // A quantity that is part of a receipt's own name ("Oeufs x12": one
+        // box of twelve, as added from "À racheter bientôt") is a pack size,
+        // not twelve of them.
+        (i) => (receiptNames.has(fold(i.name)) ? null : parseNeed(splitQuantity(i.name).qty)))
       : null),
-    [shopPrices, uncheckedItems],
+    [shopPrices, uncheckedItems, receiptNames],
   );
   // What the list will roughly cost: those estimates summed, and the items
   // with no price named rather than quietly left out.
@@ -1721,7 +1730,9 @@ export default function Kitchen() {
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={styles.dueName} numberOfLines={1}>{d.name}</Text>
                         <Text style={styles.dueSub} numberOfLines={2}>
-                          {t('shop_due_line', { every: d.every_days, days: d.last_days })}
+                          {d.every_days === 1 ? t('shop_due_every_one') : t('shop_due_every_n', { n: d.every_days })}
+                          {' · '}
+                          {d.last_days === 1 ? t('shop_due_last_one') : t('shop_due_last_n', { n: d.last_days })}
                         </Text>
                       </View>
                       <Plus color={ui.orange} size={20} />

@@ -53,7 +53,7 @@ class DueToRebuy(unittest.TestCase):
                 }))
 
     def due(self):
-        return asyncio.run(server.shopping_due(user=dict(ME)))["items"]
+        return asyncio.run(server.shopping_due(timezone_name=None, user=dict(ME)))["items"]
 
     def test_due_when_the_usual_gap_has_passed(self):
         # Bought 7, 13, 19 and 25 days ago: every 6 days, last 7 days ago.
@@ -83,6 +83,14 @@ class DueToRebuy(unittest.TestCase):
     def test_another_family_never_appears(self):
         self.bought("Lait", 7, 13, 19, family="fam2")
         self.assertEqual(self.due(), [])
+
+    def test_the_familys_own_day_counts(self):
+        # Just before midnight UTC it is already tomorrow in Auckland, so one
+        # more day has passed there: never fewer days than the UTC count.
+        self.bought("Lait", 7, 13, 19, 25)
+        utc = self.due()[0]["last_days"]
+        nz = asyncio.run(server.shopping_due(timezone_name="Pacific/Auckland", user=dict(ME)))["items"][0]["last_days"]
+        self.assertIn(nz - utc, (0, 1))
 
     def test_most_overdue_first(self):
         self.bought("Pain", 3, 5, 7, 9)          # every 2, last 3: 1.5x

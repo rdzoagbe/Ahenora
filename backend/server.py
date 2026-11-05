@@ -17670,7 +17670,8 @@ REBUY_GIVE_UP_FACTOR = 3
 
 
 @app.get("/api/shopping/due")
-async def shopping_due(user=Depends(require_full_member)):
+async def shopping_due(timezone_name: Optional[str] = Query(default=None, alias="timezone"),
+                       user=Depends(require_full_member)):
     """Things the family buys regularly that are due again, from receipts.
 
     For each product, the dates of the separate receipts it appears on (one
@@ -17702,7 +17703,11 @@ async def shopping_due(user=Depends(require_full_member)):
         if row["last"] is None or when >= row["last"]:
             row["last"], row["name"] = when, line.get("name") or key
 
-    today = now.date()
+    # "Days since" against the family's own calendar day: receipt dates are
+    # local dates, and the UTC date is a day off around midnight.
+    zone = _valid_timezone(timezone_name if isinstance(timezone_name, str) else None) \
+        or await _zone_of(database, user["user_id"])
+    today = now.astimezone(ZoneInfo(zone)).date() if zone else now.date()
     due = []
     for key, row in seen.items():
         dates = sorted(set(row["receipts"].values()))

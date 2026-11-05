@@ -3130,7 +3130,8 @@ export const api = {
       timeoutMs: VISION_TIMEOUT_MS,
     }),
   getShopPrices: () => request<ShopPrices>('/shopping/prices'),
-  getShopDue: () => request<{ window_days: number; items: ShopDue[] }>('/shopping/due'),
+  getShopDue: () => request<{ window_days: number; items: ShopDue[] }>(
+    `/shopping/due?timezone=${encodeURIComponent(deviceTimeZone() || '')}`),
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
   getExpenseSummary: (days = 30) => request<ExpenseSummary>(`/expenses/summary?days=${days}`),
   getExpenseOverview: (months = 6, category?: string) =>
