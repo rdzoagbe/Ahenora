@@ -10,6 +10,7 @@ import path from 'path';
 import type { ShopPrice } from '../api';
 import {
   fold, suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, whenLabel, splitTyped,
+  groupByShop, placeItem,
 } from '../shopPrices';
 
 const NOW = new Date('2026-11-04T12:00:00Z');
@@ -149,7 +150,8 @@ describe('the list page uses it', () => {
     expect(src).toContain('api.getShopPrices()');
     expect(src).toContain('testID="shop-suggest-panel"');
     expect(src).toContain('testID="shop-add-typed"');
-    expect(src).toContain('shop-price-${item.item_id}');
+    expect(src).toContain('{priceLine(label, item.item_id)}');
+    expect(src).toContain("prefix = 'shop-price'");
   });
 });
 
@@ -159,5 +161,54 @@ describe('picking a suggestion', () => {
     // Passed as a list, never re-joined with commas and split again.
     expect(src).toContain('addShopItem(parts);');
     expect(src).not.toContain("addShopItem(parts.join(','))");
+  });
+});
+
+describe('the list by shop', () => {
+  const sure = (shop: string, against: string, a: number, b: number) => ({
+    shop, saving: b - a, against,
+    shops: [{ shop, unit_price: a, visits: 2 }, { shop: against, unit_price: b, visits: 2 }],
+  });
+
+  it('goes to the cheapest shop only when the comparison is sure, else where it was last bought', () => {
+    expect(placeItem(p('Sel fin', { price: 0.89, line_total: 0.89, shop: 'Carrefour' })))
+      .toEqual({ shop: 'Carrefour', estimate: 0.89, cheapest: false });
+    const carrots = p('Carottes', {
+      unit: 'kg', per_unit: true, price: 1.59, line_total: 1.59, qty: 1, shop: 'Carrefour',
+      cheapest: sure('Marché Frais', 'Carrefour', 1.29, 1.54),
+    });
+    // Last bought at Carrefour, but Marché Frais is surely cheaper: the same
+    // kilo at Marché Frais' usual price.
+    expect(placeItem(carrots)).toEqual({ shop: 'Marché Frais', estimate: 1.29, cheapest: true });
+  });
+
+  it('never invents an estimate: a weighed line with no weight has none', () => {
+    const apples = p('Pommes', {
+      unit: 'kg', per_unit: true, price: 2.1, line_total: null, qty: null, shop: 'Lidl',
+      cheapest: sure('Aldi', 'Lidl', 1.9, 2.1),
+    });
+    expect(placeItem(apples).estimate).toBeNull();
+  });
+
+  it('groups, totals what it can, busiest shop first, unknown prices last', () => {
+    const prices = [
+      p('Sel fin', { price: 0.89, line_total: 0.89, shop: 'Carrefour' }),
+      p('Oignons', { unit: 'kg', per_unit: true, price: 1.49, line_total: 2.24, qty: 1.5, shop: 'Carrefour' }),
+      p('Volvic', { unit: 'l', per_unit: true, price: 0.2667, line_total: 2.4, qty: 9, shop: 'Marché Frais' }),
+    ];
+    const groups = groupByShop(['Sel', 'Oignons', 'Volvic', 'Gingembre'], (x) => x, prices);
+    expect(groups.map((g) => g.shop)).toEqual(['Carrefour', 'Marché Frais', null]);
+    expect(groups[0].total).toBeCloseTo(3.13);
+    expect(groups[0].priced).toBe(2);
+    expect(groups[2].items.map((i) => i.item)).toEqual(['Gingembre']);
+    expect(groups[2].priced).toBe(0);
+  });
+});
+
+describe('both views show the prices', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
+  it('offers the by-shop switch and prices the Repas preview', () => {
+    expect(src).toContain('testID={`shop-view-${v}`}');
+    expect(src).toContain("priceLine(label, item.item_id, 'kitchen-buy-price', true)");
   });
 });

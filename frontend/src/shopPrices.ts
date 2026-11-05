@@ -192,3 +192,69 @@ export function lastPriceLine(item: ShopPrice, t: T, lang: string, now?: Date): 
     .filter(Boolean)
     .join(' · ');
 }
+
+/** One shop's part of the list, for the "By shop" view. */
+export interface ShopGroup<T> {
+  /** null: no receipt price yet, so it can be bought anywhere. */
+  shop: string | null;
+  items: { item: T; estimate: number | null; cheapest: boolean }[];
+  /** Sum of the estimates that exist. */
+  total: number;
+  /** How many items have an estimate; the total is "about" only for those. */
+  priced: number;
+}
+
+/**
+ * What one thing on the list is likely to cost, and where.
+ *
+ * The shop is the cheapest one only when the server's comparison is sure;
+ * otherwise the shop it was last bought at. The estimate is what was paid
+ * last time, the line on the ticket; at a cheaper shop it is that shop's
+ * usual price for the same amount. Nothing is invented: a weighed line with
+ * no amount has no estimate.
+ */
+export function placeItem(p: ShopPrice): { shop: string; estimate: number | null; cheapest: boolean } {
+  const lastTime = p.line_total ?? (p.per_unit ? null : p.price);
+  const sure = p.cheapest;
+  if (!sure || sure.shop === p.shop) {
+    return { shop: sure ? sure.shop : p.shop, estimate: lastTime, cheapest: !!sure };
+  }
+  const there = sure.shops.find((s) => s.shop === sure.shop)?.unit_price;
+  // A piece line with no count was one piece; a weighed line needs its weight.
+  const amount = p.qty ?? (p.unit === 'piece' ? 1 : null);
+  const estimate = there != null && amount != null ? Math.round(there * amount * 100) / 100 : null;
+  return { shop: sure.shop, estimate, cheapest: true };
+}
+
+/**
+ * The list grouped by where to buy it. Busiest shop first; things with no
+ * receipt price yet last, under "anywhere".
+ */
+export function groupByShop<T>(
+  items: T[],
+  labelOf: (item: T) => string,
+  prices: ShopPrice[],
+): ShopGroup<T>[] {
+  const byShop = new Map<string | null, ShopGroup<T>>();
+  for (const item of items) {
+    const hit = priceForItem(labelOf(item), prices);
+    const place = hit ? placeItem(hit.price) : null;
+    const key = place ? place.shop : null;
+    let group = byShop.get(key);
+    if (!group) {
+      group = { shop: key, items: [], total: 0, priced: 0 };
+      byShop.set(key, group);
+    }
+    const estimate = place ? place.estimate : null;
+    group.items.push({ item, estimate, cheapest: !!place?.cheapest });
+    if (estimate != null) {
+      group.total = Math.round((group.total + estimate) * 100) / 100;
+      group.priced += 1;
+    }
+  }
+  return [...byShop.values()].sort((a, b) => {
+    if (a.shop === null) return 1;
+    if (b.shop === null) return -1;
+    return b.items.length - a.items.length || a.shop.localeCompare(b.shop);
+  });
+}

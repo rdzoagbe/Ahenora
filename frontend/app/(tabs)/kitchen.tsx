@@ -24,7 +24,7 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices } from '../../src/api';
-import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped } from '../../src/shopPrices';
+import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, money } from '../../src/shopPrices';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { refreshOutcome } from '../../src/refreshOutcome';
@@ -71,6 +71,8 @@ function aisleTint(aisle: Aisle, ui: UIColors): { bg: string; fg: string } {
 
 const KEEP_AWAKE_TAG = 'kitchen-screen';
 const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
+// Aisle or shop, for the shopping list: a way of looking, kept on this device.
+const SHOP_VIEW_KEY = 'ahenora_shop_view';
 
 export default function Kitchen() {
   const { t, lang, subscription, dataVersion, refreshSubscription } = useStore();
@@ -168,6 +170,21 @@ export default function Kitchen() {
     });
   }, []);
   const [shopInput, setShopInput] = useState('');
+  // The list by aisle (walking the shop) or by shop (deciding where to go).
+  // Remembered on this device only: it is a way of looking, not family data.
+  const [shopView, setShopView] = useState<'aisle' | 'store'>('aisle');
+  // A tap on the switch before the saved choice is read wins over it.
+  const shopViewChosen = useRef(false);
+  useEffect(() => {
+    AsyncStorage.getItem(SHOP_VIEW_KEY)
+      .then((v) => { if (v === 'store' && !shopViewChosen.current) setShopView('store'); })
+      .catch(() => undefined);
+  }, []);
+  const chooseShopView = useCallback((next: 'aisle' | 'store') => {
+    shopViewChosen.current = true;
+    setShopView(next);
+    AsyncStorage.setItem(SHOP_VIEW_KEY, next).catch(() => undefined);
+  }, []);
   // "Added to Meat & fish: chicken breast", shown under the box it was typed
   // in. It was a toast at the foot of the screen, which is exactly where the
   // keyboard sits while somebody is adding: Roland added chicken breast and
@@ -1330,9 +1347,22 @@ export default function Kitchen() {
   const checkedItems = useMemo(() => shopItems.filter((i) => i.checked), [shopItems]);
   // The list in aisle order, a heading before each aisle. One flat run of rows
   // so the windowed list can measure and scroll headings and items alike.
+  // "By shop" needs prices to say anything; without them it is not offered.
+  const byStore = shopView === 'store' && !!shopPrices && shopPrices.items.length > 0;
   const shopRows = useMemo(() => {
     const rows: ({ kind: 'aisle'; aisle: Aisle; count: number; open: boolean }
+      | { kind: 'store'; shop: string | null; count: number; total: number; priced: number; open: boolean }
       | { kind: 'item'; item: ShoppingItem; last: boolean })[] = [];
+    if (byStore && shopPrices) {
+      for (const group of groupByShop(uncheckedItems, (i) => splitQuantity(i.name).label, shopPrices.items)) {
+        const key = `store:${group.shop ?? ''}`;
+        const open = !folded.has(key);
+        rows.push({ kind: 'store', shop: group.shop, count: group.items.length, total: group.total, priced: group.priced, open });
+        if (!open) continue;
+        group.items.forEach(({ item }, i) => rows.push({ kind: 'item', item, last: i === group.items.length - 1 }));
+      }
+      return rows;
+    }
     for (const group of groupByAisle(uncheckedItems)) {
       const open = !folded.has(group.aisle);
       rows.push({ kind: 'aisle', aisle: group.aisle, count: group.items.length, open });
@@ -1340,7 +1370,36 @@ export default function Kitchen() {
       group.items.forEach((item, i) => rows.push({ kind: 'item', item, last: i === group.items.length - 1 }));
     }
     return rows;
-  }, [uncheckedItems, folded]);
+  }, [uncheckedItems, folded, byStore, shopPrices]);
+
+  // What the receipts say about one thing on the list, in one grey line.
+  // The same line on the Liste and in the Repas preview.
+  // `quiet` leaves out "no price yet": the Repas preview is a four-line
+  // summary, and a line that says nothing only makes it longer.
+  const priceLine = (label: string, itemId: string, prefix = 'shop-price', quiet = false) => {
+    if (!shopPrices || shopPrices.items.length === 0) return null;
+    const hit = priceForItem(label, shopPrices.items);
+    if (!hit) {
+      if (quiet) return null;
+      return <Text testID={`${prefix}-${itemId}`} style={styles.rowNoPrice}>{t('shop_price_none')}</Text>;
+    }
+    const p = hit.price;
+    // A receipt with a longer name ("Sel fin" for "Sel") says whose price it is.
+    const named = hit.exact ? '' : t('shop_price_named', { name: p.name });
+    if (p.cheapest) {
+      const best = p.cheapest.shops[0];
+      return (
+        <Text testID={`${prefix}-${itemId}`} style={styles.rowPrice} numberOfLines={2}>
+          {named}{priceLabel(best.unit_price, p.unit, p.unit !== 'piece', lang)} · {p.cheapest.shop} · <Text style={styles.rowCheapest}>{t('shop_price_cheapest')}</Text>
+        </Text>
+      );
+    }
+    return (
+      <Text testID={`${prefix}-${itemId}`} style={styles.rowPrice} numberOfLines={2}>
+        {named}{lastPriceLine(p, t, lang)}
+      </Text>
+    );
+  };
 
   // Move an item to another aisle. The server remembers the choice for the
   // household, so the next "chips" lands where this house keeps its chips.
@@ -1619,8 +1678,57 @@ export default function Kitchen() {
               {/* A full weekly shop ran the page on for screens, burying the
                   meal ideas and the history beneath it. Ten at a time, the
                   rest inside. */}
+              {shopPrices && shopPrices.items.length > 0 && uncheckedItems.length > 0 ? (
+                <View style={styles.viewSwitch} accessibilityRole="tablist">
+                  {(['aisle', 'store'] as const).map((v) => {
+                    const on = (v === 'store') === byStore;
+                    return (
+                      <PressScale
+                        key={v}
+                        testID={`shop-view-${v}`}
+                        accessibilityRole="tab"
+                        accessibilityState={{ selected: on }}
+                        onPress={() => chooseShopView(v)}
+                        style={[styles.viewSwitchBtn, on && styles.viewSwitchBtnOn]}
+                      >
+                        <Text style={[styles.viewSwitchText, on && styles.viewSwitchTextOn]}>
+                          {t(v === 'store' ? 'shop_view_store' : 'shop_view_aisle')}
+                        </Text>
+                      </PressScale>
+                    );
+                  })}
+                </View>
+              ) : null}
               <WindowedList testID="shop-list-scroll" count={shopRows.length} window={12}>
                 {shopRows.map((row) => {
+                  if (row.kind === 'store') {
+                    const key = `store:${row.shop ?? ''}`;
+                    const name = row.shop ?? t('shop_store_anywhere');
+                    const count = row.count === 1 ? t('shop_store_item_one') : t('shop_store_items', { n: row.count });
+                    const cost = row.priced === 0
+                      ? t('shop_store_unknown')
+                      : row.priced === row.count
+                        ? t('shop_store_about', { total: money(row.total, lang) })
+                        : t('shop_store_about_some', { total: money(row.total, lang), k: row.priced });
+                    return (
+                      <PressScale
+                        key={key}
+                        testID={`shop-store-head-${row.shop ?? 'anywhere'}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${name}, ${count}, ${cost}`}
+                        onPress={() => toggleFold(key)}
+                        style={[styles.sectionHead, { backgroundColor: ui.soft }, !row.open && styles.sectionHeadFolded]}
+                      >
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[styles.sectionTitle, { color: ui.text }]} numberOfLines={1}>{name}</Text>
+                          <Text style={styles.storeSub} numberOfLines={1}>{count} · {cost}</Text>
+                        </View>
+                        {row.open
+                          ? <ChevronDown color={ui.muted} size={16} />
+                          : <ChevronRight color={ui.muted} size={16} />}
+                      </PressScale>
+                    );
+                  }
                   if (row.kind === 'aisle') {
                     const tint = aisleTint(row.aisle, ui);
                     return (
@@ -1664,30 +1772,8 @@ export default function Kitchen() {
                         <Text style={styles.rowText}>{label}</Text>
                         {/* What the family's own receipts say. Shown here, on the
                             list, because the decision this can change is made
-                            before leaving the house. A receipt with a longer
-                            name ("Sel fin" for "Sel") says whose price it is. */}
-                        {(() => {
-                          if (!shopPrices || shopPrices.items.length === 0) return null;
-                          const hit = priceForItem(label, shopPrices.items);
-                          if (!hit) {
-                            return <Text testID={`shop-price-${item.item_id}`} style={styles.rowNoPrice}>{t('shop_price_none')}</Text>;
-                          }
-                          const p = hit.price;
-                          const named = hit.exact ? '' : t('shop_price_named', { name: p.name });
-                          if (p.cheapest) {
-                            const best = p.cheapest.shops[0];
-                            return (
-                              <Text testID={`shop-price-${item.item_id}`} style={styles.rowPrice} numberOfLines={2}>
-                                {named}{priceLabel(best.unit_price, p.unit, p.unit !== 'piece', lang)} · {p.cheapest.shop} · <Text style={styles.rowCheapest}>{t('shop_price_cheapest')}</Text>
-                              </Text>
-                            );
-                          }
-                          return (
-                            <Text testID={`shop-price-${item.item_id}`} style={styles.rowPrice} numberOfLines={2}>
-                              {named}{lastPriceLine(p, t, lang)}
-                            </Text>
-                          );
-                        })()}
+                            before leaving the house. */}
+                        {priceLine(label, item.item_id)}
                       </View>
                       {qty ? <View style={styles.qtyPill}><Text style={styles.qtyText}>{qty}</Text></View> : null}
                       <PressScale
@@ -1709,6 +1795,7 @@ export default function Kitchen() {
                   );
                 })}
               </WindowedList>
+              {byStore && uncheckedItems.length > 0 ? <Text testID="shop-store-note" style={styles.storeNote}>{t('shop_store_note')}</Text> : null}
               {uncheckedItems.length > 0 ? <Text style={styles.hint}>{t('vault_shop_tap_hint')}</Text> : null}
 
               {checkedItems.length > 0 ? (
@@ -1946,6 +2033,7 @@ export default function Kitchen() {
                               <View style={styles.shopCircle} />
                               <View style={{ flex: 1, minWidth: 0 }}>
                                 <Text style={styles.rowText} numberOfLines={1}>{label}{qty ? ` · ${qty}` : ''}</Text>
+                                {priceLine(label, item.item_id, 'kitchen-buy-price', true)}
                                 {item.added_by ? <Text style={styles.rowCat} numberOfLines={1}>{t('shop_added_by', { name: item.added_by })}</Text> : null}
                               </View>
                             </PressScale>
@@ -3229,6 +3317,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   hint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
   rowText: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
+  storeSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, marginTop: 1 },
+  storeNote: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, lineHeight: 17, paddingTop: 10 },
+  viewSwitch: {
+    flexDirection: 'row', backgroundColor: ui.soft, borderRadius: 12, padding: 3, marginBottom: 12,
+  },
+  viewSwitchBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 9, borderWidth: 1, borderColor: 'transparent' },
+  viewSwitchBtnOn: { backgroundColor: ui.card, borderColor: ui.line },
+  viewSwitchText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 14 },
+  viewSwitchTextOn: { color: ui.text, fontFamily: 'Figtree_800ExtraBold' },
   rowPrice: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 2 },
   rowCheapest: { color: ui.mintText, fontFamily: 'Figtree_700Bold' },
   rowNoPrice: { color: ui.muted, opacity: 0.75, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 2 },
