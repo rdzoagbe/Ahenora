@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useClientValue } from '../../src/hooks/useClientValue';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
@@ -24,7 +24,7 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices } from '../../src/api';
-import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop } from '../../src/shopPrices';
+import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed } from '../../src/shopPrices';
 import { formatMoney } from '../../src/money';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
@@ -1351,12 +1351,28 @@ export default function Kitchen() {
   // so the windowed list can measure and scroll headings and items alike.
   // "By shop" needs prices to say anything; without them it is not offered.
   const byStore = shopView === 'store' && !!shopPrices && shopPrices.items.length > 0;
+  // The list by where to buy it, computed once for both the "By shop"
+  // sections and the total above the list, so the two always agree. A
+  // quantity written on the item ("Lait x6", "Tomates 400g") is priced in.
+  const shopGroups = useMemo(
+    () => (shopPrices && shopPrices.items.length > 0
+      ? groupByShop(uncheckedItems, (i) => splitQuantity(i.name).label, shopPrices.items,
+        (i) => parseNeed(splitQuantity(i.name).qty))
+      : null),
+    [shopPrices, uncheckedItems],
+  );
+  // What the list will roughly cost: those estimates summed, and the items
+  // with no price named rather than quietly left out.
+  const listEstimate = useMemo(
+    () => (shopGroups ? estimateFromGroups(shopGroups, uncheckedItems) : null),
+    [shopGroups, uncheckedItems],
+  );
   const shopRows = useMemo(() => {
     const rows: ({ kind: 'aisle'; aisle: Aisle; count: number; open: boolean }
       | { kind: 'store'; shop: string | null; count: number; total: number; priced: number; open: boolean }
       | { kind: 'item'; item: ShoppingItem; last: boolean })[] = [];
-    if (byStore && shopPrices) {
-      for (const group of groupByShop(uncheckedItems, (i) => splitQuantity(i.name).label, shopPrices.items)) {
+    if (byStore && shopGroups) {
+      for (const group of shopGroups) {
         const key = `store:${group.shop ?? ''}`;
         const open = !folded.has(key);
         rows.push({ kind: 'store', shop: group.shop, count: group.items.length, total: group.total, priced: group.priced, open });
@@ -1372,7 +1388,7 @@ export default function Kitchen() {
       group.items.forEach((item, i) => rows.push({ kind: 'item', item, last: i === group.items.length - 1 }));
     }
     return rows;
-  }, [uncheckedItems, folded, byStore, shopPrices]);
+  }, [uncheckedItems, folded, byStore, shopGroups]);
 
   // What the receipts say about one thing on the list, in one grey line.
   // The same line on the Liste and in the Repas preview.
@@ -1686,6 +1702,26 @@ export default function Kitchen() {
               {/* A full weekly shop ran the page on for screens, burying the
                   meal ideas and the history beneath it. Ten at a time, the
                   rest inside. */}
+              {listEstimate && listEstimate.priced > 0 ? (
+                <View testID="shop-total" style={styles.totalCard} accessibilityRole="summary">
+                  <ShoppingBag color={ui.orange} size={20} />
+                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                    <Text style={styles.totalTitle}>{t('shop_total_about', { total: formatMoney(listEstimate.total, lang) })}</Text>
+                    <Text style={styles.totalSub}>
+                      {listEstimate.priced === 1
+                        ? t('shop_total_for_one')
+                        : t('shop_total_for_n', { n: listEstimate.priced })}
+                      {listEstimate.missing.length > 0
+                        ? ` · ${t('shop_total_missing', {
+                          k: listEstimate.missing.length,
+                          names: listEstimate.missing.slice(0, 3).map((i) => splitQuantity(i.name).label).join(', ')
+                            + (listEstimate.missing.length > 3 ? ', …' : ''),
+                        })}`
+                        : ''}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
               {shopPrices && shopPrices.items.length > 0 && uncheckedItems.length > 0 ? (
                 <View style={styles.viewSwitch} accessibilityRole="tablist">
                   {(['aisle', 'store'] as const).map((v) => {
@@ -3334,6 +3370,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   hint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
   rowText: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
+  // "Environ 14,25 € pour 4 articles", above the list.
+  totalCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.soft,
+    borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12,
+    marginBottom: 12,
+  },
+  totalTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
+  totalSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, lineHeight: 17 },
   storeSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, marginTop: 1 },
   storeNote: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, lineHeight: 17, paddingTop: 10 },
   viewSwitch: {
