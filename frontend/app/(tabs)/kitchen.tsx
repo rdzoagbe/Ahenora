@@ -1830,7 +1830,16 @@ export default function Kitchen() {
                       ) : (
                         <View style={[styles.shopCircle, styles.shopCircleOn]}><Check color="#FFFFFF" size={13} /></View>
                       )}
-                      <Text style={[styles.rowText, styles.rowTextDone, { flex: 1, minWidth: 0 }]}>{item.name}</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.rowText, styles.rowTextDone]}>{item.name}</Text>
+                        {/* Ticked by a scanned receipt: say which, so a tick
+                            nobody remembers making explains itself. */}
+                        {item.ticked_from ? (
+                          <Text testID={`shop-ticked-from-${item.item_id}`} style={styles.rowPrice} numberOfLines={1}>
+                            {t('shop_ticked_from', { shop: item.ticked_from })}
+                          </Text>
+                        ) : null}
+                      </View>
                       <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>

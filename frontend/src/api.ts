@@ -685,6 +685,8 @@ export interface ShoppingItem {
   checked: boolean;
   added_by: string;
   created_at: string;
+  /** The shop whose receipt ticked it, when a receipt did. */
+  ticked_from?: string | null;
 }
 
 export interface Expense {
@@ -3077,7 +3079,7 @@ export const api = {
   listShopping: () => request<ShoppingItem[]>('/shopping'),
   addShoppingItem: (data: { name: string; category?: string }) =>
     request<ShoppingItem>('/shopping', { method: 'POST', body: data }),
-  updateShoppingItem: (itemId: string, data: { checked?: boolean; name?: string; category?: string }) =>
+  updateShoppingItem: (itemId: string, data: { checked?: boolean; name?: string; category?: string; ticked_from?: string }) =>
     request<ShoppingItem>(`/shopping/${itemId}`, { method: 'PATCH', body: data }),
   deleteShoppingItem: (itemId: string) =>
     request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
