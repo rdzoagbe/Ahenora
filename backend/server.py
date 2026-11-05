@@ -2491,6 +2491,8 @@ def public_shopping_item(item: dict, aisle: Optional[str] = None) -> dict:
         "checked": item.get("checked", False),
         "added_by": item.get("added_by", ""),
         "created_at": iso(item["created_at"]),
+        # The shop whose receipt ticked it, when a receipt did.
+        "ticked_from": item.get("ticked_from") if item.get("checked") else None,
     }
 
 
@@ -5616,6 +5618,11 @@ class ShoppingItemPatchIn(BaseModel):
     checked: Optional[bool] = None
     name: Optional[str] = Field(default=None, max_length=300)
     category: Optional[str] = None
+    # The shop on the receipt that ticked this item, sent only with
+    # checked=True from the receipt review. Kept so the list can say why
+    # the item is done; cleared whenever the item is ticked or unticked by
+    # hand, so it never outlives the receipt that set it.
+    ticked_from: Optional[str] = Field(default=None, max_length=60)
 
 
 class ExpenseLineIn(BaseModel):
@@ -17139,8 +17146,15 @@ async def add_shopping_item(payload: ShoppingItemIn, user=Depends(require_user))
 async def update_shopping_item(item_id: str, payload: ShoppingItemPatchIn, user=Depends(require_user)):
     database = get_db()
     updates = {}
+    unset = {}
     if payload.checked is not None:
         updates["checked"] = payload.checked
+        # The same tidy name the expense gets ("CARREFOUR CITY 14EME" -> "Carrefour").
+        shop = tidy_merchant(payload.ticked_from) or ""
+        if payload.checked and shop:
+            updates["ticked_from"] = shop
+        else:
+            unset["ticked_from"] = ""
     if payload.name is not None:
         updates["name"] = payload.name.strip()
     if payload.category is not None:
@@ -17158,9 +17172,12 @@ async def update_shopping_item(item_id: str, payload: ShoppingItemPatchIn, user=
         # must not stay in fruit and veg.
         updates["category"] = await aisle_for_new_item(
             database, user["family_id"], updates["name"])
+    change = {"$set": updates}
+    if unset:
+        change["$unset"] = unset
     await database["shopping_list"].update_one(
         {"item_id": item_id, "family_id": user["family_id"]},
-        {"$set": updates},
+        change,
     )
     if payload.category is not None:
         # Somebody moved this item to another aisle. Remember it for the

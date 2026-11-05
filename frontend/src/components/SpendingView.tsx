@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
-import { Camera, Plus, Trash2, TrendingDown, TrendingUp, Scale } from 'lucide-react-native';
+import { Camera, Plus, Trash2, TrendingDown, TrendingUp, Scale, Check, ShoppingCart } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 import { PressScale } from './PressScale';
@@ -12,7 +12,9 @@ import { useStore } from '../store';
 import { formatDecimal, formatMoney, formatNumber } from '../money';
 import { priceLabel } from '../shopPrices';
 import { api, Expense, ExpenseOverview, MerchantRow, ScannedReceipt,
-  SettlementInfo } from '../api';
+  SettlementInfo, ShoppingItem } from '../api';
+import { matchReceiptToList } from '../receiptTicks';
+import { splitQuantity } from '../shoppingAisles';
 import { localeFor } from '../utils/date';
 import { logger } from '../logger';
 import { apiErrorText } from '../apiError';
@@ -49,6 +51,16 @@ function todayISO(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/** What a saved receipt ticked on the shopping list. */
+type TickedNote = { shop: string; items: { id: string; name: string }[] };
+// Kept for the app's session, outside the view, which unmounts when the
+// Dépenses tab is left. Cleared by the next scan or by Annuler, and tied to
+// the account that made it: another account signed in on the same phone
+// never sees it.
+let lastTicked: { owner: string; note: TickedNote } | null = null;
+// More names than this and the note says "…" instead of a paragraph.
+const TICKED_NAMES_SHOWN = 5;
+
 // Short unit labels for a receipt line: "1,234 kg", "500 g", "1 L".
 const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' };
 
@@ -73,7 +85,8 @@ const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' 
  */
 export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const ui = useUI();
-  const { t, lang } = useStore();
+  const { t, lang, bumpData, user } = useStore();
+  const owner = user?.user_id ?? '';
   const styles = createStyles(ui);
   const locale = localeFor(lang);
   const money = (n: number) => formatMoney(n, lang);
@@ -101,6 +114,21 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const [scan, setScan] = useState<ScannedReceipt | null>(null);
   const [keep, setKeep] = useState<boolean[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
+  // The shopping list, read when a receipt is scanned, so the review can show
+  // which of its items this receipt bought. Matches start ticked; the parent
+  // unticks any that are wrong before saving (see receiptTicks.ts).
+  const [listItems, setListItems] = useState<ShoppingItem[]>([]);
+  const [untick, setUntick] = useState<Set<string>>(() => new Set());
+  // What the last save ticked, for the note with its Annuler. Remembered past
+  // this view: switching to the list to look, then back, must not lose the
+  // way to undo it.
+  const [ticked, setTickedState] = useState<TickedNote | null>(
+    () => (lastTicked && lastTicked.owner === owner ? lastTicked.note : null));
+  const setTicked = useCallback((next: TickedNote | null) => {
+    lastTicked = next ? { owner, note: next } : null;
+    setTickedState(next);
+  }, [owner]);
+  const [undoing, setUndoing] = useState(false);
 
 
   const load = useCallback(async () => {
@@ -190,7 +218,13 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
 
       setScanning(true);
       const read = await api.scanReceipt(base64);
+      // The last receipt's note goes only once this one has been read: a
+      // failed scan must not take away the way to undo the previous one.
+      setTicked(null);
       setScan(read);
+      setUntick(new Set());
+      // Only for the review: without the list, nothing is offered to tick.
+      api.listShopping().then(setListItems).catch(() => setListItems([]));
       // Unsure lines start unticked. Saying "no" to a bad read must be the
       // lazy option, not the diligent one.
       setKeep(read.items.map((i) => !i.unsure));
@@ -208,9 +242,32 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setScanning(false);
     }
-  }, [t, lang]);
+  }, [t, lang, setTicked]);
 
   /** Commit the reviewed receipt: the expense, and the lines kept with it. */
+  // Items on the list this receipt shows were bought, from the lines kept.
+  const receiptTicks = useMemo(
+    () => (scan ? matchReceiptToList(scan.items.filter((_, i) => keep[i]), listItems) : []),
+    [scan, keep, listItems],
+  );
+  const toTick = receiptTicks.filter((m) => !untick.has(m.item.item_id));
+
+  const undoTicks = useCallback(async () => {
+    if (!ticked || undoing) return;
+    setUndoing(true);
+    try {
+      const failed = (await Promise.all(ticked.items.map((i) =>
+        api.updateShoppingItem(i.id, { checked: false }).then(() => null).catch(() => i))))
+        .filter((i): i is NonNullable<typeof i> => i !== null);
+      // Whatever could not be put back stays in the note, so Annuler can be
+      // tried again and nobody believes it worked when it did not.
+      setTicked(failed.length > 0 ? { ...ticked, items: failed } : null);
+      bumpData();
+    } finally {
+      setUndoing(false);
+    }
+  }, [ticked, undoing, bumpData, setTicked]);
+
   const saveScanned = useCallback(async () => {
     if (!scan) return;
     const value = parseAmount(amount);
@@ -231,6 +288,22 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
           .filter((_, i) => keep[i])
           .map((i) => ({ name: i.name, qty: i.qty, unit: i.unit, line_total: i.line_total })),
       });
+      // Then the list. Only after the expense is safely saved, and each one
+      // on its own: one failure leaves the others ticked, and the note says
+      // exactly which went through.
+      const shopName = shop.trim();
+      const done = (await Promise.all(toTick.map((m) =>
+        api.updateShoppingItem(m.item.item_id, { checked: true, ticked_from: shopName || undefined })
+          .then(() => m).catch(() => null)))).filter((m): m is NonNullable<typeof m> => m !== null);
+      if (done.length > 0) {
+        setTicked({
+          shop: shopName,
+          items: done.map((m) => ({ id: m.item.item_id, name: splitQuantity(m.item.name).label })),
+        });
+        bumpData();
+      }
+      setListItems([]);
+      setUntick(new Set());
       setScan(null);
       setKeep([]);
       setShop('');
@@ -244,7 +317,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setSaving(false);
     }
-  }, [scan, keep, amount, shop, when, splitOn, load, t]);
+  }, [scan, keep, amount, shop, when, splitOn, load, t, toTick, bumpData, setTicked]);
 
   const settleUp = useCallback(async () => {
     setSettling(true);
@@ -320,6 +393,37 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
               rows. On a household with any history that is three screens of
               scrolling, so the primary action of the screen was the least
               reachable thing on it, and it read as missing. */}
+          {/* What the last receipt ticked on the shopping list, with the way
+              back. Stays until the next scan or "Annuler". */}
+          {ticked ? (
+            <View testID="exp-ticked-note" style={styles.tickedNote} accessibilityLiveRegion="polite">
+              <Check color={ui.mintText} size={18} />
+              <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                <Text style={styles.tickedTitle}>
+                  {ticked.shop ? t('exp_ticked_title', { shop: ticked.shop }) : t('exp_ticked_title_noshop')}
+                </Text>
+                <Text style={styles.tickedBody}>
+                  {ticked.items.length === 1
+                    ? t('exp_ticked_one', { names: ticked.items[0].name })
+                    : t('exp_ticked_n', {
+                      n: ticked.items.length,
+                      names: ticked.items.slice(0, TICKED_NAMES_SHOWN).map((i) => i.name).join(', ')
+                        + (ticked.items.length > TICKED_NAMES_SHOWN ? ', …' : ''),
+                    })}
+                </Text>
+              </View>
+              <PressScale
+                testID="exp-ticked-undo"
+                accessibilityRole="button"
+                onPress={undoTicks}
+                disabled={undoing}
+                style={[styles.tickedUndo, undoing && styles.dim]}
+              >
+                <Text style={styles.tickedUndoText}>{t('exp_ticked_undo')}</Text>
+              </PressScale>
+            </View>
+          ) : null}
+
           {!scan ? (
             <View style={styles.actionRow}>
               <PressScale
@@ -617,13 +721,59 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                 </PressScale>
               ))}
 
+              {/* The things on the shopping list this receipt shows were bought.
+                  Ticked when the receipt is saved, never before, and each one
+                  can be unticked here first. */}
+              {receiptTicks.length > 0 ? (
+                <View testID="exp-tick-box" style={styles.tickBox}>
+                  <View style={styles.tickHead}>
+                    <ShoppingCart color={ui.mintText} size={17} />
+                    <Text style={styles.tickTitle}>{t('exp_tick_title')}</Text>
+                  </View>
+                  <Text style={styles.tickSub}>{t('exp_tick_sub')}</Text>
+                  {receiptTicks.map((m) => {
+                    const on = !untick.has(m.item.item_id);
+                    const name = splitQuantity(m.item.name).label;
+                    return (
+                      <PressScale
+                        key={m.item.item_id}
+                        testID={`exp-tick-${m.item.item_id}`}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: on }}
+                        accessibilityLabel={t('exp_tick_row', { item: name, line: m.line })}
+                        onPress={() => setUntick((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(m.item.item_id)) next.delete(m.item.item_id); else next.add(m.item.item_id);
+                          return next;
+                        })}
+                        style={styles.tickRow}
+                      >
+                        <View style={[styles.tickBoxMark, on && styles.tickBoxMarkOn]}>
+                          {on ? <Check color={ui.doneTick} size={13} /> : null}
+                        </View>
+                        <Text style={[styles.tickItem, !on && styles.rowOff]} numberOfLines={1}>{name}</Text>
+                        <Text style={styles.tickLine} numberOfLines={1}>← {m.line}</Text>
+                      </PressScale>
+                    );
+                  })}
+                </View>
+              ) : null}
+
               <PressScale
                 testID="exp-scan-save"
                 onPress={saveScanned}
                 disabled={saving}
                 style={[styles.primary, saving && styles.dim]}
               >
-                <Text style={styles.primaryText}>{saving ? t('exp_saving') : t('exp_save')}</Text>
+                <Text style={styles.primaryText}>
+                  {saving
+                    ? t('exp_saving')
+                    : toTick.length === 0
+                      ? t('exp_save')
+                      : toTick.length === 1
+                        ? t('exp_save_tick_one')
+                        : t('exp_save_tick_n', { n: toTick.length })}
+                </Text>
               </PressScale>
               <PressScale onPress={() => { setScan(null); setKeep([]); }} style={styles.quiet}>
                 <Text style={styles.quietText}>{t('cancel')}</Text>
@@ -793,6 +943,33 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderWidth: 1.5, borderColor: ui.line,
   },
   tickOn: { backgroundColor: ui.orange, borderColor: ui.orange },
+  // "On your shopping list", in the receipt review.
+  tickBox: {
+    backgroundColor: ui.mint, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, gap: 6,
+  },
+  tickHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tickTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 14, color: ui.mintText },
+  tickSub: { fontFamily: 'Figtree_500Medium', fontSize: 12.5, lineHeight: 17, color: ui.text },
+  tickRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6, minHeight: 36 },
+  tickBoxMark: {
+    width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: ui.checkLine,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tickBoxMarkOn: { backgroundColor: ui.doneFill, borderColor: ui.doneFill },
+  tickItem: { fontFamily: 'Figtree_700Bold', fontSize: 15, color: ui.text, flexShrink: 0, maxWidth: '45%' },
+  tickLine: { flex: 1, fontFamily: 'Figtree_500Medium', fontSize: 12.5, color: ui.muted, textAlign: 'right' },
+  // After saving: what was ticked, with the way back.
+  tickedNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: ui.mint,
+    borderRadius: 14, padding: 12,
+  },
+  tickedTitle: { fontFamily: 'Figtree_800ExtraBold', fontSize: 14.5, color: ui.text },
+  tickedBody: { fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18, color: ui.text },
+  tickedUndo: {
+    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: ui.line,
+    backgroundColor: ui.card, minHeight: 32, justifyContent: 'center',
+  },
+  tickedUndoText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 13, color: ui.text },
   rowOff: { color: ui.muted, textDecorationLine: 'line-through' },
   quietText: { fontFamily: 'Figtree_600SemiBold', fontSize: 14, color: ui.muted },
   older: { alignSelf: 'center', marginTop: 10, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: ui.soft },
