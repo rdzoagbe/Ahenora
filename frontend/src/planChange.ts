@@ -66,5 +66,6 @@ export const PLAN_PRICE: Record<Plan, { monthly: number; yearly: number }> = {
 /** A plan's price written the way the reader's language writes money: "€4.99" / "4,99 €". */
 export function planPriceText(plan: Plan, cycle: 'monthly' | 'yearly', lang: string): string {
   const amount = PLAN_PRICE[plan]?.[cycle];
-  return amount == null ? '' : formatMoney(amount, lang);
+  // The free plan has no price to quote ("Gratuit coûte 0,00 €" says nothing).
+  return amount ? formatMoney(amount, lang) : '';
 }

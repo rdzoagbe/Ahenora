@@ -144,7 +144,6 @@ export function priceForItem(
   return hit ? { price: items[hit.index], exact: hit.exact } : null;
 }
 
-
 // Grams and millilitres are shown per kilo and per litre: a "500 g" line is
 // 0,0035 €/g, which rounds to a meaningless "0,00 €/g".
 const PER_UNIT: Record<string, { label: string; factor: number }> = {

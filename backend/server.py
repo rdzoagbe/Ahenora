@@ -17475,8 +17475,12 @@ async def price_compare(user=Depends(require_full_member)):
     the household has bought it but nowhere near enough to say anything.
     """
     database = get_db()
+    # Only the window the answer can use: a family with years of receipts
+    # must not load all of them to price this month's list.
     lines = await database["expense_items"].find(
-        {"family_id": user["family_id"]}, {"_id": 0}).to_list(None)
+        {"family_id": user["family_id"],
+         "spent_on": {"$gte": utcnow() - timedelta(days=PRICE_WINDOW_DAYS)}},
+        {"_id": 0}).to_list(None)
     return compare_receipt_prices(lines)
 
 
@@ -17584,8 +17588,12 @@ async def shopping_prices(user=Depends(require_full_member)):
     latest: dict = {}
     # Read once: the same lines give the last prices here and the comparison
     # below.
+    # Only the window the answer can use: a family with years of receipts
+    # must not load all of them to price this month's list.
     lines = await database["expense_items"].find(
-        {"family_id": user["family_id"]}, {"_id": 0}).to_list(None)
+        {"family_id": user["family_id"],
+         "spent_on": {"$gte": utcnow() - timedelta(days=PRICE_WINDOW_DAYS)}},
+        {"_id": 0}).to_list(None)
     for line in lines:
         name_key = (line.get("name_key") or "").strip()
         shop = (line.get("shop") or "").strip()
