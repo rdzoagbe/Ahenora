@@ -16,6 +16,8 @@ import { usePremiumGate } from '../src/components/PremiumGate';
 import { api, GiftContribution, GiftPot } from '../src/api';
 import { logger } from '../src/logger';
 import { apiErrorText } from '../src/apiError';
+import { formatMoney } from '../src/money';
+import { EuroSign } from '../src/components/EuroSign';
 
 /**
  * The Gift Pot — one shared present instead of five small ones. Reached from a
@@ -31,7 +33,7 @@ export default function GiftPotRoute() {
   const ui = useUI();
   const { toast, showToast } = useToast();
   const router = useRouter();
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const params = useLocalSearchParams<{ potId?: string; cardId?: string; name?: string }>();
@@ -357,11 +359,11 @@ export default function GiftPotRoute() {
           <View style={styles.hero}>
             <View style={styles.bigIcon}><Gift color={ui.orangeText} size={30} /></View>
             <Text style={styles.amount}>
-              {t('gp_money', { amount: String(pot.total_pledged) })}
-              <Text style={styles.amountOf}>  {t('gp_of', { amount: String(Math.round(target)) })}</Text>
+              {t('gp_money', { amount: formatMoney(Number(pot.total_pledged), lang) })}
+              <Text style={styles.amountOf}>  {t('gp_of', { amount: formatMoney(Math.round(target), lang) })}</Text>
             </Text>
             <Text style={styles.meta}>
-              {t('gp_per_head', { amount: String(pot.per_head) })} · {pot.contributor_count === 1 ? t('gp_n_in_one') : t('gp_n_in', { n: String(pot.contributor_count) })}
+              {t('gp_per_head', { amount: formatMoney(Number(pot.per_head), lang) })} · {pot.contributor_count === 1 ? t('gp_n_in_one') : t('gp_n_in', { n: String(pot.contributor_count) })}
             </Text>
             <View style={styles.bar}><View style={[styles.barFill, { width: `${Math.round(pct * 100)}%` }]} /></View>
             {pot.status === 'closed' ? (
@@ -383,7 +385,7 @@ export default function GiftPotRoute() {
                   </Text>
                   {c.method ? <Text style={styles.rowMethod}>{t(`gp_method_${c.method}`)}</Text> : null}
                 </View>
-                <Text style={styles.rowAmount}>{t('gp_money', { amount: String(c.amount) })}</Text>
+                <Text style={styles.rowAmount}>{t('gp_money', { amount: formatMoney(Number(c.amount), lang) })}</Text>
                 {/* The organiser marks who has actually settled up. */}
                 <PressScale
                   testID={`gift-pot-paid-${c.contrib_id}`}
@@ -448,7 +450,7 @@ export default function GiftPotRoute() {
               </Text>
               <View style={styles.chipRow}>
                 <View style={styles.inputWrap}>
-                  <Text style={styles.euro}>€</Text>
+                  <EuroSign side="before" style={styles.euro} afterStyle={styles.euroAfter} />
                   <TextInput
                     testID="gift-pot-amount" returnKeyType="done" onSubmitEditing={() => chipIn()}
                     value={amount}
@@ -458,11 +460,12 @@ export default function GiftPotRoute() {
                     placeholder="10"
                     placeholderTextColor={ui.muted}
                   />
+                  <EuroSign side="after" style={styles.euro} afterStyle={styles.euroAfter} />
                 </View>
                 <PressScale testID="gift-pot-chipin" onPress={chipIn} disabled={busy} style={styles.chipBtn}>
                   <Text style={styles.chipBtnText}>
                     {(pot.your_amount != null ? t('gp_update') : t('gp_chip_in'))}
-                    {amount.trim() ? `  ${t('gp_money', { amount: String(num(amount) ?? amount) })}` : ''}
+                    {amount.trim() ? `  ${t('gp_money', { amount: num(amount) != null ? formatMoney(num(amount) as number, lang) : amount })}` : ''}
                   </Text>
                 </PressScale>
               </View>
@@ -519,14 +522,16 @@ export default function GiftPotRoute() {
 
         <Text style={styles.fieldLabel}>{t('gp_field_per_head')}</Text>
         <View style={styles.fieldMoney}>
-          <Text style={styles.euro}>€</Text>
+          <EuroSign side="before" style={styles.euro} afterStyle={styles.euroAfter} />
           <TextInput testID="gift-pot-edit-perhead" value={ePerHead} onChangeText={setEPerHead} keyboardType="decimal-pad" style={styles.fieldMoneyInput} placeholderTextColor={ui.muted} />
+          <EuroSign side="after" style={styles.euro} afterStyle={styles.euroAfter} />
         </View>
 
         <Text style={styles.fieldLabel}>{t('gp_field_target')}</Text>
         <View style={styles.fieldMoney}>
-          <Text style={styles.euro}>€</Text>
+          <EuroSign side="before" style={styles.euro} afterStyle={styles.euroAfter} />
           <TextInput testID="gift-pot-edit-target" value={eTarget} onChangeText={setETarget} keyboardType="decimal-pad" style={styles.fieldMoneyInput} placeholder="—" placeholderTextColor={ui.muted} />
+          <EuroSign side="after" style={styles.euro} afterStyle={styles.euroAfter} />
         </View>
 
         <Text style={styles.fieldLabel}>{t('gp_field_note')}</Text>
@@ -588,6 +593,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   chipRow: { flexDirection: 'column', gap: 10 },
   inputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: ui.bg, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14 },
   euro: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 16, marginRight: 4 },
+  euroAfter: { marginRight: 0, marginLeft: 4 },
   input: { flex: 1, color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 16, paddingVertical: 13 },
   chipBtn: { backgroundColor: ui.orange, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   chipBtnText: { color: '#fff', fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },

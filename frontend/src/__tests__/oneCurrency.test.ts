@@ -63,13 +63,24 @@ describe('household money is formatted from that one place', () => {
   it('no screen builds a money string by hand', () => {
     for (const file of SCREENS) {
       const body = readFileSync(file, 'utf8');
-      const bad = [
-        /t\('currency_symbol'\)/,
-        /`€\$\{/,
-        /\$\{[^}]*\}\s*€`/,
-        />\$\{[^}]*toFixed\(2\)\}/,
-      ].find((re) => re.test(body));
-      if (bad) throw new Error(`${file} builds money by hand (${bad})`);
+      if (/t\('currency_symbol'\)/.test(body)) {
+        throw new Error(`${file} writes the currency symbol itself`);
+      }
+      // Two decimals is how money is written; money is written in src/money.ts.
+      if (/\.toFixed\(2\)/.test(body)) {
+        throw new Error(`${file} formats an amount with toFixed(2) instead of formatMoney`);
+      }
+      // The euro beside an amount box lives in one component, EuroSign.
+      if (file.endsWith('EuroSign.tsx')) continue;
+      body.split('\n').forEach((line, i) => {
+        const code = line.trim();
+        if (code.startsWith('//') || code.startsWith('*') || code.startsWith('/*') || code.startsWith('{/*') || code.endsWith('*/}') || code.endsWith('*/')) return;
+        // The one sign written in markup: the plan card styles it apart from
+        // the number, and moneyParts decides which side it goes.
+        if (code.includes("const symbol = <Text style={styles.priceSymbol}>€</Text>;")) return;
+
+        if (code.includes('€')) throw new Error(`${file}:${i + 1} writes a euro sign by hand: ${code}`);
+      });
     }
   });
 
@@ -79,5 +90,10 @@ describe('household money is formatted from that one place', () => {
     expect(formatMoney(2.4, 'es')).toBe('2,40\u00a0€');
     expect(formatMoney(2.4, 'de')).toBe('2,40\u00a0€');
     expect(formatMoney(-5, 'fr')).toBe('−5,00\u00a0€');
+    // Rounded before the sign is chosen: no "−0,00 €".
+    expect(formatMoney(-0.004, 'fr')).toBe('0,00\u00a0€');
+    // An unknown or missing language falls back to English, like dates do.
+    expect(formatMoney(2.4, 'xx')).toBe('€2.40');
+    expect(formatMoney(2.4, undefined as unknown as string)).toBe('€2.40');
   });
 });

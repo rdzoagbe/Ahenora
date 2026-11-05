@@ -9,7 +9,7 @@ import { PressScale } from './PressScale';
 import ErrorState from './ErrorState';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
-import { formatMoney, formatNumber } from '../money';
+import { formatDecimal, formatMoney, formatNumber } from '../money';
 import { priceLabel } from '../shopPrices';
 import { api, Expense, ExpenseOverview, MerchantRow, ScannedReceipt,
   SettlementInfo } from '../api';
@@ -49,6 +49,9 @@ function todayISO(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+// Short unit labels for a receipt line: "1,234 kg", "500 g", "1 L".
+const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' };
+
 /**
  * What the household spends on the shopping, by month and by shop.
  *
@@ -68,8 +71,6 @@ function todayISO(): string {
  * figure does not announce itself — it quietly makes six months of history
  * false. Eight seconds of typing is right every time.
  */
-const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' };
-
 export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const ui = useUI();
   const { t, lang } = useStore();
@@ -195,7 +196,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setKeep(read.items.map((i) => !i.unsure));
       setShop(read.shop || '');
       // Pre-filled the way the reader types money: "9,95" in French, "9.95" in English.
-      setAmount(read.total ? (lang === 'en' ? read.total.toFixed(2) : read.total.toFixed(2).replace('.', ',')) : '');
+      setAmount(read.total ? formatDecimal(read.total, lang) : '');
       // An unreadable date comes back empty and today is the honest default —
       // it is at least a date the person can see is wrong.
       setWhen(read.date || todayISO());

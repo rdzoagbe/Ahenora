@@ -8,6 +8,7 @@ import { useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, SantaMatch } from '../../src/api';
 import { logger } from '../../src/logger';
+import { formatMoney } from '../../src/money';
 
 /**
  * The public one-match reveal — the ONE screen an invited outsider sees for
@@ -18,7 +19,7 @@ import { logger } from '../../src/logger';
  */
 export default function PublicSantaRoute() {
   const ui = useUI();
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const { token } = useLocalSearchParams<{ token?: string }>();
   const tok = String(token || '');
@@ -65,7 +66,7 @@ export default function PublicSantaRoute() {
             <Text style={styles.name}>{match.giftee_name}</Text>
             <View style={styles.chips}>
               {match.budget != null ? (
-                <View style={styles.pillOrange}><Text style={styles.pillOrangeText}>{t('ss_budget_chip', { amount: String(match.budget) })}</Text></View>
+                <View style={styles.pillOrange}><Text style={styles.pillOrangeText}>{t('ss_budget_chip', { amount: formatMoney(Number(match.budget), lang) })}</Text></View>
               ) : null}
               {match.draw_by ? (
                 <View style={styles.pillLine}><Text style={styles.pillLineText}>{t('ss_by_chip', { date: match.draw_by })}</Text></View>
