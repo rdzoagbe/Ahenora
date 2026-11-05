@@ -54,7 +54,7 @@ describe('paywall legal disclosure', () => {
     };
     expect(sizeOf('priceValue')).toBeGreaterThan(sizeOf('yearlyNote'));
     // ...and the monthly figure is only ever in that subordinate note.
-    expect(SOURCE).toContain("t('pricing_billed_yearly_note', { amount: `€${perMonth.toFixed(2)}` })");
+    expect(SOURCE).toContain("t('pricing_billed_yearly_note', { amount: formatMoney(perMonth, lang) })");
   });
 
   it('translates every new key in all four languages', () => {

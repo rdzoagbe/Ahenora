@@ -99,26 +99,26 @@ describe('the price under a list item', () => {
 
 describe('how a price reads', () => {
   it('French and English money', () => {
-    expect(priceLabel(0.89, 'piece', false, 'fr')).toBe('0,89 €');
-    expect(priceLabel(2.99, 'kg', true, 'fr')).toBe('2,99 €/kg');
+    expect(priceLabel(0.89, 'piece', false, 'fr')).toBe('0,89 €');
+    expect(priceLabel(2.99, 'kg', true, 'fr')).toBe('2,99 €/kg');
     expect(priceLabel(0.27, 'l', true, 'en')).toBe('€0.27/L');
   });
 
-  it('grams and millilitres read per kilo and per litre, never 0,00 €/g', () => {
-    expect(priceLabel(0.0035, 'g', true, 'fr')).toBe('3,50 €/kg');
-    expect(priceLabel(0.0012, 'ml', true, 'fr')).toBe('1,20 €/L');
+  it('grams and millilitres read per kilo and per litre, never 0,00 €/g', () => {
+    expect(priceLabel(0.0035, 'g', true, 'fr')).toBe('3,50 €/kg');
+    expect(priceLabel(0.0012, 'ml', true, 'fr')).toBe('1,20 €/L');
   });
 
   it('leads with the price printed on the ticket', () => {
     const pasta = p('Pâtes 500 g', { unit: 'g', price: 0.0035, per_unit: true, line_total: 1.75, qty: 500 });
-    expect(lastPriceLine(pasta, t, 'fr', NOW)).toBe('1,75 € (3,50 €/kg) · Carrefour · il y a 2 semaines');
+    expect(lastPriceLine(pasta, t, 'fr', NOW)).toBe('1,75 € (3,50 €/kg) · Carrefour · il y a 2 semaines');
     const water = p('Volvic', { unit: 'l', price: 2.4 / 9, per_unit: true, line_total: 2.4, qty: 9 });
-    expect(lastPriceLine(water, t, 'fr', NOW)).toBe('2,40 € (0,27 €/L) · Carrefour · il y a 2 semaines');
+    expect(lastPriceLine(water, t, 'fr', NOW)).toBe('2,40 € (0,27 €/L) · Carrefour · il y a 2 semaines');
   });
 
   it('one receipt says so, with its date', () => {
-    expect(lastPriceLine(RECEIPTS[3], t, 'fr', NOW)).toBe('3,69 € (2,99 €/kg) · Lidl · vu une fois, il y a 6 semaines');
-    expect(lastPriceLine(RECEIPTS[0], t, 'fr', NOW)).toBe('0,89 € · Carrefour · il y a 2 semaines');
+    expect(lastPriceLine(RECEIPTS[3], t, 'fr', NOW)).toBe('3,69 € (2,99 €/kg) · Lidl · vu une fois, il y a 6 semaines');
+    expect(lastPriceLine(RECEIPTS[0], t, 'fr', NOW)).toBe('0,89 € · Carrefour · il y a 2 semaines');
   });
 
   it('dates', () => {

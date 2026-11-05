@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
-import { PLAN_HIGHLIGHTS, PLAN_PRICE, recommendPlan } from '../planChange';
+import { PLAN_HIGHLIGHTS, PLAN_PRICE, planPriceText, recommendPlan } from '../planChange';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
 const read = (...p: string[]) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
@@ -25,7 +25,9 @@ describe('the recommendation', () => {
 
   it('every recommended plan has a price and highlights to show', () => {
     for (const plan of ['duo', 'executive', 'household'] as const) {
-      expect(PLAN_PRICE[plan]?.monthly).toMatch(/^€\d/);
+      expect(PLAN_PRICE[plan]?.monthly).toBeGreaterThan(0);
+      expect(planPriceText(plan, 'monthly', 'en')).toMatch(/^€\d/);
+      expect(planPriceText(plan, 'monthly', 'fr')).toMatch(/^\d+,\d\d\u00a0€$/);
       expect(PLAN_HIGHLIGHTS[plan]?.length).toBeGreaterThan(0);
     }
   });

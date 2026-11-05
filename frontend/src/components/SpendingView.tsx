@@ -9,6 +9,8 @@ import { PressScale } from './PressScale';
 import ErrorState from './ErrorState';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
+import { formatDecimal, formatMoney, formatNumber } from '../money';
+import { priceLabel } from '../shopPrices';
 import { api, Expense, ExpenseOverview, MerchantRow, ScannedReceipt,
   SettlementInfo } from '../api';
 import { localeFor } from '../utils/date';
@@ -47,6 +49,9 @@ function todayISO(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+// Short unit labels for a receipt line: "1,234 kg", "500 g", "1 L".
+const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' };
+
 /**
  * What the household spends on the shopping, by month and by shop.
  *
@@ -71,7 +76,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const { t, lang } = useStore();
   const styles = createStyles(ui);
   const locale = localeFor(lang);
-  const money = (n: number) => `${t('currency_symbol')}${n.toFixed(2)}`;
+  const money = (n: number) => formatMoney(n, lang);
 
   const [overview, setOverview] = useState<ExpenseOverview | null>(null);
   const [recent, setRecent] = useState<Expense[]>([]);
@@ -190,7 +195,8 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       // lazy option, not the diligent one.
       setKeep(read.items.map((i) => !i.unsure));
       setShop(read.shop || '');
-      setAmount(read.total ? String(read.total.toFixed(2)) : '');
+      // Pre-filled the way the reader types money: "9,95" in French, "9.95" in English.
+      setAmount(read.total ? formatDecimal(read.total, lang) : '');
       // An unreadable date comes back empty and today is the honest default —
       // it is at least a date the person can see is wrong.
       setWhen(read.date || todayISO());
@@ -202,7 +208,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setScanning(false);
     }
-  }, [t]);
+  }, [t, lang]);
 
   /** Commit the reviewed receipt: the expense, and the lines kept with it. */
   const saveScanned = useCallback(async () => {
@@ -596,7 +602,11 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                           read has none, and says so rather than showing a
                           figure that means nothing. */}
                       {item.unit_price != null && item.qty != null
-                        ? `${item.qty}${item.unit === 'piece' ? '' : ' ' + item.unit} · ${money(item.unit_price)}/${item.unit}`
+                        ? (item.unit === 'piece'
+                          // "2 × 0,99 €": the count and the price of one, as the ticket prints them.
+                          ? `${formatNumber(item.qty, lang)} × ${money(item.unit_price)}`
+                          // "1,234 kg · 2,99 €/kg"; grams and millilitres read per kilo and litre.
+                          : `${formatNumber(item.qty, lang)} ${UNIT_SHORT[item.unit] ?? item.unit} · ${priceLabel(item.unit_price, item.unit, true, lang)}`)
                         : t('exp_scan_no_unit')}
                       {item.unsure ? ` · ${t('exp_scan_unsure')}` : ''}
                     </Text>

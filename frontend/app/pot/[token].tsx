@@ -12,6 +12,8 @@ import { KeyboardAwareScrollView } from '../../src/components/KeyboardAwareScrol
 import { useStore } from '../../src/store';
 import { api, PublicPot, GiftMethod } from '../../src/api';
 import { logger } from '../../src/logger';
+import { formatMoney } from '../../src/money';
+import { EuroSign } from '../../src/components/EuroSign';
 
 const METHODS: GiftMethod[] = ['cash', 'transfer', 'gift', 'other'];
 
@@ -24,7 +26,7 @@ const METHODS: GiftMethod[] = ['cash', 'transfer', 'gift', 'other'];
  */
 export default function PublicPotRoute() {
   const ui = useUI();
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const { toast, showToast } = useToast();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const { token } = useLocalSearchParams<{ token?: string }>();
@@ -112,7 +114,7 @@ export default function PublicPotRoute() {
               {pot.note ? <Text style={styles.note}>“{pot.note}”</Text> : null}
               <View style={styles.bar}><View style={[styles.barFill, { width: `${Math.round(pct * 100)}%` }]} /></View>
               <Text style={styles.meta}>
-                {t('gp_money', { amount: String(pot.total_pledged) })} {t('gp_of', { amount: String(Math.round(target)) })}
+                {t('gp_money', { amount: formatMoney(Number(pot.total_pledged), lang) })} {t('gp_of', { amount: formatMoney(Math.round(target), lang) })}
                 {pot.contributor_count > 0 ? ` · ${pot.contributor_count === 1 ? t('gp_n_in_one') : t('gp_n_in', { n: String(pot.contributor_count) })}` : ''}
               </Text>
             </View>
@@ -133,7 +135,7 @@ export default function PublicPotRoute() {
                 />
                 <Text style={styles.fieldLabel}>{t('pub_pot_amount_label')}</Text>
                 <View style={styles.amountWrap}>
-                  <Text style={styles.euro}>€</Text>
+                  <EuroSign side="before" style={styles.euro} afterStyle={styles.euroAfter} />
                   <TextInput
                     testID="pub-pot-amount" returnKeyType="done" onSubmitEditing={() => join()}
                     value={amount}
@@ -143,6 +145,7 @@ export default function PublicPotRoute() {
                     placeholderTextColor={ui.muted}
                     style={styles.amountInput}
                   />
+                  <EuroSign side="after" style={styles.euro} afterStyle={styles.euroAfter} />
                 </View>
                 <Text style={styles.fieldLabel}>{t('pub_pot_method_label')}</Text>
                 <View style={styles.methodRow}>
@@ -194,6 +197,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   fieldLabel: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12.5, marginTop: 16, marginBottom: 8 },
   amountWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: ui.bg, borderRadius: 12, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14 },
   euro: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 17, marginRight: 5 },
+  euroAfter: { marginRight: 0, marginLeft: 5 },
   amountInput: { flex: 1, color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 17, paddingVertical: 13 },
   methodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   methodChip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 99, backgroundColor: ui.bg, borderWidth: 1, borderColor: ui.line },

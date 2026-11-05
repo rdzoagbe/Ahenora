@@ -9,6 +9,7 @@ import { useStore } from '../store';
 import { api, SettlementInfo } from '../api';
 import { shouldShowBalance } from '../coParentBalance';
 import { logger } from '../logger';
+import { formatMoney } from '../money';
 
 /**
  * "Keigh owes you €62", on the screen people actually open.
@@ -28,7 +29,7 @@ import { logger } from '../logger';
  */
 export function CoParentBalance() {
   const ui = useUI();
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const router = useRouter();
   const styles = createStyles(ui);
   const [info, setInfo] = useState<SettlementInfo | null>(null);
@@ -50,11 +51,10 @@ export function CoParentBalance() {
 
   const owed = info.balance > 0.005;
   const owing = info.balance < -0.005;
-  const amount = Math.abs(info.balance).toFixed(2);
-  // The symbol in front, from the one place that knows it — the same shape
-  // SpendingView uses. This read "62 €" while the spending screen beside it
-  // read "$0.00": one feature, two currencies, two placements.
-  const money = (n: string) => `${t('currency_symbol')}${n}`;
+  const amount = Math.abs(info.balance);
+  // The one formatter every money screen uses, so this card and the spending
+  // screen beside it always write euros the same way.
+  const money = (n: number) => formatMoney(n, lang);
   const name = info.other_name || '';
 
   return (

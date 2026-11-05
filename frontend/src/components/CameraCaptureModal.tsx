@@ -25,6 +25,7 @@ import { scanDocument } from '../documentScanner';
 import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
 import { whereItWent } from '../shoppingAisles';
 import { logger } from '../logger';
+import { formatMoney } from '../money';
 
 interface Draft {
   type: CardType;
@@ -322,7 +323,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
           .filter((i) => !i.unsure)
           .map((i) => ({ name: i.name, qty: i.qty, unit: i.unit, line_total: i.line_total })),
       });
-      setDoneText(t('cam_done_receipt', { amount: receipt.total.toFixed(2), shop }));
+      setDoneText(t('cam_done_receipt', { amount: formatMoney(receipt.total, lang), shop }));
       setPhase('done');
     } catch (e: any) {
       logger.warn('receipt from camera failed', e);
@@ -493,13 +494,13 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
               </Text>
               <View style={[styles.facts, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
                 <Text style={[styles.factText, { color: theme.colors.text }]}>
-                  {t('cam_receipt_total', { amount: receipt.total.toFixed(2) })}
+                  {t('cam_receipt_total', { amount: formatMoney(receipt.total, lang) })}
                 </Text>
                 {/* The lines and the printed total disagree: say so, fix
                     neither — the person holding the receipt decides. */}
                 {!receipt.reconciles ? (
                   <Text style={[styles.factText, { color: theme.colors.textMuted }]}>
-                    {t('cam_receipt_mismatch', { amount: receipt.lines_total.toFixed(2) })}
+                    {t('cam_receipt_mismatch', { amount: formatMoney(receipt.lines_total, lang) })}
                   </Text>
                 ) : null}
                 <Text style={[styles.factText, { color: theme.colors.textMuted }]}>
@@ -517,7 +518,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                   style={[styles.primaryBtn, { backgroundColor: theme.colors.primary }]}
                 >
                   <Text style={[styles.primaryText, { color: theme.colors.primaryText }]}>
-                    {adding ? t('cam_adding') : t('cam_add_expense', { amount: receipt.total.toFixed(2) })}
+                    {adding ? t('cam_adding') : t('cam_add_expense', { amount: formatMoney(receipt.total, lang) })}
                   </Text>
                 </PressScale>
                 <PressScale

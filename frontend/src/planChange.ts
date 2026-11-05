@@ -3,6 +3,7 @@
  * free of React so the Plans page, the sheet and the tests share one answer.
  */
 import type { Plan } from './api';
+import { formatMoney } from './money';
 
 export const PLAN_RANK: Record<Plan, number> = {
   village: 0,
@@ -50,8 +51,14 @@ export const PLAN_HIGHLIGHTS: Partial<Record<Plan, string[]>> = {
   household: ['pf_house_2', 'pf_house_3', 'pf_house_4', 'pf_house_5'],
 };
 
-export const PLAN_PRICE: Partial<Record<Plan, { monthly: string; yearly: string }>> = {
-  duo: { monthly: '€1.99', yearly: '€19.99' },
-  executive: { monthly: '€4.99', yearly: '€39.99' },
-  household: { monthly: '€9.99', yearly: '€99.99' },
+export const PLAN_PRICE: Partial<Record<Plan, { monthly: number; yearly: number }>> = {
+  duo: { monthly: 1.99, yearly: 19.99 },
+  executive: { monthly: 4.99, yearly: 39.99 },
+  household: { monthly: 9.99, yearly: 99.99 },
 };
+
+/** A plan's price written the way the reader's language writes money: "€4.99" / "4,99 €". */
+export function planPriceText(plan: Plan, cycle: 'monthly' | 'yearly', lang: string): string {
+  const amount = PLAN_PRICE[plan]?.[cycle];
+  return amount == null ? '' : formatMoney(amount, lang);
+}

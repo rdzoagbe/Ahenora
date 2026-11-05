@@ -15,7 +15,7 @@ import type { Lang } from '../src/i18n';
 import { logger } from '../src/logger';
 import { isoWeek } from '../src/utils/date';
 import type { CustodyWeeks } from '../src/utils/date';
-import { PLAN_HIGHLIGHTS, PLAN_PRICE, recommendPlan, type Living } from '../src/planChange';
+import { PLAN_HIGHLIGHTS, planPriceText, recommendPlan, type Living } from '../src/planChange';
 import { useDuoOffered } from '../src/duoOffered';
 
 import { DEFAULT_CHORES, STARTER_CHORES } from '../src/starterChores';
@@ -424,7 +424,7 @@ export default function Onboarding() {
                 <Text style={[styles.planName, { color: theme.colors.text }]}>{t(`plan_${recommended}`)}</Text>
                 <Text style={[styles.subSmall, { color: theme.colors.textMuted, marginTop: 2 }]}>{t(`plan_${recommended}_tag`)}</Text>
                 <Text style={[styles.planPrice, { color: theme.colors.text }]}>
-                  {t('ob_plan_price', { price: PLAN_PRICE[recommended]?.monthly ?? '', yearly: PLAN_PRICE[recommended]?.yearly ?? '' })}
+                  {t('ob_plan_price', { price: planPriceText(recommended, 'monthly', lang), yearly: planPriceText(recommended, 'yearly', lang) })}
                 </Text>
                 <View style={{ gap: 8, marginTop: 12 }}>
                   {(PLAN_HIGHLIGHTS[recommended] ?? []).map((k) => (

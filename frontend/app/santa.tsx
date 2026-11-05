@@ -14,6 +14,8 @@ import { useStore } from '../src/store';
 import { usePremiumGate } from '../src/components/PremiumGate';
 import { api, SantaDraw, SantaMatch, FamilyMember } from '../src/api';
 import { logger } from '../src/logger';
+import { formatMoney } from '../src/money';
+import { EuroSign } from '../src/components/EuroSign';
 
 /**
  * Secret Santa — a name-draw gift exchange. Build the list, shuffle, send.
@@ -29,7 +31,7 @@ export default function SantaRoute() {
   const ui = useUI();
   const { toast, showToast } = useToast();
   const router = useRouter();
-  const { t } = useStore();
+  const { t, lang } = useStore();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const styles = useMemo(() => createStyles(ui), [ui]);
   const params = useLocalSearchParams<{ drawId?: string }>();
@@ -271,7 +273,7 @@ export default function SantaRoute() {
           <View style={styles.two}>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>{t('ss_budget')}</Text>
-              <View style={styles.fieldMoney}><Text style={styles.euro}>€</Text><TextInput testID="santa-budget" value={budget} onChangeText={setBudget} keyboardType="decimal-pad" placeholder="—" placeholderTextColor={ui.muted} style={styles.fieldInput} /></View>
+              <View style={styles.fieldMoney}><EuroSign side="before" style={styles.euro} afterStyle={styles.euroAfter} /><TextInput testID="santa-budget" value={budget} onChangeText={setBudget} keyboardType="decimal-pad" placeholder="—" placeholderTextColor={ui.muted} style={styles.fieldInput} /><EuroSign side="after" style={styles.euro} afterStyle={styles.euroAfter} /></View>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>{t('ss_draw_by')}</Text>
@@ -460,7 +462,7 @@ export default function SantaRoute() {
             <Text style={styles.revealKicker}>{t('ss_your_santa')}</Text>
             <Text style={styles.revealName}>{reveal?.giftee_name}</Text>
             <View style={styles.revealChips}>
-              {reveal?.budget != null ? <View style={styles.pillOrange}><Text style={styles.pillOrangeText}>{t('ss_budget_chip', { amount: String(reveal.budget) })}</Text></View> : null}
+              {reveal?.budget != null ? <View style={styles.pillOrange}><Text style={styles.pillOrangeText}>{t('ss_budget_chip', { amount: formatMoney(Number(reveal.budget), lang) })}</Text></View> : null}
               {reveal?.draw_by ? <View style={styles.pillLine}><Text style={styles.pillLineText}>{t('ss_by_chip', { date: reveal.draw_by })}</Text></View> : null}
             </View>
             <Text style={styles.revealSecret}>{t('ss_secret')}</Text>
@@ -500,6 +502,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   fieldValue: { flex: 1, color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15, paddingVertical: 13, marginLeft: 8 },
   fieldPlaceholder: { color: ui.muted, fontFamily: 'Figtree_600SemiBold' },
   euro: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 15, marginRight: 4 },
+  euroAfter: { marginRight: 0, marginLeft: 4 },
   two: { flexDirection: 'row', gap: 10 },
 
   card: { backgroundColor: ui.card, borderRadius: 16, borderWidth: 1, borderColor: ui.line, padding: 6, paddingHorizontal: 12 },

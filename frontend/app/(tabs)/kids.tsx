@@ -55,6 +55,7 @@ import { PersonAvatar, avatarKind } from '../../src/components/PersonAvatar';
 import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
+import { formatMoney } from '../../src/money';
 import { memberRoute } from '../../src/memberRoute';
 import { personTone } from '../../src/homeFamily';
 import { activityPhrase } from '../../src/activityPhrase';
@@ -1184,14 +1185,14 @@ export default function Kids() {
         ...prev,
         [activeChild.member_id]: (prev[activeChild.member_id] || 0) + res.transaction.amount,
       }));
-      showToast(t('kids_allowance_paid', { amount: `${t('currency_symbol')}${res.transaction.amount}` }), 'success');
+      showToast(t('kids_allowance_paid', { amount: formatMoney(Number(res.transaction.amount), lang) }), 'success');
     } catch (e: any) {
       logger.warn('Pay allowance failed:', e?.message || e);
       showToast(apiErrorText(e, t, 'kids_allowance_error'), 'error');
     } finally {
       moneySavingRef.current = false;
     }
-  }, [activeChild, allowances, showToast, t]);
+  }, [activeChild, allowances, showToast, t, lang]);
 
   const openMoneySheet = useCallback(async () => {
     if (!activeChild) return;
@@ -1964,7 +1965,7 @@ export default function Kids() {
                             ? t('fam_allowance_due_now')
                             : t('fam_allowance_due', { day: due.dueAt.toLocaleDateString(localeFor(lang), { weekday: 'long' }) })}
                         </Text>
-                        <Text style={styles.weekVal} testID="family-week-allowance">{t('currency_symbol')}{due.amount.toFixed(2)}</Text>
+                        <Text style={styles.weekVal} testID="family-week-allowance">{formatMoney(due.amount, lang)}</Text>
                       </View>
                     ) : null}
                   </Card></View>
@@ -2606,9 +2607,9 @@ export default function Kids() {
                       onPress={openMoneySheet}
                       style={{ flex: 1 }}
                     >
-                      <Text style={styles.allowanceBalance}>{t('currency_symbol')}{childBalance.toFixed(2)}</Text>
+                      <Text style={styles.allowanceBalance}>{formatMoney(childBalance, lang)}</Text>
                       <Text style={styles.featureRowSub}>
-                        {childAllowance ? `${t('currency_symbol')}${childAllowance.amount}/${t('kids_freq_' + childAllowance.frequency)}` : t('kids_no_allowance_set')}
+                        {childAllowance ? `${formatMoney(Number(childAllowance.amount), lang)}/${t('kids_freq_' + childAllowance.frequency)}` : t('kids_no_allowance_set')}
                       </Text>
                       {/* Setting an amount used to do nothing on its own. This
                           is the line that tells a parent the app is keeping
@@ -3297,7 +3298,7 @@ export default function Kids() {
           </PressScale>
         </View>
         <Text style={styles.sheetHelp}>
-          {t('kids_for')} {activeChild?.name || t('kids_selected_child')} · {t('currency_symbol')}{childBalance.toFixed(2)}
+          {t('kids_for')} {activeChild?.name || t('kids_selected_child')} · {formatMoney(childBalance, lang)}
         </Text>
 
         <Text style={styles.label}>{t('kids_money_amount')}</Text>
@@ -3353,7 +3354,7 @@ export default function Kids() {
                   { color: txn.txn_type === 'withdrawal' ? ui.muted : ui.mintText },
                 ]}
               >
-                {txn.txn_type === 'withdrawal' ? '−' : '+'}{t('currency_symbol')}{Number(txn.amount).toFixed(2)}
+                {txn.txn_type === 'withdrawal' ? '−' : '+'}{formatMoney(Math.abs(Number(txn.amount)), lang)}
               </Text>
             </View>
           ))

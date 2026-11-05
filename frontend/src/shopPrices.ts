@@ -15,6 +15,7 @@
  *     on the same unit and several visits at each shop.
  */
 import type { ShopPrice } from './api';
+import { formatMoney } from './money';
 
 /** Lower case, no accents, single spaces: "Pâtes  Bio" -> "pates bio". */
 export function fold(text: string): string {
@@ -133,8 +134,7 @@ export function priceForItem(
 
 /** "0,89 €" in French, Spanish and German; "€0.89" in English. */
 export function money(amount: number, lang: string): string {
-  const fixed = amount.toFixed(2);
-  return lang === 'en' ? `€${fixed}` : `${fixed.replace('.', ',')} €`;
+  return formatMoney(amount, lang);
 }
 
 // Grams and millilitres are shown per kilo and per litre: a "500 g" line is

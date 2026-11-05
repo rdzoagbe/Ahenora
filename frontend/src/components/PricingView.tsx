@@ -26,6 +26,7 @@ import { api, Plan, BillingCycle, bustSubscriptionCache } from '../api';
 import { purchasePremium, restorePurchases } from '../billing';
 import { PlanChangeSheet, PLAN_RANK } from './PlanChangeSheet';
 import { useDuoOffered } from '../duoOffered';
+import { formatMoney, moneyParts } from '../money';
 
 // Where a web (or billing-less) user is sent to actually subscribe. Store
 // billing only exists in the native app, so on web the purchase and restore
@@ -663,6 +664,8 @@ function PlanCard({
   styles: ReturnType<typeof createStyles>;
   ui: UIColors;
 }) {
+  // The language for money, read here rather than threaded through as a prop.
+  const { lang } = useStore();
   const price = PLAN_PRICES[plan][cycle];
   const perMonth = cycle === 'yearly' ? price / 12 : price;
   // The BILLED amount is the headline, always — on a yearly plan that is the
@@ -727,10 +730,19 @@ function PlanCard({
           <Text style={styles.freeText}>{t('price_free')}</Text>
         ) : (
           <>
-            <Text style={styles.priceSymbol}>€</Text>
-            <Text style={styles.priceValue}>
-              {priceDisplay.toFixed(priceDisplay % 1 === 0 ? 0 : 2)}
-            </Text>
+            {/* The sign keeps its own smaller style, on the side the
+                reader's language puts it: "€39.99" / "39,99 €". */}
+            {(() => {
+              const parts = moneyParts(priceDisplay, lang, { whole: true });
+              const symbol = <Text style={styles.priceSymbol}>€</Text>;
+              return (
+                <>
+                  {parts.symbolFirst ? symbol : null}
+                  <Text style={styles.priceValue}>{parts.sign}{parts.number}</Text>
+                  {parts.symbolFirst ? null : symbol}
+                </>
+              );
+            })()}
             <Text style={styles.pricePer}>
               {cycle === 'yearly' ? t('pricing_per_year') : t('pricing_per_month')}
             </Text>
@@ -739,7 +751,7 @@ function PlanCard({
       </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
-          {t('pricing_billed_yearly_note', { amount: `€${perMonth.toFixed(2)}` })}
+          {t('pricing_billed_yearly_note', { amount: formatMoney(perMonth, lang) })}
         </Text>
       ) : null}
 
