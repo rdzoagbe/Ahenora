@@ -233,7 +233,9 @@ def _recipe_is_current():
     with open(os.path.join(ROOT, "backend", "server.py"), encoding="utf-8") as handle:
         src = handle.read()
     body = src[src.index("def recipe_is_current"):src.index("def recipe_slot")]
-    namespace = {"Optional": __import__("typing").Optional}
+    namespace = {"Optional": __import__("typing").Optional,
+                 # The check also refreshes flour or sugar counted in pieces.
+                 "weighed_as_pieces": __import__("ai_safety").weighed_as_pieces}
     exec(body, namespace)
     return namespace["recipe_is_current"]
 

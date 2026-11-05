@@ -77,6 +77,7 @@ from ai_safety import (
     sanitize_user_text,
     sanitize_message_text,
     validate_recipe,
+    weighed_as_pieces,
     ensure_seasoned,
     CHEF_SYSTEM_PROMPT,
     MAX_QUESTION_LEN,
@@ -19486,7 +19487,7 @@ async def store_recipe_in_library(database, key: Optional[str], recipe: dict) ->
         log.warning("could not add a recipe to the shared library")
 
 
-def recipe_is_current(recipe: Optional[dict]) -> bool:
+def recipe_is_current(recipe: Optional[dict], language: Optional[str] = None) -> bool:
     """Is this cached recipe of the shape we serve today?
 
     "Cook it" gained serve_with — what to put on the plate beside the dish —
@@ -19513,7 +19514,15 @@ def recipe_is_current(recipe: Optional[dict]) -> bool:
     # This check is the whole reason that does not happen.
     if recipe.get("title"):
         return True
+    # Flour or sugar counted in pieces ("farine ×2½": yoghurt pots, written
+    # before the rule against it) tells nobody how much to buy, so it is
+    # written again, in grams. units_checked marks a recipe that already went
+    # through that second ask, so a dish the model still gets wrong is not
+    # regenerated, and billed, on every open.
+    if weighed_as_pieces(recipe, language) and not recipe.get("units_checked"):
+        return False
     return bool(recipe.get("serve_with") or recipe.get("serve_with_unavailable"))
+
 
 
 def recipe_slot(diet: str) -> str:
@@ -19523,6 +19532,73 @@ def recipe_slot(diet: str) -> str:
     cached omnivore version, and a plain "Cook it" never returns the veg one.
     """
     return f"ai_recipe_{diet}" if diet else "ai_recipe"
+
+
+# Said to the model when it counted something that is weighed. The first
+# answer's ingredients go with it, so the second is the same recipe with
+# its amounts fixed, not a new recipe whose steps still say "3 pots".
+WEIGH_AGAIN = (
+    "Your previous answer had these ingredients: {first}. It gave these in "
+    "pieces: {names}. They are weighed or poured: give every one of them in "
+    "g, kg, ml or l (a yoghurt pot holds 125 ml). Keep every ingredient and "
+    "the same steps, changing only the amounts and any step that mentions "
+    "pots or cups. Return the whole recipe again, JSON only."
+)
+
+
+def weigh_again_prompt(prompt: str, first: dict, counted: list) -> str:
+    """The recipe prompt again, with the first answer's ingredients and what to fix."""
+    listed = json.dumps(first.get("ingredients") or [], ensure_ascii=False)
+    return prompt + "\n\n" + WEIGH_AGAIN.format(first=listed, names=", ".join(counted))
+
+
+def _ingredient_key(name: str) -> str:
+    folded = unicodedata.normalize("NFKD", (name or "").casefold())
+    return re.sub(r"[^a-z0-9]+", " ", "".join(c for c in folded if not unicodedata.combining(c))).strip()
+
+
+def better_weighed(first: dict, text: str, language: str) -> dict:
+    """The second answer only if it is the same recipe, better weighed.
+
+    Kept when it has at least as many ingredients, still names every one that
+    was counted in pieces, and weighs at least one more of them. Anything else
+    (unparseable, unsafe, an ingredient dropped, no better) leaves the first
+    recipe exactly as it was. serve_with is carried over if the second lost it.
+    """
+    try:
+        parsed = extract_json(text)
+        if parsed is None:
+            return first
+        again = ensure_seasoned(validate_recipe(parsed), language)
+    except UnsafeRecipe:
+        return first
+    counted = weighed_as_pieces(first, language)
+    first_ings = first.get("ingredients") or []
+    again_ings = again.get("ingredients") or []
+    if len(again_ings) < len(first_ings):
+        return first
+    units = {_ingredient_key(i.get("name", "")): i.get("unit") for i in again_ings}
+    keys = [_ingredient_key(n) for n in counted]
+    if any(k not in units for k in keys):
+        return first
+    if sum(1 for k in keys if units[k] != "piece") == 0:
+        return first
+    if first.get("serve_with") and not again.get("serve_with"):
+        again["serve_with"] = first["serve_with"]
+    return again
+
+
+def mark_generated(recipe: dict) -> dict:
+    """Marks every generated recipe the same way, in both routes.
+
+    serve_with_unavailable: the model gave no sides; still a good recipe, and
+    recipe_is_current must treat it as a hit or it regenerates, and bills, on
+    every open. units_checked: it went through the weights check once.
+    """
+    if not recipe.get("serve_with"):
+        recipe["serve_with_unavailable"] = True
+    recipe["units_checked"] = True
+    return recipe
 
 
 @app.post("/api/meals/{meal_id}/recipe")
@@ -19565,8 +19641,12 @@ async def generate_meal_recipe(
     cached = (meal.get(slot) or {}).get(language)
     # A "different recipe" (variant>0) is a deliberate ask for something fresh,
     # so it skips both caches; everything else serves a cached copy free.
-    if cached and not variant and recipe_is_current(cached):
+    if cached and not variant and recipe_is_current(cached, language):
         return {"recipe": cached, "cached": True, "diet": diet}
+    # An out-of-date copy is still a recipe the family could read yesterday.
+    # It is rewritten when possible; when that is blocked (no AI, the monthly
+    # limit, a failed or rejected answer) it is served as it was, never lost.
+    stale = cached if cached and not variant else None
 
     meal_title = sanitize_user_text(meal.get("title", ""))
     library_key = None if variant else recipe_library_key(meal_title, language, diet)
@@ -19574,7 +19654,8 @@ async def generate_meal_recipe(
     # it, remember it on the meal so the next open does not even come here, and
     # charge nothing: there is no AI call to pay for.
     shared = await recipe_from_library(database, library_key)
-    if shared and not recipe_is_current(shared):
+    if shared and not recipe_is_current(shared, language):
+        stale = stale or shared
         # Written before serve_with existed. Regenerating overwrites the shared
         # entry under the same key, so the next household to ask for this dish
         # gets the new shape free — the library heals itself one dish at a time
@@ -19588,12 +19669,16 @@ async def generate_meal_recipe(
         return {"recipe": shared, "cached": True, "diet": diet}
 
     if not GOOGLE_API_KEY:
+        if stale:
+            return {"recipe": stale, "cached": True, "diet": diet}
         raise HTTPException(503, "Recipe suggestions are unavailable right now.")
 
     sub = await build_subscription(user["family_id"])
     # Metered against the same monthly AI allowance as document scanning, so a
     # family has one number to understand rather than two.
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        if stale:
+            return {"recipe": stale, "cached": True, "diet": diet}
         plan_limit_error(
             family_id=user["family_id"],
             feature="ai_scans",
@@ -19609,9 +19694,10 @@ async def generate_meal_recipe(
     ingredients = sanitize_ingredients(meal.get("ingredients", []))
 
     try:
+        prompt = build_recipe_prompt(title, ingredients, RECIPE_LANGUAGE_NAMES[language],
+                                     diet=diet, variant=variant)
         text = await _gemini_text(
-            build_recipe_prompt(title, ingredients, RECIPE_LANGUAGE_NAMES[language],
-                                diet=diet, variant=variant),
+            prompt,
             system=RECIPE_SYSTEM_PROMPT,
             # The lite model turns a dish name into a structured recipe quickly,
             # and the validator guards the shape either way — so "Cook it"
@@ -19624,6 +19710,23 @@ async def generate_meal_recipe(
         if parsed is None:
             raise UnsafeRecipe("unparseable")
         recipe = ensure_seasoned(validate_recipe(parsed), language)
+        counted = weighed_as_pieces(recipe, language)
+        if counted:
+            # Flour or sugar counted in pieces (yoghurt pots): asked once more,
+            # here in the route the family called, never in the background.
+            try:
+                again = await _gemini_text(
+                    weigh_again_prompt(prompt, recipe, counted),
+                    system=RECIPE_SYSTEM_PROMPT,
+                    fast=True,
+                    temperature=0.9 if variant else None,
+                )
+                recipe = better_weighed(recipe, again, language)
+            except Exception as exc:
+                log.info("second try for weights failed: %s", exc)
+        # Checked either way, so the cache keeps it rather than asking again
+        # on every open (recipe_is_current).
+        mark_generated(recipe)
         if "ingredients" not in recipe:
             # Still a usable recipe, but the model ignored half the prompt —
             # loud in the logs so a quiet downgrade cannot become the norm.
@@ -19638,9 +19741,13 @@ async def generate_meal_recipe(
         # The specific check that failed is useful to us and meaningless to the
         # user, so it is logged and not returned.
         log.info("recipe rejected by safety gate: %s", exc.reason)
+        if stale:
+            return {"recipe": stale, "cached": True, "diet": diet}
         raise HTTPException(422, "We could not write a recipe for this one.")
     except Exception as exc:
         log.warning("recipe generation failed: %s", exc)
+        if stale:
+            return {"recipe": stale, "cached": True, "diet": diet}
         raise HTTPException(502, "We could not write a recipe for this one.")
 
     await database["meals"].update_one(
@@ -19781,6 +19888,8 @@ async def generate_recipe_from_name(
         raise HTTPException(400, "Name a dish to get a recipe.")
 
     if not GOOGLE_API_KEY:
+        if stale:
+            return {"recipe": stale, "cached": True, "diet": diet}
         raise HTTPException(503, "Recipe suggestions are unavailable right now.")
 
     family = await get_family_doc(user["family_id"])
@@ -19792,13 +19901,20 @@ async def generate_recipe_from_name(
     # variant is a deliberate ask for something different, so it skips it.
     library_key = None if variant else recipe_library_key(title, language, diet)
     shared = await recipe_from_library(database, library_key)
-    if shared:
+    # The same rule as the planner: a library copy of an older shape is written
+    # again (and overwritten for everyone) rather than served as it is.
+    if shared and recipe_is_current(shared, language):
         return {"recipe": shared, "cached": True, "diet": diet}
+    # Out of date but readable: rewritten when possible, served as it was
+    # when that is blocked, never turned into an error.
+    stale = shared
 
     sub = await build_subscription(user["family_id"])
     # Metered against the same monthly AI allowance as scans and the meal
     # recipes, so a family has one number to understand rather than three.
     if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+        if stale:
+            return {"recipe": stale, "cached": True, "diet": diet}
         plan_limit_error(
             family_id=user["family_id"],
             feature="ai_scans",
@@ -19809,9 +19925,10 @@ async def generate_recipe_from_name(
         )
 
     try:
+        prompt = build_recipe_prompt(title, [], RECIPE_LANGUAGE_NAMES[language],
+                                     diet=diet, variant=variant)
         text = await _gemini_text(
-            build_recipe_prompt(title, [], RECIPE_LANGUAGE_NAMES[language],
-                                diet=diet, variant=variant),
+            prompt,
             system=RECIPE_SYSTEM_PROMPT,
             fast=True,
             temperature=0.9 if variant else None,
@@ -19820,11 +19937,32 @@ async def generate_recipe_from_name(
         if parsed is None:
             raise UnsafeRecipe("unparseable")
         recipe = ensure_seasoned(validate_recipe(parsed), language)
+        counted = weighed_as_pieces(recipe, language)
+        if counted:
+            # Flour or sugar counted in pieces (yoghurt pots): asked once more,
+            # here in the route the family called, never in the background.
+            try:
+                again = await _gemini_text(
+                    weigh_again_prompt(prompt, recipe, counted),
+                    system=RECIPE_SYSTEM_PROMPT,
+                    fast=True,
+                    temperature=0.9 if variant else None,
+                )
+                recipe = better_weighed(recipe, again, language)
+            except Exception as exc:
+                log.info("second try for weights failed: %s", exc)
+        # Checked either way, so the cache keeps it rather than asking again
+        # on every open (recipe_is_current).
+        mark_generated(recipe)
     except UnsafeRecipe as exc:
         log.info("recipe rejected by safety gate: %s", exc.reason)
+        if stale:
+            return {"recipe": stale, "cached": True, "diet": diet}
         raise HTTPException(422, "We could not write a recipe for this one.")
     except Exception as exc:
         log.warning("recipe generation failed: %s", exc)
+        if stale:
+            return {"recipe": stale, "cached": True, "diet": diet}
         raise HTTPException(502, "We could not write a recipe for this one.")
 
     if not is_admin_user(user):

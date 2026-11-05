@@ -142,6 +142,13 @@ Rules you must follow:
   must be one of exactly: g, kg, ml, l, tbsp, tsp, piece, pinch, clove, can,
   to taste. Use metric weights and volumes; count whole things as "piece".
   For "to taste", set qty to 0.
+- Flour, sugar, butter, oil, milk, cream, rice, semolina, cocoa, honey, water
+  and anything else that is weighed or poured are ALWAYS in g, kg, ml or l,
+  never "piece". This matters most for cakes and baking. Where a recipe is
+  traditionally measured with a cup, a glass or a yoghurt pot (a French
+  "gâteau au yaourt"), convert each of those measures to grams or millilitres
+  for that ingredient: a yoghurt pot holds 125 ml. "piece" is only for things
+  that are counted: eggs, a pot of yoghurt itself, sachets, lemons.
 - Ingredient names are in the same language as the steps.
 - Between 3 and 8 steps. Each step is one short sentence a tired parent can follow.
 - "serve_with" is 2 to 4 things to put on the plate ALONGSIDE the dish, so the
@@ -339,6 +346,11 @@ Rules you must follow:
   must be one of exactly: g, kg, ml, l, tbsp, tsp, piece, pinch, clove, can,
   to taste. Convert imperial amounts to metric. Count whole things as "piece".
   For "to taste", set qty to 0.
+- Flour, sugar, butter, oil, milk, cream, rice, semolina, cocoa, honey, water
+  and anything else that is weighed or poured are ALWAYS in g, kg, ml or l,
+  never "piece". Where the recipe measures them with a cup, a glass or a
+  yoghurt pot, convert to grams or millilitres for that ingredient: a yoghurt
+  pot holds 125 ml.
 - Transcribe what is printed. Invent nothing. Where the photo gives no time
   or servings, estimate sensibly from the recipe itself.
 - Between 3 and 8 steps: condense long methods faithfully rather than
@@ -802,6 +814,66 @@ class UnsafeRecipe(Exception):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
+
+
+# Things that are weighed or poured, never counted. "piece" on one of these is
+# the model counting yoghurt pots or cups, which reads as "farine ×2½" and
+# tells nobody how much flour to buy.
+#
+# Matched the way each language names an ingredient, so counted things that
+# merely start or end with a staple word are left alone:
+#   - French and Spanish put the noun first: "farine de blé", "aceite de oliva"
+#     ("pain au lait", a counted brioche, starts with "pain").
+#   - English puts it last: "plain flour", "caster sugar", "olive oil"
+#     ("sugar snap peas", "rice paper" and "water chestnuts" are counted).
+#   - German compounds end with it: "Weizenmehl", "Puderzucker", "Rapsöl".
+_STAPLES_FIRST = frozenset({
+    "farine", "sucre", "beurre", "huile", "lait", "creme", "riz", "semoule",
+    "cacao", "maizena", "miel", "eau",
+    "harina", "azucar", "mantequilla", "aceite", "leche", "nata", "arroz",
+    "semola", "maicena", "agua",
+})
+_STAPLES_LAST = frozenset({
+    "flour", "sugar", "butter", "oil", "milk", "cream", "rice", "semolina",
+    "cocoa", "cornstarch", "cornflour", "honey", "water",
+})
+_STAPLES_DE_SUFFIX = ("mehl", "zucker", "butter", "ol", "milch", "sahne", "reis",
+                      "griess", "kakao", "starke", "honig", "wasser")
+
+
+def _words(name: str) -> list:
+    # casefold, not lower: "Grieß" becomes "griess".
+    folded = unicodedata.normalize("NFKD", (name or "").casefold())
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    return re.findall(r"[a-z]+", folded)
+
+
+def _is_weighed(name: str, language: Optional[str]) -> bool:
+    words = _words(name)
+    if not words:
+        return False
+    checks = {
+        "fr": lambda: words[0] in _STAPLES_FIRST,
+        "es": lambda: words[0] in _STAPLES_FIRST,
+        "en": lambda: words[-1] in _STAPLES_LAST,
+        "de": lambda: words[-1].endswith(_STAPLES_DE_SUFFIX),
+    }
+    if language in checks:
+        return checks[language]()
+    # Language unknown (an old cached recipe): any of the four.
+    return any(check() for check in checks.values())
+
+
+def weighed_as_pieces(recipe: dict, language: Optional[str] = None) -> list:
+    """The ingredients a recipe counts in pieces that are weighed or poured.
+
+    Empty means the amounts can go on a shopping list as they are.
+    """
+    out = []
+    for ing in (recipe or {}).get("ingredients") or []:
+        if ing.get("unit") == "piece" and _is_weighed(ing.get("name", ""), language):
+            out.append(ing.get("name", ""))
+    return out
 
 
 def validate_recipe(parsed: dict) -> dict:
