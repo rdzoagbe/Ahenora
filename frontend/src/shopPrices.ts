@@ -220,17 +220,65 @@ export interface ShopGroup<T> {
  * usual price for the same amount. Nothing is invented: a weighed line with
  * no amount has no estimate.
  */
-export function placeItem(p: ShopPrice): { shop: string; estimate: number | null; cheapest: boolean } {
-  const lastTime = p.line_total ?? (p.per_unit ? null : p.price);
-  const sure = p.cheapest;
-  if (!sure || sure.shop === p.shop) {
-    return { shop: sure ? sure.shop : p.shop, estimate: lastTime, cheapest: !!sure };
+/**
+ * How much of something the list asks for, when it says so plainly:
+ * "Lait x6" is six, "Tomates 400g" is 0.4 kg, "Riz 1,5 kg" is 1.5 kg.
+ * A bare number ("Sacs poubelle 30") is not read: it may be the pack size.
+ */
+export type Need = { count: number } | { amount: number; dim: 'kg' | 'l' };
+
+const DIM: Record<string, { dim: 'kg' | 'l'; factor: number }> = {
+  kg: { dim: 'kg', factor: 1 }, g: { dim: 'kg', factor: 0.001 },
+  l: { dim: 'l', factor: 1 }, ml: { dim: 'l', factor: 0.001 }, cl: { dim: 'l', factor: 0.01 },
+};
+
+export function parseNeed(qty: string | null | undefined): Need | null {
+  const text = (qty || '').trim().toLowerCase().replace(',', '.');
+  const count = /^(?:[x×]\s?(\d+)|(\d+)\s?[x×])$/.exec(text);
+  if (count) {
+    const n = Number(count[1] ?? count[2]);
+    return n >= 1 && n <= 50 ? { count: n } : null;
   }
-  const there = sure.shops.find((s) => s.shop === sure.shop)?.unit_price;
+  const weight = /^(\d+(?:\.\d+)?)\s?(kg|g|l|ml|cl)$/.exec(text);
+  if (weight) {
+    const unit = DIM[weight[2]];
+    const amount = Number(weight[1]) * unit.factor;
+    return amount > 0 ? { amount, dim: unit.dim } : null;
+  }
+  return null;
+}
+
+export function placeItem(
+  p: ShopPrice,
+  need?: Need | null,
+): { shop: string; estimate: number | null; cheapest: boolean } {
+  const sure = p.cheapest;
+  const elsewhere = !!sure && sure.shop !== p.shop;
+  const shop = sure ? sure.shop : p.shop;
+  // The price per receipt unit at the shop the item goes to: the surely
+  // cheaper shop's usual price, or the last line's own unit price.
+  const perUnit = elsewhere
+    ? sure!.shops.find((s) => s.shop === sure!.shop)?.unit_price ?? null
+    : (p.qty != null ? p.price : null);
+  const round = (n: number) => Math.round(n * 100) / 100;
+
+  // The list says how much: priced for that much, when the units agree.
+  if (need && perUnit != null) {
+    if ('count' in need && p.unit === 'piece') {
+      return { shop, estimate: round(perUnit * need.count), cheapest: !!sure };
+    }
+    const unit = DIM[p.unit];
+    if ('amount' in need && unit && unit.dim === need.dim) {
+      return { shop, estimate: round(perUnit * (need.amount / unit.factor)), cheapest: !!sure };
+    }
+  }
+  // Otherwise the same amount as last time.
+  if (!elsewhere) {
+    return { shop, estimate: p.line_total ?? (p.per_unit ? null : p.price), cheapest: !!sure };
+  }
   // A piece line with no count was one piece; a weighed line needs its weight.
   const amount = p.qty ?? (p.unit === 'piece' ? 1 : null);
-  const estimate = there != null && amount != null ? Math.round(there * amount * 100) / 100 : null;
-  return { shop: sure.shop, estimate, cheapest: true };
+  return { shop, estimate: perUnit != null && amount != null ? round(perUnit * amount) : null, cheapest: true };
 }
 
 /**
@@ -241,11 +289,12 @@ export function groupByShop<T>(
   items: T[],
   labelOf: (item: T) => string,
   prices: ShopPrice[],
+  needOf?: (item: T) => Need | null,
 ): ShopGroup<T>[] {
   const byShop = new Map<string | null, ShopGroup<T>>();
   for (const item of items) {
     const hit = priceForItem(labelOf(item), prices);
-    const place = hit ? placeItem(hit.price) : null;
+    const place = hit ? placeItem(hit.price, needOf?.(item)) : null;
     const key = place ? place.shop : null;
     let group = byShop.get(key);
     if (!group) {
@@ -276,29 +325,32 @@ export interface ListEstimate<T> {
 }
 
 /**
- * The list's rough cost: the same estimates as the "By shop" view, summed.
- * Only items with an estimate count; the rest are returned so the screen can
- * name them rather than quietly leave them out of the sum.
+ * The list's rough cost: the shop groups' estimates, summed, so it always
+ * equals the "By shop" totals. Only items with an estimate count; the rest are
+ * returned, in list order, so the screen can name them.
  */
-export function estimateList<T>(
-  items: T[],
-  labelOf: (item: T) => string,
-  prices: ShopPrice[],
-): ListEstimate<T> {
+export function estimateFromGroups<T>(groups: ShopGroup<T>[], items: T[]): ListEstimate<T> {
   let total = 0;
   let priced = 0;
-  const missing: T[] = [];
-  for (const group of groupByShop(items, labelOf, prices)) {
+  const unpriced = new Set<T>();
+  for (const group of groups) {
     for (const { item, estimate } of group.items) {
       if (estimate == null) {
-        missing.push(item);
+        unpriced.add(item);
       } else {
         total = Math.round((total + estimate) * 100) / 100;
         priced += 1;
       }
     }
   }
-  // Back in the list's own order, not grouped by shop.
-  missing.sort((a, b) => items.indexOf(a) - items.indexOf(b));
-  return { total, priced, missing };
+  return { total, priced, missing: items.filter((i) => unpriced.has(i)) };
+}
+
+export function estimateList<T>(
+  items: T[],
+  labelOf: (item: T) => string,
+  prices: ShopPrice[],
+  needOf?: (item: T) => Need | null,
+): ListEstimate<T> {
+  return estimateFromGroups(groupByShop(items, labelOf, prices, needOf), items);
 }

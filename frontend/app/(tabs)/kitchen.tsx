@@ -24,7 +24,7 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices } from '../../src/api';
-import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateList } from '../../src/shopPrices';
+import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed } from '../../src/shopPrices';
 import { formatMoney } from '../../src/money';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
@@ -1351,20 +1351,28 @@ export default function Kitchen() {
   // so the windowed list can measure and scroll headings and items alike.
   // "By shop" needs prices to say anything; without them it is not offered.
   const byStore = shopView === 'store' && !!shopPrices && shopPrices.items.length > 0;
-  // What the list will roughly cost: the same estimates as "By shop", summed,
-  // and the items that have no price named rather than quietly left out.
-  const listEstimate = useMemo(
+  // The list by where to buy it, computed once for both the "By shop"
+  // sections and the total above the list, so the two always agree. A
+  // quantity written on the item ("Lait x6", "Tomates 400g") is priced in.
+  const shopGroups = useMemo(
     () => (shopPrices && shopPrices.items.length > 0
-      ? estimateList(uncheckedItems, (i) => splitQuantity(i.name).label, shopPrices.items)
+      ? groupByShop(uncheckedItems, (i) => splitQuantity(i.name).label, shopPrices.items,
+        (i) => parseNeed(splitQuantity(i.name).qty))
       : null),
     [shopPrices, uncheckedItems],
+  );
+  // What the list will roughly cost: those estimates summed, and the items
+  // with no price named rather than quietly left out.
+  const listEstimate = useMemo(
+    () => (shopGroups ? estimateFromGroups(shopGroups, uncheckedItems) : null),
+    [shopGroups, uncheckedItems],
   );
   const shopRows = useMemo(() => {
     const rows: ({ kind: 'aisle'; aisle: Aisle; count: number; open: boolean }
       | { kind: 'store'; shop: string | null; count: number; total: number; priced: number; open: boolean }
       | { kind: 'item'; item: ShoppingItem; last: boolean })[] = [];
-    if (byStore && shopPrices) {
-      for (const group of groupByShop(uncheckedItems, (i) => splitQuantity(i.name).label, shopPrices.items)) {
+    if (byStore && shopGroups) {
+      for (const group of shopGroups) {
         const key = `store:${group.shop ?? ''}`;
         const open = !folded.has(key);
         rows.push({ kind: 'store', shop: group.shop, count: group.items.length, total: group.total, priced: group.priced, open });
@@ -1380,7 +1388,7 @@ export default function Kitchen() {
       group.items.forEach((item, i) => rows.push({ kind: 'item', item, last: i === group.items.length - 1 }));
     }
     return rows;
-  }, [uncheckedItems, folded, byStore, shopPrices]);
+  }, [uncheckedItems, folded, byStore, shopGroups]);
 
   // What the receipts say about one thing on the list, in one grey line.
   // The same line on the Liste and in the Repas preview.

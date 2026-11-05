@@ -10,7 +10,7 @@ import path from 'path';
 import type { ShopPrice } from '../api';
 import {
   fold, suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, whenLabel, splitTyped,
-  groupByShop, placeItem, estimateList,
+  groupByShop, placeItem, estimateList, parseNeed,
 } from '../shopPrices';
 
 const NOW = new Date('2026-11-04T12:00:00Z');
@@ -248,5 +248,37 @@ describe('what the list will roughly cost', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
     expect(src).toContain('listEstimate && listEstimate.priced > 0 ?');
     expect(src).toContain('listEstimate.missing.slice(0, 3)');
+    // One grouping for the shop sections and the total, so they agree.
+    expect(src).toContain('estimateFromGroups(shopGroups, uncheckedItems)');
+  });
+
+  it('reads a quantity only when the list says it plainly', () => {
+    expect(parseNeed('x6')).toEqual({ count: 6 });
+    expect(parseNeed('2x')).toEqual({ count: 2 });
+    expect(parseNeed('400g')).toEqual({ amount: 0.4, dim: 'kg' });
+    expect(parseNeed('1,5 kg')).toEqual({ amount: 1.5, dim: 'kg' });
+    expect(parseNeed('75 cl')).toEqual({ amount: 0.75, dim: 'l' });
+    // A bare number may be the pack size ("Sacs poubelle 30"): not read.
+    expect(parseNeed('30')).toBeNull();
+    expect(parseNeed(null)).toBeNull();
+  });
+
+  it('prices that quantity when the units agree', () => {
+    const milk = p('Lait', { price: 1.15, line_total: 1.15, qty: 1 });
+    expect(placeItem(milk, { count: 6 }).estimate).toBeCloseTo(6.9);
+    const tomatoes = p('Tomates', { unit: 'kg', per_unit: true, price: 2.99, line_total: 3.69, qty: 1.234 });
+    expect(placeItem(tomatoes, { amount: 0.4, dim: 'kg' }).estimate).toBeCloseTo(1.2);
+    // Grams on the receipt, kilos on the list.
+    const pasta = p('Pâtes', { unit: 'g', per_unit: true, price: 0.0035, line_total: 1.75, qty: 500 });
+    expect(placeItem(pasta, { amount: 1, dim: 'kg' }).estimate).toBeCloseTo(3.5);
+    // Units that do not agree: last time's amount, as before.
+    expect(placeItem(tomatoes, { count: 3 }).estimate).toBeCloseTo(3.69);
+  });
+
+  it('a quantity follows the item into the total', () => {
+    const out = estimateList(['Lait x6', 'Sel'], (x) => x.replace(/ x6$/, ''),
+      [p('Lait', { price: 1.15, line_total: 1.15, qty: 1 }), p('Sel fin', { price: 0.89, line_total: 0.89 })],
+      (x) => parseNeed(x.endsWith('x6') ? 'x6' : null));
+    expect(out.total).toBeCloseTo(7.79);
   });
 });
