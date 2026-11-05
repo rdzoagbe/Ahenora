@@ -1510,6 +1510,17 @@ export interface ShopPrice {
   } | null;
 }
 
+/** A regular purchase that is due again, from the family's receipts. */
+export interface ShopDue {
+  name: string;
+  name_key: string;
+  /** The usual gap between purchases, in days (the median). */
+  every_days: number;
+  /** Days since the last receipt with it. */
+  last_days: number;
+  purchases: number;
+}
+
 export interface ShopPrices {
   window_days: number;
   items: ShopPrice[];
@@ -3119,6 +3130,7 @@ export const api = {
       timeoutMs: VISION_TIMEOUT_MS,
     }),
   getShopPrices: () => request<ShopPrices>('/shopping/prices'),
+  getShopDue: () => request<{ window_days: number; items: ShopDue[] }>('/shopping/due'),
   listExpenses: (days = 30) => request<Expense[]>(`/expenses?days=${days}`),
   getExpenseSummary: (days = 30) => request<ExpenseSummary>(`/expenses/summary?days=${days}`),
   getExpenseOverview: (months = 6, category?: string) =>

@@ -17658,6 +17658,75 @@ async def shopping_prices(user=Depends(require_full_member)):
             "items": items[:SHOPPING_PRICES_LIMIT]}
 
 
+# How far back "you buy this every N days" looks. Long enough for a monthly
+# purchase to show three times; short enough that last year's habits fade.
+REBUY_WINDOW_DAYS = int(os.environ.get("REBUY_WINDOW_DAYS", "180"))
+# Separate receipts needed before a rhythm is claimed. Two dates give one gap,
+# which is a coincidence, not a habit.
+REBUY_MIN_PURCHASES = 3
+# Past this many rhythms without buying it, the family has probably stopped:
+# a reminder then is nagging, not help.
+REBUY_GIVE_UP_FACTOR = 3
+
+
+@app.get("/api/shopping/due")
+async def shopping_due(user=Depends(require_full_member)):
+    """Things the family buys regularly that are due again, from receipts.
+
+    For each product, the dates of the separate receipts it appears on (one
+    per receipt, however many lines), the median gap between them, and how
+    long since the last one. Due when that time has reached the usual gap.
+
+    Says nothing it cannot back: at least REBUY_MIN_PURCHASES receipts inside
+    REBUY_WINDOW_DAYS, the median rather than the shortest gap, and silence
+    once it is long overdue (REBUY_GIVE_UP_FACTOR), because the family has
+    likely stopped buying it. Full members only, like every receipt reading.
+    """
+    database = get_db()
+    now = utcnow()
+    cutoff = now - timedelta(days=REBUY_WINDOW_DAYS)
+    lines = await database["expense_items"].find(
+        {"family_id": user["family_id"], "spent_on": {"$gte": cutoff}},
+        {"_id": 0}).to_list(None)
+
+    seen: dict = {}
+    for line in lines:
+        key = (line.get("name_key") or "").strip()
+        when = _coerce_dt(line.get("spent_on"))
+        if not key or not when or when < cutoff:
+            continue
+        row = seen.setdefault(key, {"receipts": {}, "name": None, "last": None})
+        receipt = line.get("expense_id") or line.get("line_id")
+        # One date per receipt: two lines of milk on one ticket are one shop.
+        row["receipts"][receipt] = when.date()
+        if row["last"] is None or when >= row["last"]:
+            row["last"], row["name"] = when, line.get("name") or key
+
+    today = now.date()
+    due = []
+    for key, row in seen.items():
+        dates = sorted(set(row["receipts"].values()))
+        if len(dates) < REBUY_MIN_PURCHASES:
+            continue
+        gaps = [(b - a).days for a, b in zip(dates, dates[1:])]
+        every = _median(gaps)
+        if every < 1:
+            continue
+        since = (today - dates[-1]).days
+        if since < every or since > every * REBUY_GIVE_UP_FACTOR:
+            continue
+        due.append({
+            "name": row["name"],
+            "name_key": key,
+            "every_days": int(round(every)),
+            "last_days": since,
+            "purchases": len(dates),
+        })
+    # Most overdue (relative to its own rhythm) first.
+    due.sort(key=lambda r: r["last_days"] / max(r["every_days"], 1), reverse=True)
+    return {"window_days": REBUY_WINDOW_DAYS, "items": due[:20]}
+
+
 @app.post("/api/expenses/scan-receipt")
 async def scan_receipt(
     payload: dict = Body(...),
