@@ -1,4 +1,5 @@
 import type { SuggestLang } from './mealSuggestions';
+import { formatNumber } from './money';
 
 /**
  * How much of each ingredient to buy, per person.
@@ -142,11 +143,12 @@ export function quantityFor(
 
   const total = roundUp(per.amount * people, per.step || 25);
   // Past a kilo or a litre, the smaller unit stops being readable.
+  // "1,2 kg" in French, "1.2 kg" in English.
   if (per.unit === 'g' && total >= 1000) {
-    return `${(total / 1000).toFixed(total % 1000 === 0 ? 0 : 1)} kg`;
+    return `${formatNumber(total / 1000, lang, 1)} kg`;
   }
   if (per.unit === 'ml' && total >= 1000) {
-    return `${(total / 1000).toFixed(total % 1000 === 0 ? 0 : 1)} L`;
+    return `${formatNumber(total / 1000, lang, 1)} L`;
   }
   return `${total} ${per.unit}`;
 }
@@ -224,13 +226,13 @@ export function formatAiQuantity(
   if (ing.unit === 'g' || ing.unit === 'ml') {
     const n = roundScaled(scaled);
     if (n <= 0) return null;
-    if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)} ${ing.unit === 'g' ? 'kg' : 'L'}`;
+    if (n >= 1000) return `${formatNumber(n / 1000, lang, 1)} ${ing.unit === 'g' ? 'kg' : 'L'}`;
     return `${n} ${ing.unit}`;
   }
   if (ing.unit === 'kg' || ing.unit === 'l') {
     const n = Math.round(scaled * 10) / 10;
     if (n <= 0) return null;
-    return `${n} ${ing.unit === 'l' ? 'L' : 'kg'}`;
+    return `${formatNumber(n, lang, 1)} ${ing.unit === 'l' ? 'L' : 'kg'}`;
   }
 
   const labels = UNIT_LABELS[ing.unit];

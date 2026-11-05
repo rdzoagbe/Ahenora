@@ -77,6 +77,7 @@ from ai_safety import (
     sanitize_user_text,
     sanitize_message_text,
     validate_recipe,
+    weighed_as_pieces,
     ensure_seasoned,
     CHEF_SYSTEM_PROMPT,
     MAX_QUESTION_LEN,
@@ -19496,7 +19497,15 @@ def recipe_is_current(recipe: Optional[dict]) -> bool:
     # This check is the whole reason that does not happen.
     if recipe.get("title"):
         return True
+    # Flour or sugar counted in pieces ("farine ×2½": yoghurt pots, written
+    # before the rule against it) tells nobody how much to buy, so it is
+    # written again, in grams. units_checked marks a recipe that already went
+    # through that second ask, so a dish the model still gets wrong is not
+    # regenerated, and billed, on every open.
+    if weighed_as_pieces(recipe) and not recipe.get("units_checked"):
+        return False
     return bool(recipe.get("serve_with") or recipe.get("serve_with_unavailable"))
+
 
 
 def recipe_slot(diet: str) -> str:
@@ -19506,6 +19515,38 @@ def recipe_slot(diet: str) -> str:
     cached omnivore version, and a plain "Cook it" never returns the veg one.
     """
     return f"ai_recipe_{diet}" if diet else "ai_recipe"
+
+# Said to the model when it counted something that is weighed.
+WEIGH_AGAIN = (
+    "Your previous answer gave these in pieces: {names}. They are weighed or "
+    "poured: give every one of them in g, kg, ml or l. A yoghurt pot holds "
+    "125 ml. Return the whole recipe again, JSON only."
+)
+
+
+def weigh_again_prompt(prompt: str, counted: list) -> str:
+    """The recipe prompt again, naming what came back counted in pieces."""
+    return prompt + "\n\n" + WEIGH_AGAIN.format(names=", ".join(counted))
+
+
+def better_weighed(first: dict, text: str, language: str) -> dict:
+    """The second answer if it weighs more of what should be weighed, else the first.
+
+    The prompt already forbids flour or sugar in pieces; this is for the times
+    the model does it anyway, mostly cakes measured in yoghurt pots. Never
+    worse than the first answer: anything unparseable, unsafe or no better
+    leaves the first recipe exactly as it was.
+    """
+    try:
+        parsed = extract_json(text)
+        if parsed is None:
+            return first
+        again = ensure_seasoned(validate_recipe(parsed), language)
+    except UnsafeRecipe:
+        return first
+    if "ingredients" in again and len(weighed_as_pieces(again)) < len(weighed_as_pieces(first)):
+        return again
+    return first
 
 
 @app.post("/api/meals/{meal_id}/recipe")
@@ -19592,9 +19633,10 @@ async def generate_meal_recipe(
     ingredients = sanitize_ingredients(meal.get("ingredients", []))
 
     try:
+        prompt = build_recipe_prompt(title, ingredients, RECIPE_LANGUAGE_NAMES[language],
+                                     diet=diet, variant=variant)
         text = await _gemini_text(
-            build_recipe_prompt(title, ingredients, RECIPE_LANGUAGE_NAMES[language],
-                                diet=diet, variant=variant),
+            prompt,
             system=RECIPE_SYSTEM_PROMPT,
             # The lite model turns a dish name into a structured recipe quickly,
             # and the validator guards the shape either way — so "Cook it"
@@ -19607,6 +19649,23 @@ async def generate_meal_recipe(
         if parsed is None:
             raise UnsafeRecipe("unparseable")
         recipe = ensure_seasoned(validate_recipe(parsed), language)
+        counted = weighed_as_pieces(recipe)
+        if counted:
+            # Flour or sugar counted in pieces (yoghurt pots): asked once more,
+            # here in the route the family called, never in the background.
+            try:
+                again = await _gemini_text(
+                    weigh_again_prompt(prompt, counted),
+                    system=RECIPE_SYSTEM_PROMPT,
+                    fast=True,
+                    temperature=0.9 if variant else None,
+                )
+                recipe = better_weighed(recipe, again, language)
+            except Exception as exc:
+                log.info("second try for weights failed: %s", exc)
+        # Checked either way, so the cache keeps it rather than asking again
+        # on every open (recipe_is_current).
+        recipe["units_checked"] = True
         if "ingredients" not in recipe:
             # Still a usable recipe, but the model ignored half the prompt —
             # loud in the logs so a quiet downgrade cannot become the norm.
@@ -19775,7 +19834,9 @@ async def generate_recipe_from_name(
     # variant is a deliberate ask for something different, so it skips it.
     library_key = None if variant else recipe_library_key(title, language, diet)
     shared = await recipe_from_library(database, library_key)
-    if shared:
+    # The same rule as the planner: a library copy of an older shape is written
+    # again (and overwritten for everyone) rather than served as it is.
+    if shared and recipe_is_current(shared):
         return {"recipe": shared, "cached": True, "diet": diet}
 
     sub = await build_subscription(user["family_id"])
@@ -19792,9 +19853,10 @@ async def generate_recipe_from_name(
         )
 
     try:
+        prompt = build_recipe_prompt(title, [], RECIPE_LANGUAGE_NAMES[language],
+                                     diet=diet, variant=variant)
         text = await _gemini_text(
-            build_recipe_prompt(title, [], RECIPE_LANGUAGE_NAMES[language],
-                                diet=diet, variant=variant),
+            prompt,
             system=RECIPE_SYSTEM_PROMPT,
             fast=True,
             temperature=0.9 if variant else None,
@@ -19803,6 +19865,23 @@ async def generate_recipe_from_name(
         if parsed is None:
             raise UnsafeRecipe("unparseable")
         recipe = ensure_seasoned(validate_recipe(parsed), language)
+        counted = weighed_as_pieces(recipe)
+        if counted:
+            # Flour or sugar counted in pieces (yoghurt pots): asked once more,
+            # here in the route the family called, never in the background.
+            try:
+                again = await _gemini_text(
+                    weigh_again_prompt(prompt, counted),
+                    system=RECIPE_SYSTEM_PROMPT,
+                    fast=True,
+                    temperature=0.9 if variant else None,
+                )
+                recipe = better_weighed(recipe, again, language)
+            except Exception as exc:
+                log.info("second try for weights failed: %s", exc)
+        # Checked either way, so the cache keeps it rather than asking again
+        # on every open (recipe_is_current).
+        recipe["units_checked"] = True
     except UnsafeRecipe as exc:
         log.info("recipe rejected by safety gate: %s", exc.reason)
         raise HTTPException(422, "We could not write a recipe for this one.")
