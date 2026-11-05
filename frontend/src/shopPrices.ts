@@ -144,11 +144,6 @@ export function priceForItem(
   return hit ? { price: items[hit.index], exact: hit.exact } : null;
 }
 
-/** "0,89 €" in French, Spanish and German; "€0.89" in English. */
-export function money(amount: number, lang: string): string {
-  return formatMoney(amount, lang);
-}
-
 // Grams and millilitres are shown per kilo and per litre: a "500 g" line is
 // 0,0035 €/g, which rounds to a meaningless "0,00 €/g".
 const PER_UNIT: Record<string, { label: string; factor: number }> = {
@@ -161,7 +156,7 @@ const PER_UNIT: Record<string, { label: string; factor: number }> = {
 /** "2,99 €/kg" for a weighed price, "0,89 €" for a piece or a whole line. */
 export function priceLabel(amount: number, unit: string, perUnit: boolean, lang: string): string {
   const per = perUnit ? PER_UNIT[unit] : undefined;
-  return per ? `${money(amount * per.factor, lang)}/${per.label}` : money(amount, lang);
+  return per ? `${formatMoney(amount * per.factor, lang)}/${per.label}` : formatMoney(amount, lang);
 }
 
 /**
@@ -171,7 +166,7 @@ export function priceLabel(amount: number, unit: string, perUnit: boolean, lang:
  */
 export function receiptPrice(item: ShopPrice, lang: string): string {
   const per = priceLabel(item.price, item.unit, item.per_unit, lang);
-  if (item.per_unit && item.line_total) return `${money(item.line_total, lang)} (${per})`;
+  if (item.per_unit && item.line_total) return `${formatMoney(item.line_total, lang)} (${per})`;
   return per;
 }
 

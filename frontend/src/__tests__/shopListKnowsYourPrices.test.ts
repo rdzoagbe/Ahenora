@@ -212,3 +212,15 @@ describe('both views show the prices', () => {
     expect(src).toContain("priceLine(label, item.item_id, 'kitchen-buy-price', true)");
   });
 });
+
+describe('the cheapest shop says by how much', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
+  const i18n = fs.readFileSync(path.join(__dirname, '..', 'i18n.ts'), 'utf8');
+  it('the row uses the saving wording, from the comparison itself', () => {
+    expect(src).toContain("t('shop_price_cheapest_by', { amount: priceLabel(p.cheapest.saving");
+  });
+  it('in all four languages', () => {
+    expect((i18n.match(/^\s*shop_price_cheapest_by:/gm) || []).length).toBe(4);
+    expect(i18n).toContain('"le moins cher, {amount} de moins"');
+  });
+});

@@ -30,6 +30,8 @@ describe('the recommendation', () => {
       expect(planPriceText(plan, 'monthly', 'fr')).toMatch(/^\d+,\d\d\u00a0€$/);
       expect(PLAN_HIGHLIGHTS[plan]?.length).toBeGreaterThan(0);
     }
+    // The free plan quotes no price.
+    expect(planPriceText('village', 'monthly', 'fr')).toBe('');
   });
 });
 

@@ -24,7 +24,8 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices } from '../../src/api';
-import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, money } from '../../src/shopPrices';
+import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop } from '../../src/shopPrices';
+import { formatMoney } from '../../src/money';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
 import { refreshOutcome } from '../../src/refreshOutcome';
@@ -1391,7 +1392,13 @@ export default function Kitchen() {
       const best = p.cheapest.shops[0];
       return (
         <Text testID={`${prefix}-${itemId}`} style={styles.rowPrice} numberOfLines={2}>
-          {named}{priceLabel(best.unit_price, p.unit, p.unit !== 'piece', lang)} · {p.cheapest.shop} · <Text style={styles.rowCheapest}>{t('shop_price_cheapest')}</Text>
+          {named}{priceLabel(best.unit_price, p.unit, p.unit !== 'piece', lang)} · {p.cheapest.shop} · <Text style={styles.rowCheapest}>
+            {/* How much cheaper, so "le moins cher" is worth acting on: the
+                comparison's own figure, same unit, against the dearer shop. */}
+            {p.cheapest.saving >= 0.005
+              ? t('shop_price_cheapest_by', { amount: priceLabel(p.cheapest.saving, p.unit, p.unit !== 'piece', lang) })
+              : t('shop_price_cheapest')}
+          </Text>
         </Text>
       );
     }
@@ -1709,8 +1716,8 @@ export default function Kitchen() {
                     const cost = row.priced === 0
                       ? t('shop_store_unknown')
                       : row.priced === row.count
-                        ? t('shop_store_about', { total: money(row.total, lang) })
-                        : t('shop_store_about_some', { total: money(row.total, lang), k: row.priced });
+                        ? t('shop_store_about', { total: formatMoney(row.total, lang) })
+                        : t('shop_store_about_some', { total: formatMoney(row.total, lang), k: row.priced });
                     return (
                       <PressScale
                         key={key}
