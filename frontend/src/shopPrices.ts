@@ -265,3 +265,40 @@ export function groupByShop<T>(
     return b.items.length - a.items.length || a.shop.localeCompare(b.shop);
   });
 }
+
+/** What the whole list will roughly cost, and what has no price to count. */
+export interface ListEstimate<T> {
+  total: number;
+  /** How many items the total covers. */
+  priced: number;
+  /** Items with no receipt price (or no estimate), in list order. */
+  missing: T[];
+}
+
+/**
+ * The list's rough cost: the same estimates as the "By shop" view, summed.
+ * Only items with an estimate count; the rest are returned so the screen can
+ * name them rather than quietly leave them out of the sum.
+ */
+export function estimateList<T>(
+  items: T[],
+  labelOf: (item: T) => string,
+  prices: ShopPrice[],
+): ListEstimate<T> {
+  let total = 0;
+  let priced = 0;
+  const missing: T[] = [];
+  for (const group of groupByShop(items, labelOf, prices)) {
+    for (const { item, estimate } of group.items) {
+      if (estimate == null) {
+        missing.push(item);
+      } else {
+        total = Math.round((total + estimate) * 100) / 100;
+        priced += 1;
+      }
+    }
+  }
+  // Back in the list's own order, not grouped by shop.
+  missing.sort((a, b) => items.indexOf(a) - items.indexOf(b));
+  return { total, priced, missing };
+}

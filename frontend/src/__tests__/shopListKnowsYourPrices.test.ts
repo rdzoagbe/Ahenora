@@ -10,7 +10,7 @@ import path from 'path';
 import type { ShopPrice } from '../api';
 import {
   fold, suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, whenLabel, splitTyped,
-  groupByShop, placeItem,
+  groupByShop, placeItem, estimateList,
 } from '../shopPrices';
 
 const NOW = new Date('2026-11-04T12:00:00Z');
@@ -222,5 +222,31 @@ describe('the cheapest shop says by how much', () => {
   it('in all four languages', () => {
     expect((i18n.match(/^\s*shop_price_cheapest_by:/gm) || []).length).toBe(4);
     expect(i18n).toContain('"le moins cher, {amount} de moins"');
+  });
+});
+
+describe('what the list will roughly cost', () => {
+  const prices = [
+    p('Sel fin', { price: 0.89, line_total: 0.89, shop: 'Carrefour' }),
+    p('Oignons', { unit: 'kg', per_unit: true, price: 1.49, line_total: 2.24, qty: 1.5, shop: 'Carrefour' }),
+    p('Pommes', { unit: 'kg', per_unit: true, price: 2.1, line_total: null, qty: null, shop: 'Lidl' }),
+  ];
+
+  it('sums the same estimates as By shop, and names what it could not count', () => {
+    const out = estimateList(['Gingembre', 'Sel', 'Oignons', 'Pommes'], (x) => x, prices);
+    expect(out.total).toBeCloseTo(3.13);
+    expect(out.priced).toBe(2);
+    // Ginger has no receipt; apples were weighed with no weight: no guess.
+    expect(out.missing).toEqual(['Gingembre', 'Pommes']);
+  });
+
+  it('nothing priced, nothing counted', () => {
+    expect(estimateList(['Gingembre'], (x) => x, prices)).toEqual({ total: 0, priced: 0, missing: ['Gingembre'] });
+  });
+
+  it('the list shows it only when something is priced, and names at most three missing', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
+    expect(src).toContain('listEstimate && listEstimate.priced > 0 ?');
+    expect(src).toContain('listEstimate.missing.slice(0, 3)');
   });
 });
