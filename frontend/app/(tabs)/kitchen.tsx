@@ -623,7 +623,8 @@ export default function Kitchen() {
   }, [showToast, t]);
 
   const toggleShopItem = useCallback(async (item: ShoppingItem) => {
-    setShopItems((prev) => prev.map((i) => i.item_id === item.item_id ? { ...i, checked: !i.checked } : i));
+    // A tick by hand is not the receipt's: the server forgets the shop, and so does the row.
+    setShopItems((prev) => prev.map((i) => i.item_id === item.item_id ? { ...i, checked: !i.checked, ticked_from: null } : i));
     try {
       await api.updateShoppingItem(item.item_id, { checked: !item.checked });
     } catch {
@@ -1830,7 +1831,16 @@ export default function Kitchen() {
                       ) : (
                         <View style={[styles.shopCircle, styles.shopCircleOn]}><Check color="#FFFFFF" size={13} /></View>
                       )}
-                      <Text style={[styles.rowText, styles.rowTextDone, { flex: 1, minWidth: 0 }]}>{item.name}</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.rowText, styles.rowTextDone]}>{item.name}</Text>
+                        {/* Ticked by a scanned receipt: say which, so a tick
+                            nobody remembers making explains itself. */}
+                        {item.ticked_from ? (
+                          <Text testID={`shop-ticked-from-${item.item_id}`} style={styles.rowPrice} numberOfLines={1}>
+                            {t('shop_ticked_from', { shop: item.ticked_from })}
+                          </Text>
+                        ) : null}
+                      </View>
                       <PressScale
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y_delete')} onPress={() => deleteShopItem(item.item_id)} hitSlop={12} style={{ padding: 4 }}>

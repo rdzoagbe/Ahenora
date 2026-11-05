@@ -113,23 +113,35 @@ export function suggestFromReceipts(
  * the item's name, or begin with it word for word ("Sel" -> "Sel fin"). Exact
  * names win; otherwise the newest receipt.
  */
+/**
+ * The receipt name that is the list item, or begins with it word for word
+ * ("Sel" -> "Sel fin"). Exact names win; otherwise the first in order. The
+ * one matching rule for prices and for receipts ticking the list.
+ */
+export function findNameMatch(
+  label: string,
+  names: string[],
+): { index: number; exact: boolean } | null {
+  const want = words(label);
+  if (want.length === 0) return null;
+  const wantKey = want.join(' ');
+  let prefix = -1;
+  for (let i = 0; i < names.length; i++) {
+    const name = words(names[i]);
+    if (name.join(' ') === wantKey) return { index: i, exact: true };
+    if (prefix < 0 && name.length > want.length && want.every((w, j) => name[j] === w)) {
+      prefix = i;
+    }
+  }
+  return prefix >= 0 ? { index: prefix, exact: false } : null;
+}
+
 export function priceForItem(
   label: string,
   items: ShopPrice[],
 ): { price: ShopPrice; exact: boolean } | null {
-  const want = words(label);
-  if (want.length === 0) return null;
-  const wantKey = want.join(' ');
-  let prefix: ShopPrice | null = null;
-  for (const item of items) {
-    const name = words(item.name);
-    const key = name.join(' ');
-    if (key === wantKey) return { price: item, exact: true };
-    if (!prefix && name.length > want.length && want.every((w, i) => name[i] === w)) {
-      prefix = item;
-    }
-  }
-  return prefix ? { price: prefix, exact: false } : null;
+  const hit = findNameMatch(label, items.map((i) => i.name));
+  return hit ? { price: items[hit.index], exact: hit.exact } : null;
 }
 
 /** "0,89 €" in French, Spanish and German; "€0.89" in English. */
