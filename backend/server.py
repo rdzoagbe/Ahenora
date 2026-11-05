@@ -17475,13 +17475,23 @@ async def price_compare(user=Depends(require_full_member)):
     the household has bought it but nowhere near enough to say anything.
     """
     database = get_db()
+    lines = await database["expense_items"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}).to_list(None)
+    return compare_receipt_prices(lines)
+
+
+def compare_receipt_prices(lines: list) -> dict:
+    """price_compare's answer from receipt lines already read.
+
+    Separate so the shopping list's prices, which read the same lines, can ask
+    for the comparison without reading the family's whole history twice.
+    """
     cutoff = utcnow() - timedelta(days=PRICE_WINDOW_DAYS)
 
     # name_key + unit is the comparison key. Same words, same unit, or the
     # numbers are not about the same thing.
     groups: dict = {}
-    async for line in database["expense_items"].find(
-            {"family_id": user["family_id"]}, {"_id": 0}):
+    for line in lines:
         price = line.get("unit_price")
         shop = (line.get("shop") or "").strip()
         when = _coerce_dt(line.get("spent_on"))
@@ -17572,8 +17582,11 @@ async def shopping_prices(user=Depends(require_full_member)):
     cutoff = utcnow() - timedelta(days=PRICE_WINDOW_DAYS)
 
     latest: dict = {}
-    async for line in database["expense_items"].find(
-            {"family_id": user["family_id"]}, {"_id": 0}):
+    # Read once: the same lines give the last prices here and the comparison
+    # below.
+    lines = await database["expense_items"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}).to_list(None)
+    for line in lines:
         name_key = (line.get("name_key") or "").strip()
         shop = (line.get("shop") or "").strip()
         when = _coerce_dt(line.get("spent_on"))
@@ -17608,7 +17621,7 @@ async def shopping_prices(user=Depends(require_full_member)):
                            "qty": line.get("qty")}
 
     sure = {}
-    for row in (await price_compare(user=user))["comparable"]:
+    for row in compare_receipt_prices(lines)["comparable"]:
         sure[(row["name_key"], row["unit"])] = {
             "shop": row["cheapest"],
             "saving": row["saving"]["per_unit"],

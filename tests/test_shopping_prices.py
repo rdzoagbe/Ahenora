@@ -154,6 +154,27 @@ class ShoppingPrices(unittest.TestCase):
         asyncio.run(server.delete_expense(exp["expense_id"], user=dict(ME)))
         self.assertEqual(self.prices(), [])
 
+    def test_the_receipt_history_is_read_once(self):
+        """The last prices and the comparison come from one read of the lines,
+        not two: a family with years of receipts paid for both."""
+        for d in (5, 20):
+            self.line("Volvic 6 x 1,5 L", "Marché Frais", 2.40, days_ago=d)
+            self.line("Volvic 6 x 1,5 L", "Carrefour", 2.95, days_ago=d + 1)
+        coll = self.db["expense_items"]
+        real_find = coll.find
+        calls = []
+
+        def counting_find(*a, **k):
+            calls.append(a)
+            return real_find(*a, **k)
+        coll.find = counting_find
+        try:
+            [row] = self.prices()
+        finally:
+            coll.find = real_find
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(row["cheapest"]["shop"], "Marché Frais")
+
     def test_newest_first(self):
         self.line("Riz", "Lidl", 1.10, days_ago=40)
         self.line("Lait", "Lidl", 0.99, days_ago=2)

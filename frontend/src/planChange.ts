@@ -51,10 +51,16 @@ export const PLAN_HIGHLIGHTS: Partial<Record<Plan, string[]>> = {
   household: ['pf_house_2', 'pf_house_3', 'pf_house_4', 'pf_house_5'],
 };
 
-export const PLAN_PRICE: Partial<Record<Plan, { monthly: number; yearly: number }>> = {
+/**
+ * What each plan costs, in euros. The one table: the paywall, the trial card
+ * and onboarding all read it, so a price change is made once.
+ */
+export const PLAN_PRICE: Record<Plan, { monthly: number; yearly: number }> = {
+  village: { monthly: 0, yearly: 0 },
   duo: { monthly: 1.99, yearly: 19.99 },
   executive: { monthly: 4.99, yearly: 39.99 },
   household: { monthly: 9.99, yearly: 99.99 },
+  family_office: { monthly: 19.99, yearly: 179.99 },
 };
 
 /** A plan's price written the way the reader's language writes money: "€4.99" / "4,99 €". */

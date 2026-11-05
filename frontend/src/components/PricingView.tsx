@@ -27,6 +27,7 @@ import { purchasePremium, restorePurchases } from '../billing';
 import { PlanChangeSheet, PLAN_RANK } from './PlanChangeSheet';
 import { useDuoOffered } from '../duoOffered';
 import { formatMoney, moneyParts } from '../money';
+import { PLAN_PRICE } from '../planChange';
 
 // Where a web (or billing-less) user is sent to actually subscribe. Store
 // billing only exists in the native app, so on web the purchase and restore
@@ -72,13 +73,7 @@ function unavailableAlert(t: (k: string) => string) {
 // one below reads "Downgrade".
 const PLAN_ORDER: Plan[] = ['village', 'duo', 'executive', 'household'];
 
-const PLAN_PRICES: Record<Plan, { monthly: number; yearly: number }> = {
-  village: { monthly: 0, yearly: 0 },
-  duo: { monthly: 1.99, yearly: 19.99 },
-  executive: { monthly: 4.99, yearly: 39.99 },
-  household: { monthly: 9.99, yearly: 99.99 },
-  family_office: { monthly: 19.99, yearly: 179.99 },
-};
+// Prices live in planChange.ts (PLAN_PRICE), shared with the trial card and onboarding.
 
 // Which Stripe tier a plan buys through. Family = the executive plan.
 const PLAN_TO_TIER: Partial<Record<Plan, 'duo' | 'family' | 'household'>> = {
@@ -666,7 +661,7 @@ function PlanCard({
 }) {
   // The language for money, read here rather than threaded through as a prop.
   const { lang } = useStore();
-  const price = PLAN_PRICES[plan][cycle];
+  const price = PLAN_PRICE[plan][cycle];
   const perMonth = cycle === 'yearly' ? price / 12 : price;
   // The BILLED amount is the headline, always — on a yearly plan that is the
   // year's price, not the twelfth of it. App Review rejected the reverse under

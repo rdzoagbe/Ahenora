@@ -35,16 +35,11 @@ function walk(dir: string, out: string[] = []): string[] {
 const SCREENS = [...walk(join(ROOT, 'app')), ...walk(join(ROOT, 'src'))];
 const I18N = readFileSync(join(ROOT, 'src', 'i18n.ts'), 'utf8');
 
-describe('every language names the same currency', () => {
-  it('there is exactly one symbol across the four locales', () => {
-    const symbols = new Set(
-      [...I18N.matchAll(/currency_symbol:\s*'([^']+)'/g)].map((m) => m[1]),
-    );
-    expect([...symbols]).toEqual(['€']);
-  });
-
-  it('and it is defined in all four', () => {
-    expect((I18N.match(/currency_symbol:/g) || []).length).toBe(4);
+describe('no language carries its own currency sign', () => {
+  // The old currency_symbol key ('$' in English, '€' elsewhere) is gone:
+  // every amount is written by formatMoney in src/money.ts.
+  it('the key is gone from all four', () => {
+    expect(I18N).not.toMatch(/currency_symbol:/);
   });
 });
 

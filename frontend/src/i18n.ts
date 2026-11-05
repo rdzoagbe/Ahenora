@@ -806,7 +806,6 @@ const en: Dict = {
   // co-parent on the next — two currencies and two placements inside one
   // feature. (What this really wants is a currency chosen by the household
   // rather than inferred from its language; that is a setting, not a fix.)
-  currency_symbol: '€',
   // ---- House expenses (receipt tracking) ----
   exp_title: 'House expenses',
   addcard_edit_title: 'Edit',
@@ -890,6 +889,7 @@ const en: Dict = {
   shop_price_months_ago: "{n} months ago",
   shop_price_seen_once: "seen once, {when}",
   shop_price_cheapest: "cheapest",
+  shop_price_cheapest_by: "cheapest, {amount} less",
   shop_price_cheapest_pill: "Cheapest",
   shop_price_compare_note: "About {amount} less · from at least {n} receipts per shop, over {months} months",
   shop_price_none: "No price yet",
@@ -3411,7 +3411,6 @@ const es: Dict = {
   capture_reading: "Leyendo tu receta…",
   capture_failed: "No pudimos leer una receta en esa foto.",
   capture_note: "Leída por IA de tu foto: compárala con el original.",
-  currency_symbol: '€',
   // ---- Gastos de la casa (tickets) ----
   exp_title: 'Gastos de la casa',
   addcard_edit_title: 'Editar',
@@ -3495,6 +3494,7 @@ const es: Dict = {
   shop_price_months_ago: "hace {n} meses",
   shop_price_seen_once: "visto una vez, {when}",
   shop_price_cheapest: "el más barato",
+  shop_price_cheapest_by: "el más barato, {amount} menos",
   shop_price_cheapest_pill: "El más barato",
   shop_price_compare_note: "Unos {amount} menos · según al menos {n} tickets por tienda, en {months} meses",
   shop_price_none: "Aún sin precio",
@@ -6003,7 +6003,6 @@ const fr: Dict = {
   capture_reading: "Lecture de votre recette…",
   capture_failed: "Nous n’avons pas pu lire de recette sur cette photo.",
   capture_note: "Lue par l’IA depuis votre photo — vérifiez-la avec l’original.",
-  currency_symbol: '€',
   // ---- Dépenses de la maison (tickets) ----
   exp_title: 'Dépenses de la maison',
   addcard_edit_title: 'Modifier',
@@ -6087,6 +6086,7 @@ const fr: Dict = {
   shop_price_months_ago: "il y a {n} mois",
   shop_price_seen_once: "vu une fois, {when}",
   shop_price_cheapest: "le moins cher",
+  shop_price_cheapest_by: "le moins cher, {amount} de moins",
   shop_price_cheapest_pill: "Le moins cher",
   shop_price_compare_note: "Environ {amount} de moins · d’après au moins {n} tickets par magasin, sur {months} mois",
   shop_price_none: "Pas encore de prix",
@@ -8595,7 +8595,6 @@ const de: Dict = {
   capture_reading: "Dein Rezept wird gelesen…",
   capture_failed: "Wir konnten auf dem Foto kein Rezept lesen.",
   capture_note: "Von KI aus deinem Foto gelesen – vergleiche es mit dem Original.",
-  currency_symbol: '€',
   // ---- Haushaltsausgaben (Kassenbons) ----
   exp_title: 'Haushaltsausgaben',
   addcard_edit_title: 'Bearbeiten',
@@ -8679,6 +8678,7 @@ const de: Dict = {
   shop_price_months_ago: "vor {n} Monaten",
   shop_price_seen_once: "einmal gesehen, {when}",
   shop_price_cheapest: "am günstigsten",
+  shop_price_cheapest_by: "am günstigsten, {amount} weniger",
   shop_price_cheapest_pill: "Am günstigsten",
   shop_price_compare_note: "Etwa {amount} weniger · aus mindestens {n} Kassenbons pro Geschäft, in {months} Monaten",
   shop_price_none: "Noch kein Preis",

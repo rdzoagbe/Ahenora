@@ -31,7 +31,9 @@ describe('the order of plans', () => {
     const src = read('components', 'PricingView.tsx');
     expect(src).toContain("const PLAN_ORDER: Plan[] = ['village', 'duo', 'executive', 'household'];");
     expect(src).toContain("isDown ? t('pricing_downgrade')");
-    expect(src).toContain("duo: { monthly: 1.99, yearly: 19.99 }");
+    // Duo's price, from the one table the paywall reads.
+    expect(read('planChange.ts')).toContain("duo: { monthly: 1.99, yearly: 19.99 }");
+    expect(src).toContain('PLAN_PRICE[plan][cycle]');
   });
 });
 
