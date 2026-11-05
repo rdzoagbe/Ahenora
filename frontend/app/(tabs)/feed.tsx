@@ -91,6 +91,7 @@ import AppToast from '../../src/components/AppToast';
 import { useToast } from '../../src/hooks/useToast';
 import { detectCaptureIntent } from '../../src/captureIntent';
 import { onCaptureFocus } from '../../src/captureFocus';
+import { formatMoney } from '../../src/money';
 
 /** What a scan hands the composer. */
 interface ScanDraft {
@@ -2091,7 +2092,7 @@ export default function Feed() {
                 </View>
                 {report.total_spent > 0 ? (
                   <View style={styles.reportSpent}>
-                    <Text style={styles.reportSpentText}>${report.total_spent.toFixed(2)} {t('feed_spent_this_week')}</Text>
+                    <Text style={styles.reportSpentText}>{formatMoney(report.total_spent, lang)} {t('feed_spent_this_week')}</Text>
                   </View>
                 ) : null}
                 {report.upcoming_deadlines.length > 0 ? (

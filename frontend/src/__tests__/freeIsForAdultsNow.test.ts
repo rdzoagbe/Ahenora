@@ -14,8 +14,8 @@ const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
 
 describe('the prices shown', () => {
   it('match the new catalogue', () => {
-    expect(PLAN_PRICE.executive).toEqual({ monthly: '€4.99', yearly: '€39.99' });
-    expect(PLAN_PRICE.household).toEqual({ monthly: '€9.99', yearly: '€99.99' });
+    expect(PLAN_PRICE.executive).toEqual({ monthly: 4.99, yearly: 39.99 });
+    expect(PLAN_PRICE.household).toEqual({ monthly: 9.99, yearly: 99.99 });
     const pricing = read('components', 'PricingView.tsx');
     expect(pricing).toContain('executive: { monthly: 4.99, yearly: 39.99 }');
     expect(pricing).toContain('household: { monthly: 9.99, yearly: 99.99 }');

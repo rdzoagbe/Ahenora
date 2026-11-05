@@ -29,14 +29,14 @@ import { Clock, Heart } from 'lucide-react-native';
 
 import { api, TrialRecap } from '../api';
 import { useStore } from '../store';
-import { PLAN_PRICE } from '../planChange';
+import { planPriceText } from '../planChange';
 import { useUI } from './Kit';
 import { PressScale } from './PressScale';
 
 export const TRIAL_WARN_DAYS = 3;
 
 export function TrialCard() {
-  const { t, subscription } = useStore();
+  const { t, lang, subscription } = useStore();
   const ui = useUI();
   const router = useRouter();
   const trial = subscription?.trial;
@@ -67,7 +67,7 @@ export function TrialCard() {
   // (Duo without children, Family with them).
   const keep = (mode === 'ending' ? trial?.recommended_plan ?? trial?.plan : recap?.recommended_plan) ?? 'executive';
   const plan = t(`plan_${keep}`);
-  const price = PLAN_PRICE[keep]?.monthly ?? '';
+  const price = planPriceText(keep, 'monthly', lang);
   const kids = recap?.kids ?? [];
   // Named lines already carry the children's chores and stars.
   const items = (recap?.items ?? []).filter((it) => kids.length === 0 || (it.key !== 'chores' && it.key !== 'stars'));

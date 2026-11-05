@@ -18,6 +18,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
+import { formatMoney } from '../money';
 
 const ROOT = join(__dirname, '..', '..');
 
@@ -48,21 +49,35 @@ describe('every language names the same currency', () => {
 });
 
 describe('household money is formatted from that one place', () => {
-  it('the co-parent balance no longer writes its own euro', () => {
+  // src/money.ts. Each screen used to build its own text, so the list said
+  // "2,40 €", Spending "€2.40", the weekly report on Home a dollar sign and the
+  // receipt camera no currency at all. Now the language decides the shape, in
+  // one function, and no screen writes a currency sign of its own.
+  it('the co-parent balance uses it', () => {
     const body = readFileSync(
       join(ROOT, 'src', 'components', 'CoParentBalance.tsx'), 'utf8');
-    expect(body).not.toMatch(/\$\{amount\}\s*€/);
-    expect(body).toContain("t('currency_symbol')");
+    expect(body).toContain('formatMoney(');
+    expect(body).not.toContain("t('currency_symbol')");
   });
 
-  it('the symbol goes before the number, everywhere it is built', () => {
-    // "62 €" beside "$0.00" is two conventions in one feature. Whichever is
-    // chosen, it has to be one.
+  it('no screen builds a money string by hand', () => {
     for (const file of SCREENS) {
       const body = readFileSync(file, 'utf8');
-      for (const m of body.matchAll(/`\$\{[^}]*\}\s*€`/g)) {
-        throw new Error(`${file} puts the currency after the number: ${m[0]}`);
-      }
+      const bad = [
+        /t\('currency_symbol'\)/,
+        /`€\$\{/,
+        /\$\{[^}]*\}\s*€`/,
+        />\$\{[^}]*toFixed\(2\)\}/,
+      ].find((re) => re.test(body));
+      if (bad) throw new Error(`${file} builds money by hand (${bad})`);
     }
+  });
+
+  it('English puts the sign first; French, Spanish and German after, with a comma', () => {
+    expect(formatMoney(2.4, 'en')).toBe('€2.40');
+    expect(formatMoney(2.4, 'fr')).toBe('2,40\u00a0€');
+    expect(formatMoney(2.4, 'es')).toBe('2,40\u00a0€');
+    expect(formatMoney(2.4, 'de')).toBe('2,40\u00a0€');
+    expect(formatMoney(-5, 'fr')).toBe('−5,00\u00a0€');
   });
 });

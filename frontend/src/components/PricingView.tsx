@@ -26,6 +26,7 @@ import { api, Plan, BillingCycle, bustSubscriptionCache } from '../api';
 import { purchasePremium, restorePurchases } from '../billing';
 import { PlanChangeSheet, PLAN_RANK } from './PlanChangeSheet';
 import { useDuoOffered } from '../duoOffered';
+import { formatMoney } from '../money';
 
 // Where a web (or billing-less) user is sent to actually subscribe. Store
 // billing only exists in the native app, so on web the purchase and restore
@@ -663,6 +664,8 @@ function PlanCard({
   styles: ReturnType<typeof createStyles>;
   ui: UIColors;
 }) {
+  // The language for money, read here rather than threaded through as a prop.
+  const { lang } = useStore();
   const price = PLAN_PRICES[plan][cycle];
   const perMonth = cycle === 'yearly' ? price / 12 : price;
   // The BILLED amount is the headline, always — on a yearly plan that is the
@@ -739,7 +742,7 @@ function PlanCard({
       </View>
       {!isFree && cycle === 'yearly' ? (
         <Text style={styles.yearlyNote}>
-          {t('pricing_billed_yearly_note', { amount: `€${perMonth.toFixed(2)}` })}
+          {t('pricing_billed_yearly_note', { amount: formatMoney(perMonth, lang) })}
         </Text>
       ) : null}
 
