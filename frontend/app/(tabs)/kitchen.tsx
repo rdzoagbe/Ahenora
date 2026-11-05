@@ -23,8 +23,8 @@ import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
 import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
-  FamilyAllergy, FrequentItem, ShopPrices } from '../../src/api';
-import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed } from '../../src/shopPrices';
+  FamilyAllergy, FrequentItem, ShopPrices, ShopDue } from '../../src/api';
+import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed, findNameMatch, fold } from '../../src/shopPrices';
 import { formatMoney } from '../../src/money';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { logger } from '../../src/logger';
@@ -455,8 +455,13 @@ export default function Kitchen() {
   // sure. Loaded once with the list because the moment it is worth knowing is
   // BEFORE the trip. Helpers and children get a 403 and simply see no prices.
   const [shopPrices, setShopPrices] = useState<ShopPrices | null>(null);
+  // Regular purchases that are due again, from the receipts' own rhythm
+  // ("Lait, every ~6 days, last bought 7 days ago"). Full members only, like
+  // every reading of receipts; others get a 403 and see nothing.
+  const [shopDue, setShopDue] = useState<ShopDue[]>([]);
   useEffect(() => {
     api.getShopPrices().then(setShopPrices).catch(() => setShopPrices(null));
+    api.getShopDue().then((r) => setShopDue(r.items)).catch(() => setShopDue([]));
   }, [dataVersion]);
 
   const addScannedItems = useCallback(async () => {
@@ -607,6 +612,26 @@ export default function Kitchen() {
     parts[parts.length - 1] = name;
     addShopItem(parts);
   }, [shopInput, addShopItem]);
+
+  // Due again, and not on the list already (to buy or just ticked): "Lait"
+  // on the list covers "Lait demi-écrémé" from the receipt. Three at most.
+  const dueToShow = useMemo(() => {
+    const labels = shopItems.map((i) => splitQuantity(i.name).label);
+    return shopDue.filter((d) => !labels.some((l) => findNameMatch(l, [d.name]))).slice(0, 3);
+  }, [shopDue, shopItems]);
+
+  const addDue = useCallback(async (name: string) => {
+    setShopDue((prev) => prev.filter((d) => d.name !== name));
+    try {
+      const item = await api.addShoppingItem({ name, category: categoriseShoppingItem(name) || undefined });
+      setShopItems((prev) => [item, ...prev]);
+      const said = whereItWent(t, [item]);
+      if (said) setAddedNote(said);
+    } catch {
+      showToast(t('vault_could_not_add_item'), 'error');
+      api.getShopDue().then((r) => setShopDue(r.items)).catch(() => undefined);
+    }
+  }, [showToast, t]);
 
   // Add a regular back to the list in one tap. Drop it from the row straight
   // away so it feels instant, and it stays gone because it is now on the list.
@@ -1351,15 +1376,24 @@ export default function Kitchen() {
   // so the windowed list can measure and scroll headings and items alike.
   // "By shop" needs prices to say anything; without them it is not offered.
   const byStore = shopView === 'store' && !!shopPrices && shopPrices.items.length > 0;
+  // Every receipt product name, folded, to tell "Oeufs x12" the product from
+  // "Oeufs x12" the quantity.
+  const receiptNames = useMemo(
+    () => new Set((shopPrices?.items ?? []).map((p) => fold(p.name))),
+    [shopPrices],
+  );
   // The list by where to buy it, computed once for both the "By shop"
   // sections and the total above the list, so the two always agree. A
   // quantity written on the item ("Lait x6", "Tomates 400g") is priced in.
   const shopGroups = useMemo(
     () => (shopPrices && shopPrices.items.length > 0
       ? groupByShop(uncheckedItems, (i) => splitQuantity(i.name).label, shopPrices.items,
-        (i) => parseNeed(splitQuantity(i.name).qty))
+        // A quantity that is part of a receipt's own name ("Oeufs x12": one
+        // box of twelve, as added from "À racheter bientôt") is a pack size,
+        // not twelve of them.
+        (i) => (receiptNames.has(fold(i.name)) ? null : parseNeed(splitQuantity(i.name).qty)))
       : null),
-    [shopPrices, uncheckedItems],
+    [shopPrices, uncheckedItems, receiptNames],
   );
   // What the list will roughly cost: those estimates summed, and the items
   // with no price named rather than quietly left out.
@@ -1678,6 +1712,34 @@ export default function Kitchen() {
               {/* Your regulars — what this household buys often, from past trips,
                   and not on the list right now. One tap adds it back, so the
                   weekly shop is not retyped from memory every week. */}
+              {/* Due again, from the receipts' own rhythm. Above the regulars:
+                  those are what this house often buys, these are what it
+                  is about to run out of. */}
+              {!selectMode && dueToShow.length > 0 ? (
+                <View testID="shop-due" style={styles.dueCard}>
+                  <Text style={styles.regularsLabel}>{t('shop_due_title')}</Text>
+                  {dueToShow.map((d, i) => (
+                    <PressScale
+                      key={d.name_key}
+                      testID={`shop-due-add-${i}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('shop_due_add', { name: d.name })}
+                      onPress={() => addDue(d.name)}
+                      style={[styles.dueRow, i > 0 && styles.dueRowLine]}
+                    >
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.dueName} numberOfLines={1}>{d.name}</Text>
+                        <Text style={styles.dueSub} numberOfLines={2}>
+                          {d.every_days === 1 ? t('shop_due_every_one') : t('shop_due_every_n', { n: d.every_days })}
+                          {' · '}
+                          {d.last_days === 1 ? t('shop_due_last_one') : t('shop_due_last_n', { n: d.last_days })}
+                        </Text>
+                      </View>
+                      <Plus color={ui.orange} size={20} />
+                    </PressScale>
+                  ))}
+                </View>
+              ) : null}
               {!selectMode && regulars.length > 0 ? (
                 <View style={styles.regularsWrap}>
                   <Text style={styles.regularsLabel}>{t('shop_regulars_title')}</Text>
@@ -3344,6 +3406,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shopScanBtn: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: ui.orange, backgroundColor: ui.orangeSoft },
   scanHint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 11.5, marginBottom: 10, marginTop: 2 },
   regularsWrap: { marginTop: 4, marginBottom: 8 },
+  // "À racheter bientôt": a short list, one tap each.
+  dueCard: {
+    marginTop: 4, marginBottom: 10, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4,
+    borderRadius: 16, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft,
+  },
+  dueRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, minHeight: 48 },
+  dueRowLine: { borderTopWidth: 1, borderTopColor: ui.line },
+  dueName: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15 },
+  dueSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 2 },
   regularsLabel: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12, marginBottom: 8 },
   regularsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   regularChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: ui.lavender },
