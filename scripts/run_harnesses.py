@@ -116,6 +116,13 @@ HARNESSES = [
     # a decimal COMMA — "12,50" is how half this app's market writes twelve
     # fifty, and reading it as twelve loses fifty cents in silence.
     "e2e_expenses.py",
+    # What the receipts give the shopping list: a price under each item, the
+    # cheaper shop and by how much, "À racheter bientôt", suggestions while
+    # typing, the total as arithmetic, Par magasin, and a scanned receipt
+    # ticking the list (and undoing it). Each part had unit tests; none had
+    # been held together in a browser. The scan itself is stubbed: reading a
+    # photo is Gemini's, and the server's tests hold that side. ~25s.
+    "e2e_shop_receipts.py",
     # The meal planner and the claim it is sold on: "plan dinners, share the
     # list". Buys the plan through a real RevenueCat webhook rather than
     # granting itself entitlements, then checks the shopping list actually
