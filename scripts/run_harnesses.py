@@ -121,7 +121,7 @@ HARNESSES = [
     # typing, the total as arithmetic, Par magasin, and a scanned receipt
     # ticking the list (and undoing it). Each part had unit tests; none had
     # been held together in a browser. The scan itself is stubbed: reading a
-    # photo is Gemini's, and the server's tests hold that side. ~35s.
+    # photo is Gemini's, and the server's tests hold that side. ~25s.
     "e2e_shop_receipts.py",
     # The meal planner and the claim it is sold on: "plan dinners, share the
     # list". Buys the plan through a real RevenueCat webhook rather than

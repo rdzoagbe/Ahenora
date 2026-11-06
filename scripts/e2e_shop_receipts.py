@@ -22,7 +22,7 @@ in a real browser against the real server:
 
 The days are counted back from today, so the rhythm is the same on any date.
 """
-import asyncio, base64, json, os, sys, tempfile, urllib.request, uuid
+import asyncio, base64, json, os, sys, traceback, urllib.request, uuid
 from datetime import date, timedelta
 from playwright.async_api import async_playwright
 
@@ -106,11 +106,24 @@ async def main():
     def listed():
         return {i["name"]: i for i in api("GET", "/shopping", t=tok)}
 
-    picture = os.path.join(tempfile.mkdtemp(), "ticket.png")
-    with open(picture, "wb") as f:
-        f.write(PNG_1PX)
+    picture = {"name": "ticket.png", "mimeType": "image/png", "buffer": PNG_1PX}
 
     r = {}
+    try:
+        await run(r, tok, listed, picture)
+    except Exception:
+        # Whatever was gathered is still printed; the crash is a failure too.
+        traceback.print_exc()
+        r["ran_to_the_end"] = False
+
+    for k, v in r.items():
+        print(f"{k}: {v}")
+    failures = [k for k, v in r.items() if not v]
+    print("ALL PASS" if not failures else f"{len(failures)} FAILURES")
+    sys.exit(0 if not failures else 1)
+
+
+async def run(r, tok, listed, picture):
     async with async_playwright() as pw:
         browser = await launch_chromium(pw)
         ctx = await browser.new_context(viewport={"width": 390, "height": 844}, locale="fr-FR")
@@ -135,15 +148,24 @@ async def main():
 
         await page.route("**/api/**", route)
         await page.add_init_script(f"localStorage.setItem('coo_session_token','{tok}');")
-        await page.goto(f"{WEB}/kitchen?view=shop", wait_until="domcontentloaded")
-        await page.wait_for_timeout(3000)
-
         items = listed()
         tom, gin = items["Tomates"]["item_id"], items["Gingembre"]["item_id"]
+        await page.goto(f"{WEB}/kitchen?view=shop", wait_until="domcontentloaded")
+        # The list and its prices arrive separately: wait for the price line.
+        await page.wait_for_selector(f'[data-testid="shop-price-{tom}"]', timeout=15000)
+        await page.wait_for_timeout(500)
         # The receipt's longer name says whose price it is: "Tomates grappe".
         tline = await text_of(page, f"shop-price-{tom}")
         r["price_from_the_last_receipt"] = "Lidl" in tline and "Tomates grappe" in tline and "2,99" in tline
         r["no_price_says_so"] = "Pas encore de prix" in await text_of(page, f"shop-price-{gin}")
+
+        # Typing offers the milk while it is not on the list...
+        box = page.get_by_placeholder("Ajouter — virgules si plusieurs")
+        await box.fill("lai")
+        await page.wait_for_timeout(600)
+        r["typing_offers_from_receipts"] = "Lait demi-écrémé" in await text_of(page, "shop-suggest-panel")
+        await box.fill("")
+        await page.wait_for_timeout(300)
 
         # À racheter bientôt: milk, every ~6 days, last bought a week ago.
         due = await text_of(page, "shop-due")
@@ -163,8 +185,7 @@ async def main():
         r["cheapest_shop_and_saving"] = ("Lidl" in mline and "le moins cher" in mline
                                          and "0,16" in mline and "de moins" in mline)
 
-        # De vos tickets: typing offers what the receipts saw.
-        box = page.get_by_placeholder("Ajouter — virgules si plusieurs")
+        # ...and not once it is: the same "lai" now offers nothing.
         await box.fill("lai")
         await page.wait_for_timeout(600)
         r["already_on_the_list_not_offered"] = await page.locator('[data-testid="shop-suggest-panel"]').count() == 0
@@ -208,18 +229,26 @@ async def main():
         if SHOTS:
             await page.screenshot(path=os.path.join(SHOTS, "shop-receipts-by-store.png"))
         await page.reload(wait_until="domcontentloaded")
-        await page.wait_for_timeout(3000)
+        try:
+            await page.wait_for_selector('[data-testid="shop-store-head-Lidl"]', timeout=15000)
+        except Exception:
+            pass
         r["store_view_remembered"] = await page.locator('[data-testid="shop-store-head-Lidl"]').count() == 1
+        # Read afresh from the server, not just hidden by the tap.
+        r["due_stays_gone_after_reload"] = await page.locator('[data-testid="shop-due"]').count() == 0
         await tap(page, "shop-view-aisle")
         await page.wait_for_timeout(600)
 
         # A receipt ticks the list.
         await page.get_by_text("Dépenses", exact=True).first.click()
         await page.wait_for_timeout(1500)
-        if await page.locator('[data-testid="exp-scan-receipt"]').count() == 1:
-            async with page.expect_file_chooser() as fc:
-                await page.click('[data-testid="exp-scan-receipt"]')
+        try:
+            async with page.expect_file_chooser(timeout=8000) as fc:
+                await page.click('[data-testid="exp-scan-receipt"]', timeout=8000)
             await (await fc.value).set_files(picture)
+            r["scan_opens_a_picker"] = True
+        except Exception:
+            r["scan_opens_a_picker"] = False
         await page.wait_for_timeout(2500)
         r["scan_was_stubbed_not_sent"] = len(scans) == 1
         box_text = await text_of(page, "exp-tick-box")
@@ -233,7 +262,8 @@ async def main():
         await page.wait_for_timeout(2500)
         items = listed()
         r["save_ticks_them"] = (items["Tomates"]["checked"] and items["Gingembre"]["checked"]
-                                and not items.get("Lait demi-écrémé", {}).get("checked"))
+                                and "Lait demi-écrémé" in items
+                                and not items["Lait demi-écrémé"]["checked"])
         r["ticks_say_which_receipt"] = items["Tomates"].get("ticked_from") == "Carrefour"
         await page.get_by_text("Liste", exact=True).first.click()
         await page.wait_for_timeout(1500)
@@ -245,16 +275,13 @@ async def main():
         await page.wait_for_timeout(2000)
         items = listed()
         r["undo_unticks"] = not items["Tomates"]["checked"] and not items["Gingembre"]["checked"]
-        r["undo_clears_the_receipt_note"] = not items["Tomates"].get("ticked_from")
+        # The server only shows ticked_from on a ticked item, so the proof is
+        # ticking it again by hand: the old receipt's note must not come back.
+        again = api("PATCH", f"/shopping/{tom}", {"checked": True}, tok)
+        r["undo_clears_the_receipt_note"] = again.get("checked") is True and not again.get("ticked_from")
 
         r["no_js_errors"] = not errs
         await browser.close()
-
-    for k, v in r.items():
-        print(f"{k}: {v}")
-    failures = [k for k, v in r.items() if not v]
-    print("ALL PASS" if not failures else f"{len(failures)} FAILURES")
-    sys.exit(0 if not failures else 1)
 
 
 asyncio.run(main())
