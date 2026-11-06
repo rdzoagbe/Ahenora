@@ -190,7 +190,7 @@ export default function Kitchen() {
   }, []);
   // The prices, the total, Par magasin and "À racheter bientôt" all come from
   // scanned receipts, and nothing on the list said so. One line says where they
-  // come from until the first receipt with lines is read; closing it is
+  // come from while there are none to show; closing it is
   // remembered on this phone. Starts hidden so it never flashes on and off.
   const [receiptHintOff, setReceiptHintOff] = useState(true);
   useEffect(() => {
@@ -1777,11 +1777,10 @@ export default function Kitchen() {
                 </View>
               ) : null}
 
-              {/* A full weekly shop ran the page on for screens, burying the
-                  meal ideas and the history beneath it. Ten at a time, the
-                  rest inside. */}
-              {/* Only once the prices have loaded and came back empty: a
-                  helper or a child gets a 403 (null) and never sees it. */}
+              {/* Only once the prices have loaded and came back empty — no
+                  receipt read yet, or none within the price window, which is
+                  the same advice. A helper or a child gets a 403 (null) and
+                  never sees it. */}
               {!selectMode && !receiptHintOff && shopPrices && shopPrices.items.length === 0 ? (
                 <View testID="shop-receipt-hint" style={styles.totalCard}>
                   <ReceiptText color={ui.orange} size={20} />
@@ -1793,8 +1792,8 @@ export default function Kitchen() {
                       onPress={() => selectView('spend')}
                       style={styles.receiptHintBtn}
                     >
-                      <Camera color={ui.orangeText} size={15} />
                       <Text style={styles.receiptHintBtnText}>{t('shop_receipt_hint_go')}</Text>
+                      <ChevronRight color={ui.orangeText} size={15} />
                     </PressScale>
                   </View>
                   <PressScale
@@ -1809,6 +1808,9 @@ export default function Kitchen() {
                   </PressScale>
                 </View>
               ) : null}
+              {/* A full weekly shop ran the page on for screens, burying the
+                  meal ideas and the history beneath it. Ten at a time, the
+                  rest inside. */}
               {listEstimate && listEstimate.priced > 0 ? (
                 <View testID="shop-total" style={styles.totalCard} accessibilityRole="summary">
                   <ShoppingBag color={ui.orange} size={20} />

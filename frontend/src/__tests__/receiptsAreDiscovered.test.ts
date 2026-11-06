@@ -23,6 +23,9 @@ describe('the receipt hint on the list', () => {
 
   it('leads to Dépenses, where the scan button is, and can be closed for good', () => {
     expect(src).toContain("onPress={() => selectView('spend')}");
+    // It opens the tab, not the camera, so it says the tab: a button reading
+    // "Scanner un ticket" that does not open the camera promises what it doesn't do.
+    expect(i18n).toContain('shop_receipt_hint_go: "Aller aux Dépenses"');
     expect(src).toContain("AsyncStorage.setItem(RECEIPT_HINT_KEY, '1')");
   });
 
