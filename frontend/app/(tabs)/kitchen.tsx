@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useClientValue } from '../../src/hooks/useClientValue';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ReceiptText, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
@@ -74,6 +74,8 @@ const KEEP_AWAKE_TAG = 'kitchen-screen';
 const KEEP_AWAKE_KEY = 'coo_keep_screen_on';
 // Aisle or shop, for the shopping list: a way of looking, kept on this device.
 const SHOP_VIEW_KEY = 'ahenora_shop_view';
+// Set when the "scan your receipts" hint is closed: this phone stops showing it.
+const RECEIPT_HINT_KEY = 'ahenora_receipt_hint_off';
 
 export default function Kitchen() {
   const { t, lang, subscription, dataVersion, refreshSubscription } = useStore();
@@ -185,6 +187,20 @@ export default function Kitchen() {
     shopViewChosen.current = true;
     setShopView(next);
     AsyncStorage.setItem(SHOP_VIEW_KEY, next).catch(() => undefined);
+  }, []);
+  // The prices, the total, Par magasin and "À racheter bientôt" all come from
+  // scanned receipts, and nothing on the list said so. One line says where they
+  // come from while there are none to show; closing it is
+  // remembered on this phone. Starts hidden so it never flashes on and off.
+  const [receiptHintOff, setReceiptHintOff] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(RECEIPT_HINT_KEY)
+      .then((v) => setReceiptHintOff(v === '1'))
+      .catch(() => setReceiptHintOff(false));
+  }, []);
+  const closeReceiptHint = useCallback(() => {
+    setReceiptHintOff(true);
+    AsyncStorage.setItem(RECEIPT_HINT_KEY, '1').catch(() => undefined);
   }, []);
   // "Added to Meat & fish: chicken breast", shown under the box it was typed
   // in. It was a toast at the foot of the screen, which is exactly where the
@@ -1761,6 +1777,37 @@ export default function Kitchen() {
                 </View>
               ) : null}
 
+              {/* Only once the prices have loaded and came back empty — no
+                  receipt read yet, or none within the price window, which is
+                  the same advice. A helper or a child gets a 403 (null) and
+                  never sees it. */}
+              {!selectMode && !receiptHintOff && shopPrices && shopPrices.items.length === 0 ? (
+                <View testID="shop-receipt-hint" style={styles.totalCard}>
+                  <ReceiptText color={ui.orange} size={20} />
+                  <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+                    <Text style={styles.totalSub}>{t('shop_receipt_hint')}</Text>
+                    <PressScale
+                      testID="shop-receipt-hint-go"
+                      accessibilityRole="button"
+                      onPress={() => selectView('spend')}
+                      style={styles.receiptHintBtn}
+                    >
+                      <Text style={styles.receiptHintBtnText}>{t('shop_receipt_hint_go')}</Text>
+                      <ChevronRight color={ui.orangeText} size={15} />
+                    </PressScale>
+                  </View>
+                  <PressScale
+                    testID="shop-receipt-hint-close"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('shop_receipt_hint_close')}
+                    onPress={closeReceiptHint}
+                    hitSlop={10}
+                    style={{ alignSelf: 'flex-start', padding: 2 }}
+                  >
+                    <X color={ui.muted} size={16} />
+                  </PressScale>
+                </View>
+              ) : null}
               {/* A full weekly shop ran the page on for screens, burying the
                   meal ideas and the history beneath it. Ten at a time, the
                   rest inside. */}
@@ -3447,6 +3494,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12,
     marginBottom: 12,
   },
+  receiptHintBtn: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 10, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card,
+    paddingHorizontal: 12, paddingVertical: 7,
+  },
+  receiptHintBtnText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 13.5 },
   totalTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
   totalSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, lineHeight: 17 },
   storeSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, marginTop: 1 },
