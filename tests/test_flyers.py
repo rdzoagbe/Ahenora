@@ -229,5 +229,115 @@ class TheLetterboxFlyer(unittest.TestCase):
         self.assertEqual(set(en), set(fr))
 
 
+def glossy(code):
+    with open(os.path.join(PRINT_DIR, f"glossy-a5-{code}.html"), encoding="utf-8") as fh:
+        return fh.read()
+
+
+@unittest.skipUnless(HAVE_QR, "qrcode not installed")
+class TheGlossyFlyer(unittest.TestCase):
+    """The A5 for a print shop: glossy, colour to the edge, with bleed."""
+
+    def test_the_committed_files_match_the_script(self):
+        for code, copy in build_flyers.GLOSSY_COPY.items():
+            self.assertEqual(
+                glossy(code), build_flyers.glossy_html(copy),
+                f"docs/print/glossy-a5-{code}.html was edited by hand; "
+                f"change scripts/build_flyers.py and rebuild instead")
+
+    def test_it_is_two_sides_of_A5_plus_3mm_bleed(self):
+        # A print shop trims after printing; colour that stops at the A5 edge
+        # leaves a white hairline wherever the blade wanders.
+        self.assertEqual(build_flyers.GLOSSY_SHEET_MM, (154, 216))
+        for code in LANGS:
+            html = glossy(code)
+            self.assertIn("@page { size: 154mm 216mm; margin: 0; }", html)
+            self.assertIn("width: 154mm; height: 216mm; overflow: hidden;", html)
+            self.assertEqual(html.count('<section class="page'), 2)
+            self.assertIn("print-color-adjust: exact", html)
+
+    def test_the_codes_go_where_the_words_say(self):
+        for code in LANGS:
+            front, back = glossy(code).split('<section class="page back">')
+            self.assertIn(f'aria-label="QR code to {build_flyers.GET_URL}"', front)
+            self.assertIn("ahenora.com", front)
+            self.assertIn(f'aria-label="QR code to {build_flyers.APP_STORE}"', back)
+            self.assertIn(f'aria-label="QR code to {build_flyers.GOOGLE_PLAY}"', back)
+
+    def test_every_picture_it_names_exists(self):
+        for code in LANGS:
+            for src in re.findall(r'(?:src="|url\()\.\./assets/([^")]+)', glossy(code)):
+                self.assertTrue(os.path.exists(os.path.join(ROOT, "docs", "assets", src)), src)
+
+    def test_the_printed_prices_are_the_prices_charged(self):
+        tiers = ["village", "duo", "executive", "household"]
+        for code in LANGS:
+            plans = build_flyers.GLOSSY_COPY[code]["plans"]
+            self.assertEqual(len(plans), len(tiers))
+            for (name, price, _), tier in zip(plans, tiers):
+                shown = float(re.sub(r"[^0-9,.]", "", price.replace("&nbsp;", ""))
+                              .replace(",", "."))
+                self.assertEqual(shown, catalog_price(tier), f"{code} {name}")
+
+    def test_it_promises_the_trial_the_app_gives(self):
+        with open(os.path.join(ROOT, "backend", "server.py"), encoding="utf-8") as fh:
+            days = re.search(r"^TRIAL_DAYS = (\d+)", fh.read(), re.M)
+        self.assertEqual(days.group(1), "14")
+        self.assertIn("14&nbsp;days free", glossy("en"))
+        self.assertIn("14&nbsp;jours offerts", glossy("fr"))
+
+    def test_it_says_the_family_on_screen_is_made_up(self):
+        self.assertIn("made-up family", glossy("en"))
+        self.assertIn("famille fictive", glossy("fr"))
+
+    def test_both_languages_carry_the_same_offer(self):
+        en, fr = build_flyers.GLOSSY_COPY["en"], build_flyers.GLOSSY_COPY["fr"]
+        self.assertEqual(len(en["features"]), len(fr["features"]))
+        self.assertEqual([a for a, _, _ in en["features"]], [a for a, _, _ in fr["features"]])
+        self.assertEqual(len(en["plans"]), len(fr["plans"]))
+        self.assertEqual(set(en), set(fr))
+
+
+@unittest.skipUnless(HAVE_QR, "qrcode not installed")
+class TheOneSidedGlossyFlyer(unittest.TestCase):
+    """The front alone, for letterboxes and bags: one side carries it all."""
+
+    def read(self, code):
+        with open(os.path.join(PRINT_DIR, f"glossy-a5-recto-{code}.html"), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_the_committed_files_match_the_script(self):
+        for code, copy in build_flyers.GLOSSY_COPY.items():
+            self.assertEqual(
+                self.read(code), build_flyers.single_html(copy, build_flyers.SINGLE_EXTRA[code]),
+                f"docs/print/glossy-a5-recto-{code}.html was edited by hand; "
+                f"change scripts/build_flyers.py and rebuild instead")
+
+    def test_it_is_one_side_of_A5_plus_bleed(self):
+        for code in LANGS:
+            html = self.read(code)
+            self.assertEqual(html.count('<section class="page'), 1)
+            self.assertIn("@page { size: 154mm 216mm; margin: 0; }", html)
+
+    def test_the_legal_lines_are_on_the_only_side(self):
+        # Publisher identity (Code de commerce R123-237), printer (loi du
+        # 29 juillet 1881, art. 3) and Citeo's Info-tri (L541-9-3).
+        html = self.read("fr")
+        for words in ("Édité par", "SIREN", "Imprimé par", "Info-tri"):
+            self.assertIn(words, html)
+        en = self.read("en")
+        for words in ("Published by", "SIREN", "Printed by", "Info-tri"):
+            self.assertIn(words, en)
+
+    def test_it_names_no_store_and_no_price(self):
+        # Without a back there is no room for trademark credit lines or price
+        # wording, so the side carries neither.
+        for code in LANGS:
+            html = self.read(code)
+            for word in ("App Store", "Google Play", "iPhone", "Android", "€"):
+                self.assertNotIn(word, html, f"{code}: {word}")
+            self.assertIn(f'aria-label="QR code to {build_flyers.GET_URL}"', html)
+
+
 if __name__ == "__main__":
     unittest.main()
