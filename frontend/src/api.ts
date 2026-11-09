@@ -3195,7 +3195,9 @@ export const api = {
   listTurns: () => request<Turn[]>('/turns'),
   createTurn: (data: { name: string; member_ids: string[] }) =>
     request<Turn>('/turns', { method: 'POST', body: data }),
-  updateTurn: (id: string, data: { name?: string; member_ids?: string[]; current_member_id?: string }) =>
+  /** `seen_current_member_id`: whose turn the sheet showed. With
+   *  `current_member_id`, the server refuses (409) if it has moved since. */
+  updateTurn: (id: string, data: { name?: string; member_ids?: string[]; current_member_id?: string; seen_current_member_id?: string }) =>
     request<Turn>(`/turns/${id}`, { method: 'PATCH', body: data }),
   deleteTurn: (id: string) => request<{ ok: boolean }>(`/turns/${id}`, { method: 'DELETE' }),
   /**

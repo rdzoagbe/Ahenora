@@ -102,6 +102,32 @@ describe('the card', () => {
     expect(card).toMatch(/\{canEdit \? \(\s*<View style=\{styles\.ideas\}>/);
   });
 
+  // Review of 2026-11-09, after release.
+  it('a rename never sends whose turn it is, unless it was changed in the sheet, and then with what it showed', () => {
+    expect(card).toContain('current !== editing.current_member_id');
+    expect(card).toContain('seen_current_member_id: editing.current_member_id');
+  });
+
+  it('never hides a rotation, so every one can be opened and deleted', () => {
+    expect(card).toContain('const shown = turns;');
+  });
+
+  it('reloads with the Family tab, so another parent\'s "Done" shows up', () => {
+    expect(card).toContain('useEffect(() => { load(); }, [load, refreshKey, members]);');
+  });
+
+  it('stops a double tap before the screen re-renders', () => {
+    expect(card).toContain('if (!from || inFlight.current.has(turn.turn_id)) return;');
+  });
+
+  it('puts the turn back on any refusal, a 409 included', () => {
+    expect(card).toMatch(/setTurns\(\(prev\) => \(prev \?\? \[\]\)\.map\(\(r\) => \(r\.turn_id === before\.turn_id \? before : r\)\)\);\s*if \(e\?\.status === 409\)/);
+  });
+
+  it('never shows a blank name for whoever went last', () => {
+    expect(card).toContain('turn.history.find((h) => nameOf(members, h.member_id))');
+  });
+
   it('is worded in all four languages', () => {
     const keys = ['turn_title', 'turn_add', 'turn_empty', 'turn_idea_other', 'turn_now', 'turn_then', 'turn_last',
       'turn_done', 'turn_done_a11y', 'turn_new_title', 'turn_edit_title', 'turn_name_label', 'turn_name_placeholder',
