@@ -26,6 +26,11 @@ const MONTHS = 6;
 // whole four months the server had sent; "Show older" reaches the rest.
 const RECEIPTS_PAGE = 20;
 
+/** "octobre" → "Octobre": a month name at the start of a line. */
+function capitalise(text: string): string {
+  return text ? text.charAt(0).toLocaleUpperCase() + text.slice(1) : text;
+}
+
 /** "2026-07" → a Date on the first of that month, for formatting only. */
 function monthDate(key: string): Date {
   const [y, m] = key.split('-').map(Number);
@@ -341,13 +346,20 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     }
   }, [load, t]);
 
-  // The month to lead with: the newest finished month if there is one, because
-  // that is the month we can actually say something about. Otherwise the month
-  // in progress, shown without a comparison.
-  const lead = useMemo(() => {
-    if (!overview) return null;
-    const finished = overview.months.filter((m) => m.complete && m.count > 0);
-    return finished.length ? finished[finished.length - 1] : overview.current;
+  // "Ce mois-ci" is this month, so far. It used to lead with the newest
+  // FINISHED month whenever there was one (the month it could compare), so on
+  // 9 November it showed October and left November's receipts out (Roland,
+  // 2026-11-09). The finished month is still there, on its own line beneath,
+  // with its comparison: never mixed into this month's number.
+  const lead = overview?.current ?? null;
+  // Last month is the calendar month before this one, even with no receipts:
+  // an empty October must read as empty, not be skipped for September (a
+  // month of forgotten receipts would otherwise look like restraint). Shown
+  // once the family has any finished month with receipts at all.
+  const lastMonth = useMemo(() => {
+    if (!overview || overview.months.length < 2) return null;
+    if (!overview.months.some((m) => m.complete && m.count > 0)) return null;
+    return overview.months[overview.months.length - 2];
   }, [overview]);
 
   const monthName = (key: string) =>
@@ -360,7 +372,27 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     new Date(`${iso}T00:00:00`).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
 
   const comparison = overview?.comparison;
-  const showsComparison = Boolean(comparison && lead && comparison.month === lead.month);
+  // The average month, over the FINISHED months that have receipts: the month
+  // still running would pull it down, and an empty month is more likely
+  // forgotten receipts than a month of nothing bought.
+  // Two finished months at least: one month alone is that month, not an
+  // average.
+  const monthAverage = useMemo(() => {
+    const done = (overview?.months ?? []).filter((m) => m.complete && m.count > 0);
+    if (done.length < 2) return null;
+    return { amount: done.reduce((a, m) => a + m.total, 0) / done.length, months: done.length };
+  }, [overview]);
+
+  // The months to list, newest first, from the first month that has a
+  // receipt: months before the family started would read as forgotten
+  // receipts. An empty month AFTER that still shows, as empty.
+  const monthsShown = useMemo(() => {
+    const months = overview?.months ?? [];
+    const first = months.findIndex((m) => m.count > 0);
+    return first < 0 ? months.slice(-1) : months.slice(first).reverse();
+  }, [overview]);
+
+  const showsComparison = Boolean(comparison && lastMonth && comparison.month === lastMonth.month);
   const difference = comparison ? comparison.difference : 0;
   const meaningful = Math.abs(difference) >= 5;
 
@@ -483,50 +515,91 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                     </View>
                   ))}
                 </View>
+
+                {/* Every month, in words: what was spent in it and on how many
+                    receipts, newest first (Roland, 2026-11-09: "so we know what
+                    was spent in that month"). The bars above only show shape. */}
+                <View style={styles.monthList} testID="exp-month-list">
+                  {monthsShown.map((m) => (
+                    <View
+                      key={m.month}
+                      style={styles.monthRow}
+                      testID={`exp-month-${m.month}`}
+                      accessible
+                      accessibilityLabel={`${capitalise(monthName(m.month))}: ${
+                        m.count > 0 ? `${money(m.total)}, ${shopsLabel(m.count)}` : t('exp_month_none')}`}
+                    >
+                      <Text style={[styles.monthName, !m.complete && styles.colLblNow]}>
+                        {capitalise(monthName(m.month))}
+                        {!m.complete ? ` · ${t('exp_so_far')}` : ''}
+                      </Text>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.monthAmount}>{m.count > 0 ? money(m.total) : '—'}</Text>
+                        <Text style={styles.monthCount}>{m.count > 0 ? shopsLabel(m.count) : t('exp_month_none')}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+                {monthAverage ? (
+                  <View style={styles.pending} testID="exp-month-average">
+                    <Text style={styles.lastMonth}>
+                      {t(monthAverage.months === 1 ? 'exp_month_average_one' : 'exp_month_average_n', {
+                        amount: money(monthAverage.amount),
+                        n: monthAverage.months,
+                      })}
+                    </Text>
+                  </View>
+                ) : null}
               </>
             ) : (
               <>
                 <Text style={styles.lbl}>
-                  {lead ? monthName(lead.month) : ''}
-                  {lead && !lead.complete ? ` · ${t('exp_so_far')}` : ''}
+                  {lead ? `${monthName(lead.month)} · ${t('exp_so_far')}` : ''}
                 </Text>
                 <Text style={styles.big}>{money(lead?.total ?? 0)}</Text>
                 {/* How much of the month this number actually covers. Without it,
                     a month where four receipts were forgotten reads as restraint. */}
                 <Text style={styles.sub}>{shopsLabel(lead?.count ?? 0)}</Text>
 
-                {showsComparison && comparison ? (
-                  meaningful ? (
-                    <View style={styles.compare}>
-                      {difference > 0
-                        ? <TrendingUp color={ui.orangeDeep} size={16} />
-                        : <TrendingDown color={ui.mintText} size={16} />}
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.compareText, difference < 0 && styles.compareGood]}>
+                {lastMonth ? (
+                  <View style={styles.pending} testID="exp-last-month">
+                    <Text style={styles.lastMonth}>
+                      {t('exp_last_month', {
+                        month: capitalise(monthName(lastMonth.month)),
+                        amount: money(lastMonth.total),
+                        count: shopsLabel(lastMonth.count),
+                      })}
+                    </Text>
+                    {showsComparison && comparison ? (
+                      meaningful ? (
+                        <View style={styles.compareRow}>
                           {difference > 0
-                            ? t('exp_more_usual', { amount: money(Math.abs(difference)) })
-                            : t('exp_less_usual', { amount: money(Math.abs(difference)) })}
-                        </Text>
-                        {/* "Usual" says what it means, on the line beneath it. */}
-                        <Text style={styles.compareWhy}>
-                          {t('exp_usual_note', {
-                            months: comparison.basis_months.map(monthName).join(', '),
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.compare}>
-                      <Text style={styles.compareWhy}>{t('exp_same_usual')}</Text>
-                    </View>
-                  )
+                            ? <TrendingUp color={ui.orangeDeep} size={16} />
+                            : <TrendingDown color={ui.mintText} size={16} />}
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.compareText, difference < 0 && styles.compareGood]}>
+                              {difference > 0
+                                ? t('exp_more_usual', { amount: money(Math.abs(difference)) })
+                                : t('exp_less_usual', { amount: money(Math.abs(difference)) })}
+                            </Text>
+                            {/* "Usual" says what it means, on the line beneath it. */}
+                            <Text style={styles.compareWhy}>
+                              {t('exp_usual_note', {
+                                months: comparison.basis_months.map(monthName).join(', '),
+                              })}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={styles.compareWhy}>{t('exp_same_usual')}</Text>
+                      )
+                    ) : (
+                      <Text style={styles.compareWhy}>{t('exp_not_enough_yet')}</Text>
+                    )}
+                  </View>
                 ) : (
                   <View style={styles.pending}>
-                    <Text style={styles.compareWhy}>
-                      {overview && overview.current.count > 0 && !overview.comparison
-                        ? t('exp_not_enough_yet')
-                        : t('exp_wait_for_month_end', { month: monthName(overview?.current.month ?? '') })}
-                    </Text>
+                    <Text style={styles.compareWhy}>{t('exp_not_enough_yet')}</Text>
                   </View>
                 )}
               </>
@@ -880,9 +953,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   compareText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.orangeDeep },
   compareGood: { color: ui.mintText },
   compareWhy: { fontFamily: 'Figtree_500Medium', fontSize: 11.5, color: ui.muted, marginTop: 2 },
-  pending: { backgroundColor: ui.soft, borderRadius: 12, padding: 10 },
+  pending: { backgroundColor: ui.soft, borderRadius: 12, padding: 10, gap: 4 },
+  lastMonth: { fontFamily: 'Figtree_700Bold', fontSize: 13.5, color: ui.text },
+  compareRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 2 },
 
   chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 96, marginTop: 4 },
+  monthList: { marginTop: 6 },
+  monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 9, borderTopWidth: 1, borderTopColor: ui.line },
+  monthName: { fontFamily: 'Figtree_700Bold', fontSize: 14.5, color: ui.text, flex: 1 },
+  monthAmount: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15, color: ui.text },
+  monthCount: { fontFamily: 'Figtree_500Medium', fontSize: 12, color: ui.muted },
   col: { flex: 1, height: '100%', justifyContent: 'flex-end', alignItems: 'center', gap: 4 },
   stick: { width: '100%', borderRadius: 6, backgroundColor: ui.orangeSoft, minHeight: 3 },
   stickNow: { backgroundColor: ui.orange },

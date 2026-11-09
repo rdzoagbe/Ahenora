@@ -2554,6 +2554,56 @@ def tidy_merchant(raw: Optional[str]) -> Optional[str]:
     return cleaned.title() if cleaned.isupper() else cleaned
 
 
+def shop_key(name: Optional[str]) -> str:
+    """The one key a shop is counted under, however its name was typed or read.
+
+    "Marché Frais", "marche frais" and "MARCHE  FRAIS" are the same shop: the
+    key ignores case, accents, punctuation and spacing. Before, the spending
+    screen listed them as three shops of one visit each.
+    """
+    text = unicodedata.normalize("NFKD", str(name or "")).casefold()
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    # Letters NFKD leaves whole: "Cœur" and "Coeur" are one shop.
+    for whole, spelled in (("œ", "oe"), ("æ", "ae"), ("ø", "o"), ("ł", "l"), ("đ", "d")):
+        text = text.replace(whole, spelled)
+    # Letters of every script are kept ("Магнит" stays "магнит"); only
+    # punctuation, symbols and spacing go.
+    return " ".join(re.sub(r"[\W_]+", " ", text).split())
+
+
+def shop_display_name(spellings: dict) -> str:
+    """The spelling a shop is shown under, the same everywhere it appears: the
+    one written like a name (accents, not all lower case), then the one used
+    most, then the first seen. "Marché Frais" over "marche frais"."""
+    def score(item):
+        name, (count, first_seen) = item
+        accented = any(unicodedata.combining(c) for c in unicodedata.normalize("NFKD", name))
+        return (not accented, name == name.lower(), -count, first_seen)
+    return min(spellings.items(), key=score)[0]
+
+
+def unify_shop_names(lines: list, field: str = "shop") -> list:
+    """The same lines, each shop under the one name it is shown by.
+
+    Receipt lines keep the shop as it was read, and a scan reads "Marché
+    Frais" one week and "marche frais" the next: compared as they are, a shop
+    would be "cheaper" than itself. Pure: returns new dicts.
+    """
+    spellings: dict = {}
+    for line in lines:
+        shop = (line.get(field) or "").strip()
+        if shop:
+            names = spellings.setdefault(shop_key(shop) or shop, {})
+            count, first = names.get(shop, (0, len(names)))
+            names[shop] = (count + 1, first)
+    display = {key: shop_display_name(names) for key, names in spellings.items()}
+    out = []
+    for line in lines:
+        shop = (line.get(field) or "").strip()
+        out.append({**line, field: display[shop_key(shop) or shop]} if shop else line)
+    return out
+
+
 def parse_spent_on(value: Optional[str], fallback: datetime) -> datetime:
     """A YYYY-MM-DD from the receipt, kept as date-only at midnight UTC.
 
@@ -17573,6 +17623,7 @@ def compare_receipt_prices(lines: list) -> dict:
     for the comparison without reading the family's whole history twice.
     """
     cutoff = utcnow() - timedelta(days=PRICE_WINDOW_DAYS)
+    lines = unify_shop_names(lines)
 
     # name_key + unit is the comparison key. Same words, same unit, or the
     # numbers are not about the same thing.
@@ -17676,6 +17727,9 @@ async def shopping_prices(user=Depends(require_full_member)):
         {"family_id": user["family_id"],
          "spent_on": {"$gte": utcnow() - timedelta(days=PRICE_WINDOW_DAYS)}},
         {"_id": 0}).to_list(None)
+    # Under the same shop names the comparison uses, so "last bought at" and
+    # "cheapest at" name a shop the same way.
+    lines = unify_shop_names(lines)
     for line in lines:
         name_key = (line.get("name_key") or "").strip()
         shop = (line.get("shop") or "").strip()
@@ -18053,18 +18107,24 @@ async def expense_overview(
         # the new one so co-parents can still settle up without a second screen.
         payer = exp.get("paid_by_name") or "—"
         bucket["people"][payer] = bucket["people"].get(payer, 0.0) + amount
-        seen = bucket["shops"].setdefault(shop, {"total": 0.0, "visits": 0})
-        seen["total"] += amount
-        seen["visits"] += 1
-
-        entry = range_shops.setdefault(shop, {"total": 0.0, "visits": 0})
-        entry["total"] += amount
-        entry["visits"] += 1
+        # Counted under one key whatever the spelling: "Marché Frais" and
+        # "marche frais" are one shop, shown under the spelling used most.
+        key_ = shop_key(shop) or shop
+        for shops in (bucket["shops"], range_shops):
+            seen = shops.setdefault(key_, {"total": 0.0, "visits": 0, "names": {}})
+            seen["total"] += amount
+            seen["visits"] += 1
+            count, first = seen["names"].get(shop, (0, len(seen["names"])))
+            seen["names"][shop] = (count + 1, first)
         range_total += amount
         range_count += 1
 
+    # One name per shop, chosen across the whole window, so a shop reads the
+    # same on "Ce mois-ci" and on "Six derniers mois".
+    display = {k: shop_display_name(v["names"]) for k, v in range_shops.items()}
+
     def shop_rows(shops: dict) -> list:
-        rows = [{"merchant": name,
+        rows = [{"merchant": display.get(name, name),
                  "total": round(v["total"], 2),
                  "visits": v["visits"],
                  "average": round(v["total"] / v["visits"], 2) if v["visits"] else 0.0}
