@@ -231,6 +231,14 @@ class WhoseTurn(unittest.TestCase):
         src = open(server.__file__, encoding="utf-8").read()
         self.assertIn('"turns": await household_rows("turns", public_turn)', src)
 
+    def test_a_family_has_a_bounded_number_of_rotations(self):
+        for i in range(server.TURNS_PER_FAMILY_MAX):
+            self.create(name=f"Rotation {i}")
+        with self.assertRaises(HTTPException) as ctx:
+            self.create(name="One too many")
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(len(self.listed()), server.TURNS_PER_FAMILY_MAX, "every one stored is listed")
+
     def test_deleting_removes_it(self):
         t = self.create()
         run(server.delete_turn(t["turn_id"], user=dict(PARENT), database=self.db))

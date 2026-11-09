@@ -37,7 +37,10 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
   const styles = useMemo(() => createStyles(ui), [ui]);
   const people = useMemo(() => turnPeople(members), [members]);
   const [turns, setTurns] = useState<Turn[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+  // A failed read shows nothing rather than an empty card: "no rotations
+  // yet" with one-tap starters would invite a second copy of each one.
+  const [failed, setFailed] = useState(false);
 
   // The sheet: a new rotation (editing === null) or an existing one.
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -48,33 +51,40 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
-    api.listTurns().then(setTurns).catch((e) => {
+    api.listTurns().then((r) => { setTurns(r); setFailed(false); }).catch((e) => {
       logger.warn('turns load failed', e);
-      setTurns((prev) => prev ?? []);
+      setFailed(true);
     });
   }, []);
   useEffect(() => { load(); }, [load, refreshKey]);
 
-  if (people.length < 2 || turns === null) return null;
+  if (people.length < 2 || turns === null || (failed && turns.length === 0)) return null;
   // A rotation only lists people still in the family; the server tidies
   // removals, this just keeps a stale screen from showing a blank face.
   const shown = turns.filter((r) => r.current_member_id && members.some((m) => m.member_id === r.current_member_id));
 
   const done = async (turn: Turn) => {
     const from = turn.current_member_id;
-    if (!from || busy) return;
-    setBusy(turn.turn_id);
+    if (!from || busy.has(turn.turn_id)) return;
+    setBusy((b) => new Set(b).add(turn.turn_id));
+    const before = turn;
     setTurns((prev) => (prev ?? []).map((r) => (r.turn_id === turn.turn_id ? advanceLocally(r, user?.name || '') : r)));
     try {
       const saved = await api.nextTurn(turn.turn_id, from);
       setTurns((prev) => (prev ?? []).map((r) => (r.turn_id === saved.turn_id ? saved : r)));
     } catch (e: any) {
       // 409: someone else already passed it on. Show what is true now.
-      if (e?.status === 409) showToast(t('turn_already_moved'), 'info');
-      else showToast(apiErrorText(e, t, 'turn_save_failed'), 'error');
+      if (e?.status === 409) {
+        showToast(t('turn_already_moved'), 'info');
+      } else {
+        // Not saved: put back what the server still has, so the screen never
+        // shows a turn that was not recorded, even if the re-read fails too.
+        setTurns((prev) => (prev ?? []).map((r) => (r.turn_id === before.turn_id ? before : r)));
+        showToast(apiErrorText(e, t, 'turn_save_failed'), 'error');
+      }
       load();
     } finally {
-      setBusy(null);
+      setBusy((b) => { const n = new Set(b); n.delete(turn.turn_id); return n; });
     }
   };
 
@@ -90,7 +100,9 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
     if (!canEdit) return;
     setEditing(turn);
     setName(turn.name);
-    setOrder(turn.member_ids.filter((id) => people.some((p) => p.member_id === id)));
+    // Everyone still in the family stays, child or not: saving a rename must
+    // never quietly take somebody out of the rotation.
+    setOrder(turn.member_ids.filter((id) => members.some((m) => m.member_id === id)));
     setCurrent(turn.current_member_id);
     setSheetOpen(true);
   };
@@ -217,8 +229,8 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
                 accessibilityRole="button"
                 accessibilityLabel={t('turn_done_a11y', { name: whoName, next: nextName })}
                 onPress={() => done(turn)}
-                disabled={busy === turn.turn_id}
-                style={[styles.doneBtn, busy === turn.turn_id && { opacity: 0.6 }]}
+                disabled={busy.has(turn.turn_id)}
+                style={[styles.doneBtn, busy.has(turn.turn_id) && { opacity: 0.6 }]}
               >
                 <Check color="#FFFFFF" size={15} />
                 <Text style={styles.doneText}>{t('turn_done')}</Text>
@@ -257,7 +269,7 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
         <Text style={styles.label}>{t('turn_order_label')}</Text>
         <Text style={styles.help}>{t('turn_order_help')}</Text>
         <View style={styles.people}>
-          {people.map((p) => {
+          {[...people, ...members.filter((m) => order.includes(m.member_id) && !people.some((p) => p.member_id === m.member_id))].map((p) => {
             const at = order.indexOf(p.member_id);
             const on = at >= 0;
             return (
@@ -327,7 +339,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   card: { paddingHorizontal: 16, paddingVertical: 4 },
   empty: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13.5, lineHeight: 19, paddingTop: 12 },
   ideas: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 12 },
-  idea: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
+  idea: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   ideaOn: { backgroundColor: ui.lavender, borderColor: ui.lavenderText },
   ideaText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 13 },
   ideaTextOn: { color: ui.lavenderText },

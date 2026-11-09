@@ -4,6 +4,7 @@
  * say it, and say it the same way everywhere.
  */
 import type { FamilyMember, Turn } from './api';
+import { firstNameOf } from './calendarPeople';
 
 /** Who can be in a rotation: the children and teens, as the Family tab lists them. */
 export function turnPeople(members: FamilyMember[]): FamilyMember[] {
@@ -22,9 +23,7 @@ export function toggleInOrder(order: string[], memberId: string): string[] {
 }
 
 /** First name only: "Léo", not "Léo Dzoagbe", on a line read across a room. */
-export function firstName(name: string): string {
-  return (name || '').trim().split(/\s+/)[0] || name;
-}
+export const firstName = firstNameOf;
 
 export function nameOf(members: FamilyMember[], id: string | null | undefined): string {
   const m = members.find((x) => x.member_id === id);

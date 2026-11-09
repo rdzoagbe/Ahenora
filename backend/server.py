@@ -5716,6 +5716,8 @@ class RoutinePatchIn(BaseModel):
 TURN_NAME_MAX = 40
 TURN_MEMBERS_MAX = 8
 TURN_HISTORY_KEPT = 10
+# More than the list ever shows would be rotations nobody can see or manage.
+TURNS_PER_FAMILY_MAX = 20
 
 
 class TurnIn(BaseModel):
@@ -19476,7 +19478,7 @@ async def _turn_or_404(database, family_id: str, turn_id: str) -> dict:
 async def list_turns(user: dict = Depends(require_user), database=Depends(get_db)):
     rows = await database["turns"].find(
         {"family_id": user["family_id"]}, {"_id": 0}
-    ).sort("created_at", 1).to_list(50)
+    ).sort("created_at", 1).to_list(TURNS_PER_FAMILY_MAX)
     return [public_turn(r) for r in rows]
 
 
@@ -19485,6 +19487,8 @@ async def create_turn(body: TurnIn, user: dict = Depends(require_full_member), d
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "A rotation needs a name.")
+    if await database["turns"].count_documents({"family_id": user["family_id"]}) >= TURNS_PER_FAMILY_MAX:
+        raise HTTPException(400, f"A family can have up to {TURNS_PER_FAMILY_MAX} rotations.")
     members = await _turn_members(database, user["family_id"], body.member_ids)
     now = utcnow()
     turn = {

@@ -61,7 +61,7 @@ describe('done', () => {
     expect(card).toContain('await api.nextTurn(turn.turn_id, from)');
     expect(card).toContain('if (e?.status === 409)');
     // After a refusal the list is read again rather than guessed.
-    expect(card).toMatch(/turn_already_moved'\), 'info'\);[\s\S]{0,140}load\(\);/);
+    expect(card).toMatch(/turn_already_moved'\), 'info'\);[\s\S]{0,500}load\(\);/);
   });
 });
 
@@ -84,8 +84,16 @@ describe('the card', () => {
     expect(kids).toContain('{!isFocused && !kidsHidden ? (\n                <WhoseTurnCard');
   });
 
-  it('only appears when there are two to take turns', () => {
-    expect(card).toContain('if (people.length < 2 || turns === null) return null;');
+  it('only appears when there are two to take turns, and never as an empty card after a failed read', () => {
+    expect(card).toContain('if (people.length < 2 || turns === null || (failed && turns.length === 0)) return null;');
+  });
+
+  it('puts the turn back when "done" could not be saved', () => {
+    expect(card).toContain('(r.turn_id === before.turn_id ? before : r)');
+  });
+
+  it('keeps everyone in the rotation when it is edited, child or not', () => {
+    expect(card).toContain('setOrder(turn.member_ids.filter((id) => members.some((m) => m.member_id === id)));');
   });
 
   it('lets a helper say done but not change the rules', () => {
