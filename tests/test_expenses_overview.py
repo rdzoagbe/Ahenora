@@ -127,15 +127,35 @@ class Overview(unittest.TestCase):
         # Shown under a real spelling: on a tie, the one with the accent.
         self.assertEqual(rows[0]["merchant"], "Marché Frais")
 
-    def test_the_spelling_used_most_is_the_one_shown(self):
+    def test_a_shop_is_shown_under_its_proper_name_the_same_on_both_tabs(self):
+        # Mostly typed in lower case this month, once properly last month: the
+        # proper spelling, and the same one on "Ce mois-ci" and the range.
         self._spend(0, 10.00, "marche frais", day=2)
         self._spend(0, 10.00, "marche frais", day=3)
-        self._spend(0, 10.00, "Marché Frais", day=4)
-        self.assertEqual(self._overview()["range"]["by_merchant"][0]["merchant"], "marche frais")
+        self._spend(1, 10.00, "Marché Frais", day=4)
+        data = self._overview()
+        self.assertEqual(data["current"]["by_merchant"][0]["merchant"], "Marché Frais")
+        self.assertEqual(data["range"]["by_merchant"][0]["merchant"], "Marché Frais")
 
-    def test_different_shops_stay_different(self):
-        self.assertNotEqual(server.shop_key("Carrefour"), server.shop_key("Carrefour City 2"))
-        self.assertEqual(server.shop_key("  MARCHÉ   frais! "), server.shop_key("marche frais"))
+    def test_names_in_any_script_keep_their_letters(self):
+        self.assertNotEqual(server.shop_key("Магазин 24 часа"), server.shop_key("Аптека 24 часа"))
+        self.assertEqual(server.shop_key("МАГНИТ"), server.shop_key("Магнит"))
+        self.assertEqual(server.shop_key("Cœur de Blé"), server.shop_key("Coeur de Ble"))
+
+    def test_a_shop_is_never_cheaper_than_itself(self):
+        # The shopping list's price comparison reads receipt lines as scanned:
+        # two spellings of one shop must be one shop there too.
+        when = self.today - timedelta(days=3)
+        lines = []
+        for shop, price in (("Marché Frais", 1.10), ("Marché Frais", 1.10),
+                            ("marche frais", 1.30), ("marche frais", 1.30)):
+            lines.append({"name": "Lait", "name_key": "lait", "unit": "piece",
+                          "unit_price": price, "shop": shop, "spent_on": when})
+        result = server.compare_receipt_prices(lines)
+        row = result["items"][0]
+        self.assertEqual([s["shop"] for s in row["shops"]], ["Marché Frais"])
+        self.assertIsNone(row["saving"], "one shop: nothing to compare against")
+        self.assertEqual(result["comparable"], [])
 
     def test_every_total_carries_the_number_of_receipts_behind_it(self):
         # A total without its coverage is how an app lies without meaning to.

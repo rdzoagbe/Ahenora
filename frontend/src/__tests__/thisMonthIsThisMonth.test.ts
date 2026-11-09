@@ -22,6 +22,15 @@ describe('this month', () => {
     expect(src).toContain('comparison.month === lastMonth.month');
   });
 
+  it('last month is the calendar month before this one, even when it had no receipts', () => {
+    expect(src).toContain('return overview.months[overview.months.length - 2];');
+  });
+
+  it('never promises a comparison that will not come', () => {
+    expect(src).not.toContain('exp_wait_for_month_end');
+    expect(i18n).toContain("exp_not_enough_yet: 'Nous pourrons comparer un mois dès qu\\'il y aura trois mois complets avant lui.',");
+  });
+
   it('is worded in all four languages', () => {
     expect((i18n.match(/^\s*exp_last_month:/gm) || []).length).toBe(4);
     expect(i18n).toContain("exp_last_month: '{month} : {amount} · {count}',");

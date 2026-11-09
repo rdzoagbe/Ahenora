@@ -352,10 +352,14 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   // 2026-11-09). The finished month is still there, on its own line beneath,
   // with its comparison: never mixed into this month's number.
   const lead = overview?.current ?? null;
+  // Last month is the calendar month before this one, even with no receipts:
+  // an empty October must read as empty, not be skipped for September (a
+  // month of forgotten receipts would otherwise look like restraint). Shown
+  // once the family has any finished month with receipts at all.
   const lastMonth = useMemo(() => {
-    if (!overview) return null;
-    const finished = overview.months.filter((m) => m.complete && m.count > 0);
-    return finished.length ? finished[finished.length - 1] : null;
+    if (!overview || overview.months.length < 2) return null;
+    if (!overview.months.some((m) => m.complete && m.count > 0)) return null;
+    return overview.months[overview.months.length - 2];
   }, [overview]);
 
   const monthName = (key: string) =>
@@ -495,8 +499,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
             ) : (
               <>
                 <Text style={styles.lbl}>
-                  {lead ? monthName(lead.month) : ''}
-                  {lead && !lead.complete ? ` · ${t('exp_so_far')}` : ''}
+                  {lead ? `${monthName(lead.month)} · ${t('exp_so_far')}` : ''}
                 </Text>
                 <Text style={styles.big}>{money(lead?.total ?? 0)}</Text>
                 {/* How much of the month this number actually covers. Without it,
@@ -541,9 +544,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                   </View>
                 ) : (
                   <View style={styles.pending}>
-                    <Text style={styles.compareWhy}>
-                      {t('exp_wait_for_month_end', { month: monthName(overview?.current.month ?? '') })}
-                    </Text>
+                    <Text style={styles.compareWhy}>{t('exp_not_enough_yet')}</Text>
                   </View>
                 )}
               </>
