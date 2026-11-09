@@ -13,10 +13,12 @@ Use this checklist when any of these is true:
 
 - a new package with native code is added (`check-native-deps.js` fails until
   `frontend/native-modules.json` is updated);
-- **a native package we already ship changes version**. The guard does NOT
-  catch this, so step 2 checks it by hand. Example: expo 57.0.8 → 57.0.32
-  (the zod fix) moves expo-modules-core 57.0.7 → 57.0.25, plus expo-asset,
-  expo-constants, expo-file-system, expo-font and expo-keep-awake;
+- **a native package we already ship changes version**. `check-native-deps.js`
+  does NOT catch this; step 1.3 does. Example, measured on 2026-11-09: expo
+  57.0.8 → 57.0.32 (the zod fix) changes 10 native packages, among them
+  expo-modules-core 57.0.7 → 57.0.25, expo-modules-jsi 57.0.4 → 57.1.3,
+  expo-asset, expo-constants, expo-file-system, expo-font, expo-keep-awake and
+  expo-modules-autolinking;
 - an Expo SDK upgrade (58 is planned for January 2027).
 
 ## 1. Before building (on a branch; nothing merged)
@@ -24,25 +26,37 @@ Use this checklist when any of these is true:
 Merging to `main` publishes an over-the-air update straight away, so all of
 this happens on a branch.
 
-- [ ] **1.1** Branch from `main`. Write down the update group id of the last
-      update published to runtime 3.0.0 (the latest "Frontend CI and Expo
-      update" run on main, job summary). Phones still on the old store build
-      keep running exactly that update.
+- [ ] **1.1** Branch from `main`.
 - [ ] **1.2** Make the change. For an Expo patch: `cd frontend && npx expo
       install expo@<version>`, then `npx expo install --check`.
-- [ ] **1.3** Compare native packages before and after. On `main`, then on
-      the branch:
-      `cd frontend && node ../scripts/list-native-versions.js > /tmp/native-<main|branch>.txt`,
-      then `diff /tmp/native-main.txt /tmp/native-branch.txt`.
-      Every changed line is a native change. Paste the diff in the header. If
-      nothing changed, this is not a store build: stop here.
+- [ ] **1.3** Compare native packages with `main`, from the repo root, after
+      `cd frontend && npm ci` on the branch:
+      `node scripts/list-native-versions.js main`.
+      It reads both lockfiles through git, nested copies included, so it does
+      not matter what was installed before. Exit 1 lists every native package
+      that changes: paste the list in the header. Anything under "check each by
+      hand" is a changed package it could not classify: look at each one.
+      Exit 0 ("No native package changed") means this is not a store build:
+      stop here.
 - [ ] **1.4** If a package was added, add it to `frontend/native-modules.json`.
-- [ ] **1.5** Bump `runtimeVersion` in `frontend/app.json` (e.g. 3.0.0 → 4.0.0)
-      **and** the app `version` (e.g. 1.2.2 → 1.3.0). Bumping the runtime is
-      what makes this safe: from then on, updates built for the new native code
-      can only reach phones that have it.
+- [ ] **1.5** Bump the runtime and the app version **in all three places**.
+      This is a bare project, so `expo prebuild` (which would copy them across)
+      is never run:
+  - [ ] `frontend/app.json`: `runtimeVersion` (e.g. 3.0.0 → 4.0.0) and
+        `version` (e.g. 1.2.2 → 1.3.0);
+  - [ ] `frontend/android/app/src/main/res/values/strings.xml`:
+        `expo_runtime_version`, same value as app.json;
+  - [ ] `frontend/android/app/build.gradle`: `versionName`, same as `version`
+        (`versionCode` is set by EAS).
+
+      Bumping the runtime is what makes this safe: from then on, updates built
+      for the new native code can only reach phones that have it. If
+      strings.xml is left behind, the new Android build reports the old runtime
+      and every later update silently reaches no Android phone. That happened
+      for nine days in summer 2026.
 - [ ] **1.6** Local checks, all green:
       `npx tsc --noEmit`, `npx jest`, `npm run lint`,
+      `node scripts/check-runtime-version.js` (the three places in 1.5 agree),
       `node scripts/check-native-deps.js`, `node scripts/check-android-permissions.js`,
       and `python3 -m pytest -q tests` from the repo root.
       For the zod fix also run `npm audit`: zod should no longer appear under
@@ -80,9 +94,12 @@ module, so this section is the only real test.
 - [ ] **3.2** App Store: submit for review and choose **phased release**, so it
       can be paused (see section 5).
 - [ ] **3.3** Wait until both stores show the new version as live.
-- [ ] **3.4** Merge the PR. Check that "Publish EAS update" on the merge
-      commit succeeded. It publishes to the **new** runtime only. Phones on the
-      old build are untouched and stay on the update from 1.1.
+- [ ] **3.4** Just before merging, write down the group id of the last update
+      on the old runtime (the job summary of the latest "Frontend CI and Expo
+      update" run on main that published). Phones still on the old store build
+      keep running exactly that update from now on.
+      Then merge the PR and check that "Publish EAS update" on the merge commit
+      succeeded. It publishes to the **new** runtime only.
       From now on, every merge reaches only the new runtime. Families who have
       not updated from the store get nothing new until they do.
 - [ ] **3.5** Server, separate PR (`backend/server.py`):
@@ -113,7 +130,7 @@ real users, means stop.**
 |---|---|---|
 | The new Android build | Play Console → Production → Releases → **Manage rollout → Halt rollout** | A staged rollout stops reaching more people. Halting a fully rolled-out release makes the previous version available again to new and eligible users ([Google, staged rollouts](https://support.google.com/googleplay/android-developer/answer/6346149), [halting a full rollout](https://support.google.com/googleplay/android-developer/answer/16285429)). Phones that already updated keep the new build until a fix arrives. |
 | The new iOS build | App Store Connect → **pause the phased release** | Pauses for up to 30 days in total ([Apple, phased release](https://developer.apple.com/help/app-store-connect/update-your-app/release-a-version-update-in-phases/)). Phones that already updated keep it. The fix is a new build and a new review. |
-| The JavaScript update on the new build (3.4) | Actions → **OTA rollback**, group id, type `ROLLBACK` | Only phones on the new runtime are affected; old-runtime phones never received it. Roll back before anything else merges (see `RUNBOOK-ota.md`). |
+| The JavaScript update on the new build (3.4) | Actions → **OTA rollback**, group id, type `ROLLBACK` | Only phones on the new runtime are affected; old-runtime phones never received it. Roll back before anything else merges (see `runbooks/RUNBOOK-ota.md`). |
 | The server change (3.5) | Revert the PR | Railway redeploys from `main`. |
 
 Nothing can return a phone that has already installed a new binary to the old

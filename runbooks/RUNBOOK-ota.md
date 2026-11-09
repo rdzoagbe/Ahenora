@@ -162,8 +162,10 @@ merge would publish it over the air to binaries built from the old native code.
 That is how expo 57.0.8 → 57.0.32 (the zod fix, 2026-11) would have gone out had
 it been merged as a lockfile bump: it moves expo-modules-core 57.0.7 → 57.0.25,
 and expo-asset, expo-constants, expo-file-system, expo-font and
-expo-keep-awake with it. Treat any version change of a package on that list as
-a native change: new runtime, new binaries, the order above.
+expo-keep-awake with it (10 native packages in all, measured 2026-11-09).
+Treat any version change of a native package as a native change: new runtime,
+new binaries, the order above. `node scripts/list-native-versions.js main`
+lists them, from the two lockfiles.
 
 ### What CI will and will not tell you
 
