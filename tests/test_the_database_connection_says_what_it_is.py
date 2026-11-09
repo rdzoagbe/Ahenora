@@ -4,7 +4,7 @@ The question that started this — "why is your database accessible to everyone"
 — is about the Atlas IP access list, and no code running inside the app can
 answer it. A process that connects successfully learns nothing about who ELSE
 could connect. That check is a person opening Atlas → Network Access, and
-docs/runbooks/restore-drill.md says so rather than pretending otherwise.
+runbooks/restore-drill.md says so rather than pretending otherwise.
 
 What IS answerable from inside is the other half, and it is worth answering
 from the RUNNING process rather than from whatever a dashboard shows today —
@@ -122,7 +122,7 @@ class TheThingCodeCannotCheckIsWrittenDown(unittest.TestCase):
     """A gap that only exists in someone's head reappears every few months."""
 
     def runbook(self):
-        with open(os.path.join(ROOT, "docs", "runbooks", "restore-drill.md"),
+        with open(os.path.join(ROOT, "runbooks", "restore-drill.md"),
                   encoding="utf-8") as handle:
             return handle.read()
 

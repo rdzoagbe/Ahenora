@@ -1,6 +1,6 @@
 """The runbook said "run it in a Railway shell". The image had no such file.
 
-docs/runbooks/restore-drill.md told anyone recovering this database to run
+runbooks/restore-drill.md told anyone recovering this database to run
 scripts/mongo_backup.py in a shell on the backend service. The Dockerfile
 copies `backend/` and nothing else, so neither that file nor the drill that
 wraps it was ever in the deployed image. The instruction had been wrong since
@@ -102,12 +102,12 @@ class TheRunbookAndTheImageAgree(unittest.TestCase):
 
     def test_the_runbook_gives_the_command_the_image_supports(self):
         self.assertIn("python3 scripts/restore_drill.py",
-                      read("docs", "runbooks", "restore-drill.md"))
+                      read("runbooks", "restore-drill.md"))
 
     def test_the_runbook_no_longer_claims_nothing_needs_installing_elsewhere(self):
         # It is true ON THE SERVICE, because the image has pymongo and motor.
         # Pinned so the claim stays attached to the place it is true.
-        runbook = read("docs", "runbooks", "restore-drill.md")
+        runbook = read("runbooks", "restore-drill.md")
         self.assertIn("Railway", runbook)
 
 
