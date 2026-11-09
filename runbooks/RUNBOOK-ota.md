@@ -7,10 +7,19 @@ every Android install stopped starting.
 
 Everything below exists because recovery that day was improvised.
 
+(Kept in `runbooks/`, not `docs/`, since 2026-11-09: `docs/` is the public
+website ahenora.com. The repository is public too, so nothing secret belongs
+here either.)
+
 ## What happens on a merge to main
 
 `frontend-ci-eas-update.yml` publishes to the `production` branch, on both
-platforms, **to everyone on runtime 2.0.0**.
+platforms, **to everyone on the runtime in `frontend/app.json`**
+(`runtimeVersion`: 3.0.0 since the document scanner, September 2026). Since #723
+(2026-10-29) the merge itself publishes, straight away; the overnight schedule
+and a manual dispatch are only the safety net. A merge that touches only
+`tests/`, `docs/`, `scripts/`, `.github/` or `backend/` changes nothing on the
+phones and publishes nothing.
 
 The job summary prints the **update group id**. Rollback and watch both take
 it. Copy it — hunting for it in the Expo dashboard while trying to undo a bad
@@ -97,7 +106,8 @@ same problem.
   a revert.
 - **Anything needing a new binary.** A native dependency cannot ship over the
   air — that is the outage — and `frontend/scripts/check-native-deps.js` fails
-  the build rather than letting it try. The order it has to go in is below.
+  the build rather than letting it try. The order it has to go in is below,
+  and the step-by-step for the day is `runbooks/STORE-BUILD-checklist.md`.
 
 ## Shipping a native module
 
@@ -142,6 +152,20 @@ Between 2 and 5, existing installs receive no OTA updates at all — they are on
 the old runtime. That is the cost, it is known, and it is smaller than the
 alternative. Plan the sequence so the gap is short rather than trying to
 remove it.
+
+### The gap the guard does not cover: a new VERSION of a module we already have
+
+`check-native-deps.js` compares package NAMES with `frontend/native-modules.json`.
+It does not compare versions. Bumping `expo` (or any `expo-*` package already on
+the list) to a release that moves native code passes the guard and CI, and the
+merge would publish it over the air to binaries built from the old native code.
+That is how expo 57.0.8 → 57.0.32 (the zod fix, 2026-11) would have gone out had
+it been merged as a lockfile bump: it moves expo-modules-core 57.0.7 → 57.0.25,
+and expo-asset, expo-constants, expo-file-system, expo-font and
+expo-keep-awake with it (10 native packages in all, measured 2026-11-09).
+Treat any version change of a native package as a native change: new runtime,
+new binaries, the order above. `node scripts/list-native-versions.js main`
+lists them, from the two lockfiles.
 
 ### What CI will and will not tell you
 

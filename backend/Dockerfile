@@ -11,7 +11,7 @@ COPY backend/ .
 #
 # They are here so the restore drill can be run where MONGO_URL already lives,
 # with nothing to install and no production connection string pasted into a
-# laptop shell. docs/runbooks/restore-drill.md told people to run it in a
+# laptop shell. runbooks/restore-drill.md told people to run it in a
 # Railway shell for weeks while the image contained neither file — the drill
 # had never been run, so nothing found out. tests/test_the_recovery_tools_ship.py
 # now fails if they stop shipping.

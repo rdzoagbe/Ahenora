@@ -203,7 +203,7 @@ async def run(live_uri: str, archive_dir: str, keep: bool,
         print(f"Scratch database {drill_name!r} deleted.")
 
     print()
-    print("Row for the table in docs/runbooks/restore-drill.md:")
+    print("Row for the table in runbooks/restore-drill.md:")
     print(f"| {datetime.now(timezone.utc):%Y-%m-%d} | {total} docs | "
           f"{_human(restored_at - dumped_at)} | {outcome} | "
           f"drill took {_human(elapsed)} |")
@@ -223,7 +223,7 @@ def main(argv=None) -> int:
         print("MONGO_URL is not set. Run this in a shell ON THE RAILWAY "
               "BACKEND SERVICE (railway ssh, or the service's Shell option), "
               "where the database URL is already in the environment. See "
-              "docs/runbooks/restore-drill.md.")
+              "runbooks/restore-drill.md.")
         return 1
 
     archive = args.out or tempfile.mkdtemp(prefix="restore-drill-")

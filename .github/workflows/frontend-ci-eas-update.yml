@@ -474,7 +474,7 @@ jobs:
       # the previous canary when a new update is published" — promote it,
       # delete it, or refuse — and that answer has to be designed against the
       # constraint above rather than discovered by breaking production. See
-      # docs/RUNBOOK-ota.md.
+      # runbooks/RUNBOOK-ota.md.
       - name: Publish update to the Expo production branch
         id: publish
         if: steps.expo_config.outputs.publish == 'true' && steps.changed.outputs.publish == 'true'

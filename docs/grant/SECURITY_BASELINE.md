@@ -27,7 +27,7 @@ _The controls in place as of 21 September 2026, each named with the code or work
 ## Data protection
 
 - Database: MongoDB Atlas M10 dedicated tier, encryption at rest, continuous backups. The application connects as a least-privilege user (`readWrite` on the production database only; separate rights on the drill database).
-- **Restore drill**: a scripted dump, restore into a scratch database, verification (counts, dates, orphans) and cleanup, run on 15 and 17 September 2026 and recorded in `docs/runbooks/restore-drill.md`. A backup nobody has restored from is a belief; these are facts.
+- **Restore drill**: a scripted dump, restore into a scratch database, verification (counts, dates, orphans) and cleanup, run on 15 and 17 September 2026 and recorded in `runbooks/restore-drill.md`. A backup nobody has restored from is a belief; these are facts.
 - Retention rules in `DATA_FLOW_MAP.md`; account deletion and data export are self-service.
 - Images are cropped to the document before leaving the server for the AI provider; AI inputs and outputs are gated (`AI_PROCESSING_MAP.md`).
 
@@ -43,7 +43,8 @@ _The controls in place as of 21 September 2026, each named with the code or work
 - Unhandled errors are recorded without personal data, grouped, and an hourly workflow fails and emails when any occur (`error-watch.yml`). Device-side failed requests are reported to an admin inbox.
 - A production smoke test runs on every deploy and on a schedule: health, sign-in, invite, join, message (`prod-smoke.yml`).
 - Health endpoints name the cause of a database failure (auth, timeout, unreachable) rather than a generic error.
-- Incident playbooks: `docs/RUNBOOK-ota.md`, `docs/runbooks/restore-drill.md`, `docs/DEPLOYMENT_CHECKLIST.md`.
+- Incident playbooks: `runbooks/RUNBOOK-ota.md`, `runbooks/restore-drill.md`.
+- Release procedure for a change that needs new store binaries: `runbooks/STORE-BUILD-checklist.md`.
 
 ## Known gaps, honestly
 

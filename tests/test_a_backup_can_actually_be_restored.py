@@ -10,7 +10,7 @@ A backup nobody has restored from is a belief, not a backup.
 This runs the whole cycle — seed, dump, wipe, restore, verify — every time the
 suite runs. What it CANNOT do is prove a production restore: that needs the
 real database, real credentials and a real scratch instance, and it is a thing
-a person does deliberately. See docs/runbooks/restore-drill.md. What it proves
+a person does deliberately. See runbooks/restore-drill.md. What it proves
 is that the tooling is correct, so the night somebody runs it for real the
 script is not the thing that fails.
 
