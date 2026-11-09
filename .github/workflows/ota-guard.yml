@@ -12,7 +12,7 @@ name: OTA guard
 # --rollout-percentage jammed publishing on the merge after it shipped (EAS
 # permits one rollout in progress per runtime version) and was removed the same
 # day. The check costs nothing while every update is at 100%, and is waiting
-# for staging to come back — see docs/RUNBOOK-ota.md.
+# for staging to come back — see runbooks/RUNBOOK-ota.md.
 #
 # So this looks, hourly, and speaks only when there is something to do. A green
 # run means nothing needed saying. A FAILED run is the alarm — it surfaces in

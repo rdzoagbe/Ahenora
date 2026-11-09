@@ -220,7 +220,7 @@ def verdict(tag_sha: Optional[str], head_sha: Optional[str],
         "because each of them watches an update that exists.",
         "Run the 'Frontend CI and Expo update' workflow by hand "
         "(workflow_dispatch) to ship it, then find out why four scheduled "
-        "attempts produced nothing: see docs/RUNBOOK-ota.md."]}
+        "attempts produced nothing: see runbooks/RUNBOOK-ota.md."]}
 
 
 def main() -> int:

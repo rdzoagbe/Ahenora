@@ -7,7 +7,7 @@ page occupying a third of the frame. That is slow to upload and it is why
 extraction was mediocre: the model was reading a photo of a TABLE.
 
 A phone-side document scanner is the other way to do this and it needs a
-native module, a new build and two store reviews (see docs/RUNBOOK-ota.md).
+native module, a new build and two store reviews (see runbooks/RUNBOOK-ota.md).
 This does the part that actually matters — the document arriving at its own
 size — from the server, where it can be tested.
 
