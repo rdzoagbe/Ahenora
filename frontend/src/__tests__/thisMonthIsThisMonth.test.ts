@@ -31,6 +31,20 @@ describe('this month', () => {
     expect(i18n).toContain("exp_not_enough_yet: 'Nous pourrons comparer un mois dès qu\\'il y aura trois mois complets avant lui.',");
   });
 
+  it('the six months list every month, newest first, with what was spent and on how many receipts', () => {
+    expect(src).toContain('testID="exp-month-list"');
+    expect(src).toContain('[...(overview?.months ?? [])].reverse().map((m) => (');
+    expect(src).toContain("{m.count > 0 ? shopsLabel(m.count) : t('exp_month_none')}");
+  });
+
+  it('averages the finished months that have receipts, saying over how many', () => {
+    expect(src).toContain('.filter((m) => m.complete && m.count > 0)');
+    for (const key of ['exp_month_none', 'exp_month_average_one', 'exp_month_average_n']) {
+      expect((i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length).toBe(4);
+    }
+    expect(i18n).toContain("exp_month_average_n: 'Moyenne : {amount} par mois, sur {n} mois complets',");
+  });
+
   it('is worded in all four languages', () => {
     expect((i18n.match(/^\s*exp_last_month:/gm) || []).length).toBe(4);
     expect(i18n).toContain("exp_last_month: '{month} : {amount} · {count}',");

@@ -372,6 +372,16 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     new Date(`${iso}T00:00:00`).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
 
   const comparison = overview?.comparison;
+  // The average month, over the FINISHED months that have receipts: the month
+  // still running would pull it down, and an empty month is more likely
+  // forgotten receipts than a month of nothing bought.
+  const monthAverage = useMemo(() => {
+    const done = (overview?.months ?? []).filter((m) => m.complete && m.count > 0);
+    if (!done.length) return null;
+    const sum = done.reduce((a, m) => a + m.total, 0);
+    return { amount: Math.round((sum / done.length) * 100) / 100, months: done.length };
+  }, [overview]);
+
   const showsComparison = Boolean(comparison && lastMonth && comparison.month === lastMonth.month);
   const difference = comparison ? comparison.difference : 0;
   const meaningful = Math.abs(difference) >= 5;
@@ -495,6 +505,34 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                     </View>
                   ))}
                 </View>
+
+                {/* Every month, in words: what was spent in it and on how many
+                    receipts, newest first (Roland, 2026-11-09: "so we know what
+                    was spent in that month"). The bars above only show shape. */}
+                <View style={styles.monthList} testID="exp-month-list">
+                  {[...(overview?.months ?? [])].reverse().map((m) => (
+                    <View key={m.month} style={styles.monthRow} testID={`exp-month-${m.month}`}>
+                      <Text style={[styles.monthName, !m.complete && styles.colLblNow]}>
+                        {capitalise(monthName(m.month))}
+                        {!m.complete ? ` · ${t('exp_so_far')}` : ''}
+                      </Text>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.monthAmount}>{m.count > 0 ? money(m.total) : '—'}</Text>
+                        <Text style={styles.monthCount}>{m.count > 0 ? shopsLabel(m.count) : t('exp_month_none')}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+                {monthAverage ? (
+                  <View style={styles.pending} testID="exp-month-average">
+                    <Text style={styles.lastMonth}>
+                      {t(monthAverage.months === 1 ? 'exp_month_average_one' : 'exp_month_average_n', {
+                        amount: money(monthAverage.amount),
+                        n: monthAverage.months,
+                      })}
+                    </Text>
+                  </View>
+                ) : null}
               </>
             ) : (
               <>
@@ -903,6 +941,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   compareRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 2 },
 
   chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 96, marginTop: 4 },
+  monthList: { marginTop: 6 },
+  monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 9, borderTopWidth: 1, borderTopColor: ui.line },
+  monthName: { fontFamily: 'Figtree_700Bold', fontSize: 14.5, color: ui.text, flex: 1 },
+  monthAmount: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15, color: ui.text },
+  monthCount: { fontFamily: 'Figtree_500Medium', fontSize: 12, color: ui.muted },
   col: { flex: 1, height: '100%', justifyContent: 'flex-end', alignItems: 'center', gap: 4 },
   stick: { width: '100%', borderRadius: 6, backgroundColor: ui.orangeSoft, minHeight: 3 },
   stickNow: { backgroundColor: ui.orange },
