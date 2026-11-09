@@ -19,6 +19,8 @@ on:
       - 'tests/**'
       - 'legal/**'
       - 'scripts/**'
+      # The runbooks the tests pin (restore-drill.md: the recovery tools ship).
+      - 'runbooks/**'
       # Every workflow, not just this one. tests/test_workflow_publish_steps.py
       # reads the two OTA publish workflows, so a change to THOSE has to run
       # these tests — and it did not. A deliberate platform split in
@@ -33,6 +35,8 @@ on:
       - 'tests/**'
       - 'legal/**'
       - 'scripts/**'
+      # The runbooks the tests pin (restore-drill.md: the recovery tools ship).
+      - 'runbooks/**'
       # Every workflow, not just this one. tests/test_workflow_publish_steps.py
       # reads the two OTA publish workflows, so a change to THOSE has to run
       # these tests — and it did not. A deliberate platform split in

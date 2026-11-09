@@ -43,7 +43,8 @@ _The controls in place as of 21 September 2026, each named with the code or work
 - Unhandled errors are recorded without personal data, grouped, and an hourly workflow fails and emails when any occur (`error-watch.yml`). Device-side failed requests are reported to an admin inbox.
 - A production smoke test runs on every deploy and on a schedule: health, sign-in, invite, join, message (`prod-smoke.yml`).
 - Health endpoints name the cause of a database failure (auth, timeout, unreachable) rather than a generic error.
-- Incident playbooks: `runbooks/RUNBOOK-ota.md`, `runbooks/restore-drill.md`, `runbooks/STORE-BUILD-checklist.md`.
+- Incident playbooks: `runbooks/RUNBOOK-ota.md`, `runbooks/restore-drill.md`.
+- Release procedure for a change that needs new store binaries: `runbooks/STORE-BUILD-checklist.md`.
 
 ## Known gaps, honestly
 
