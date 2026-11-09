@@ -375,11 +375,21 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   // The average month, over the FINISHED months that have receipts: the month
   // still running would pull it down, and an empty month is more likely
   // forgotten receipts than a month of nothing bought.
+  // Two finished months at least: one month alone is that month, not an
+  // average.
   const monthAverage = useMemo(() => {
     const done = (overview?.months ?? []).filter((m) => m.complete && m.count > 0);
-    if (!done.length) return null;
-    const sum = done.reduce((a, m) => a + m.total, 0);
-    return { amount: Math.round((sum / done.length) * 100) / 100, months: done.length };
+    if (done.length < 2) return null;
+    return { amount: done.reduce((a, m) => a + m.total, 0) / done.length, months: done.length };
+  }, [overview]);
+
+  // The months to list, newest first, from the first month that has a
+  // receipt: months before the family started would read as forgotten
+  // receipts. An empty month AFTER that still shows, as empty.
+  const monthsShown = useMemo(() => {
+    const months = overview?.months ?? [];
+    const first = months.findIndex((m) => m.count > 0);
+    return first < 0 ? months.slice(-1) : months.slice(first).reverse();
   }, [overview]);
 
   const showsComparison = Boolean(comparison && lastMonth && comparison.month === lastMonth.month);
@@ -510,8 +520,15 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                     receipts, newest first (Roland, 2026-11-09: "so we know what
                     was spent in that month"). The bars above only show shape. */}
                 <View style={styles.monthList} testID="exp-month-list">
-                  {[...(overview?.months ?? [])].reverse().map((m) => (
-                    <View key={m.month} style={styles.monthRow} testID={`exp-month-${m.month}`}>
+                  {monthsShown.map((m) => (
+                    <View
+                      key={m.month}
+                      style={styles.monthRow}
+                      testID={`exp-month-${m.month}`}
+                      accessible
+                      accessibilityLabel={`${capitalise(monthName(m.month))}: ${
+                        m.count > 0 ? `${money(m.total)}, ${shopsLabel(m.count)}` : t('exp_month_none')}`}
+                    >
                       <Text style={[styles.monthName, !m.complete && styles.colLblNow]}>
                         {capitalise(monthName(m.month))}
                         {!m.complete ? ` · ${t('exp_so_far')}` : ''}

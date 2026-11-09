@@ -33,12 +33,15 @@ describe('this month', () => {
 
   it('the six months list every month, newest first, with what was spent and on how many receipts', () => {
     expect(src).toContain('testID="exp-month-list"');
-    expect(src).toContain('[...(overview?.months ?? [])].reverse().map((m) => (');
+    expect(src).toContain('{monthsShown.map((m) => (');
+    // From the first month with a receipt: earlier months are not "missing".
+    expect(src).toContain('return first < 0 ? months.slice(-1) : months.slice(first).reverse();');
     expect(src).toContain("{m.count > 0 ? shopsLabel(m.count) : t('exp_month_none')}");
   });
 
   it('averages the finished months that have receipts, saying over how many', () => {
     expect(src).toContain('.filter((m) => m.complete && m.count > 0)');
+    expect(src).toContain('if (done.length < 2) return null;');
     for (const key of ['exp_month_none', 'exp_month_average_one', 'exp_month_average_n']) {
       expect((i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length).toBe(4);
     }
