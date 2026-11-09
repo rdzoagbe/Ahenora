@@ -113,6 +113,30 @@ class Overview(unittest.TestCase):
         self.assertEqual(rows[0]["visits"], 2)
         self.assertEqual(rows[0]["average"], 25.00)
 
+    def test_one_shop_however_its_name_was_typed_or_read(self):
+        # Roland, 2026-11-09: "Marché Frais", "marche frais" and "Marche Frais"
+        # were three shops of one visit each on the spending screen.
+        self._spend(0, 82.29, "marche frais", day=4)
+        self._spend(0, 116.96, "Marché Frais", day=4)
+        self._spend(0, 69.58, "Marche Frais", day=6)
+        self._spend(0, 24.16, "Boucherie de la Gare", day=4)
+        rows = self._overview()["current"]["by_merchant"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["total"], round(82.29 + 116.96 + 69.58, 2))
+        self.assertEqual(rows[0]["visits"], 3)
+        # Shown under a real spelling: on a tie, the one with the accent.
+        self.assertEqual(rows[0]["merchant"], "Marché Frais")
+
+    def test_the_spelling_used_most_is_the_one_shown(self):
+        self._spend(0, 10.00, "marche frais", day=2)
+        self._spend(0, 10.00, "marche frais", day=3)
+        self._spend(0, 10.00, "Marché Frais", day=4)
+        self.assertEqual(self._overview()["range"]["by_merchant"][0]["merchant"], "marche frais")
+
+    def test_different_shops_stay_different(self):
+        self.assertNotEqual(server.shop_key("Carrefour"), server.shop_key("Carrefour City 2"))
+        self.assertEqual(server.shop_key("  MARCHÉ   frais! "), server.shop_key("marche frais"))
+
     def test_every_total_carries_the_number_of_receipts_behind_it(self):
         # A total without its coverage is how an app lies without meaning to.
         self._spend(1, 30.00, "Aldi", day=3)

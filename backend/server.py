@@ -2554,6 +2554,28 @@ def tidy_merchant(raw: Optional[str]) -> Optional[str]:
     return cleaned.title() if cleaned.isupper() else cleaned
 
 
+def shop_key(name: Optional[str]) -> str:
+    """The one key a shop is counted under, however its name was typed or read.
+
+    "Marché Frais", "marche frais" and "MARCHE  FRAIS" are the same shop: the
+    key ignores case, accents, punctuation and spacing. Before, the spending
+    screen listed them as three shops of one visit each.
+    """
+    text = unicodedata.normalize("NFKD", str(name or "")).casefold()
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", text).split())
+
+
+def shop_display_name(spellings: dict) -> str:
+    """The spelling a shop is shown under: the one used most often; on a tie,
+    the one with accents (the shop's real name), then the first seen."""
+    def score(item):
+        name, (count, first_seen) = item
+        accented = any(unicodedata.combining(c) for c in unicodedata.normalize("NFKD", name))
+        return (-count, not accented, first_seen)
+    return sorted(spellings.items(), key=score)[0][0]
+
+
 def parse_spent_on(value: Optional[str], fallback: datetime) -> datetime:
     """A YYYY-MM-DD from the receipt, kept as date-only at midnight UTC.
 
@@ -18053,18 +18075,20 @@ async def expense_overview(
         # the new one so co-parents can still settle up without a second screen.
         payer = exp.get("paid_by_name") or "—"
         bucket["people"][payer] = bucket["people"].get(payer, 0.0) + amount
-        seen = bucket["shops"].setdefault(shop, {"total": 0.0, "visits": 0})
-        seen["total"] += amount
-        seen["visits"] += 1
-
-        entry = range_shops.setdefault(shop, {"total": 0.0, "visits": 0})
-        entry["total"] += amount
-        entry["visits"] += 1
+        # Counted under one key whatever the spelling: "Marché Frais" and
+        # "marche frais" are one shop, shown under the spelling used most.
+        key_ = shop_key(shop) or shop
+        for shops in (bucket["shops"], range_shops):
+            seen = shops.setdefault(key_, {"total": 0.0, "visits": 0, "names": {}})
+            seen["total"] += amount
+            seen["visits"] += 1
+            count, first = seen["names"].get(shop, (0, len(seen["names"])))
+            seen["names"][shop] = (count + 1, first)
         range_total += amount
         range_count += 1
 
     def shop_rows(shops: dict) -> list:
-        rows = [{"merchant": name,
+        rows = [{"merchant": shop_display_name(v["names"]) if v.get("names") else name,
                  "total": round(v["total"], 2),
                  "visits": v["visits"],
                  "average": round(v["total"] / v["visits"], 2) if v["visits"] else 0.0}
