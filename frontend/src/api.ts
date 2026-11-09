@@ -777,6 +777,22 @@ export interface Routine {
   created_at: string;
 }
 
+/**
+ * A "whose turn?" rotation: front seat, choosing the film. The people in
+ * order, whose turn it is now and next, and the last few turns taken.
+ */
+export interface Turn {
+  turn_id: string;
+  name: string;
+  icon?: string | null;
+  member_ids: string[];
+  current_member_id: string | null;
+  next_member_id: string | null;
+  history: { member_id: string; at: string; by: string }[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ShoppingHistoryEntry {
   history_id: string;
   items: string[];
@@ -3174,6 +3190,21 @@ export const api = {
     request<{ ok: boolean; stars_awarded: number; member_id?: string }>(
       `/routines/${id}/log`, { method: 'POST' },
     ),
+
+  // Whose turn?
+  listTurns: () => request<Turn[]>('/turns'),
+  createTurn: (data: { name: string; member_ids: string[] }) =>
+    request<Turn>('/turns', { method: 'POST', body: data }),
+  updateTurn: (id: string, data: { name?: string; member_ids?: string[]; current_member_id?: string }) =>
+    request<Turn>(`/turns/${id}`, { method: 'PATCH', body: data }),
+  deleteTurn: (id: string) => request<{ ok: boolean }>(`/turns/${id}`, { method: 'DELETE' }),
+  /**
+   * Their turn is done. `fromMemberId` is whose turn the screen SHOWED: if it
+   * has already moved on (a double tap, or the other parent), the server
+   * answers 409 and nothing moves twice.
+   */
+  nextTurn: (id: string, fromMemberId: string) =>
+    request<Turn>(`/turns/${id}/next`, { method: 'POST', body: { from_member_id: fromMemberId } }),
 
   // Meal Planner
   listMeals: () => request<MealPlan[]>('/meals'),

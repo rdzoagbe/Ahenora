@@ -1,0 +1,108 @@
+/**
+ * Whose turn? — the card's side. The server keeps the order and refuses a tap
+ * that would skip a child (tests/test_whose_turn.py); here, what the card says
+ * and where it sits.
+ */
+import fs from 'fs';
+import path from 'path';
+import { advanceLocally, firstName, nameOf, toggleInOrder, turnPeople, turnWhen, TURN_IDEAS } from '../whoseTurn';
+import type { FamilyMember, Turn } from '../api';
+
+const kids = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', 'kids.tsx'), 'utf8');
+const card = fs.readFileSync(path.join(__dirname, '..', 'components', 'WhoseTurnCard.tsx'), 'utf8');
+const i18n = fs.readFileSync(path.join(__dirname, '..', 'i18n.ts'), 'utf8');
+
+const member = (member_id: string, name: string, role: string) =>
+  ({ member_id, name, role, family_id: 'f', stars: 0 }) as FamilyMember;
+const FAMILY = [
+  member('m_dad', 'Roland Dzoagbe', 'parent'),
+  member('m_ama', 'Ama Dzoagbe', 'child'),
+  member('m_leo', 'Leo', 'child'),
+  member('m_kofi', 'Kofi', 'teen'),
+  member('m_nan', 'Esi', 'helper'),
+];
+const turn = (over: Partial<Turn> = {}): Turn => ({
+  turn_id: 't1', name: 'Front seat', member_ids: ['m_ama', 'm_leo', 'm_kofi'],
+  current_member_id: 'm_ama', next_member_id: 'm_leo', history: [],
+  created_at: '2026-11-09T08:00:00Z', updated_at: '2026-11-09T08:00:00Z', ...over,
+});
+
+describe('who takes turns', () => {
+  it('is the children and teens, never a parent or a helper', () => {
+    expect(turnPeople(FAMILY).map((m) => m.member_id)).toEqual(['m_ama', 'm_leo', 'm_kofi']);
+  });
+
+  it('builds the order in the order people are tapped, and a second tap takes them out', () => {
+    let order: string[] = [];
+    order = toggleInOrder(order, 'm_leo');
+    order = toggleInOrder(order, 'm_ama');
+    expect(order).toEqual(['m_leo', 'm_ama']);
+    expect(toggleInOrder(order, 'm_leo')).toEqual(['m_ama']);
+  });
+
+  it('says first names, read across a room', () => {
+    expect(firstName('Ama Dzoagbe')).toBe('Ama');
+    expect(nameOf(FAMILY, 'm_ama')).toBe('Ama');
+    expect(nameOf(FAMILY, 'gone')).toBe('');
+  });
+});
+
+describe('done', () => {
+  it('passes it to the next person straight away and wraps round', () => {
+    const now = new Date('2026-11-09T09:00:00Z');
+    const a = advanceLocally(turn(), 'Roland', now);
+    expect([a.current_member_id, a.next_member_id]).toEqual(['m_leo', 'm_kofi']);
+    expect(a.history[0]).toEqual({ member_id: 'm_ama', at: now.toISOString(), by: 'Roland' });
+    const c = advanceLocally(advanceLocally(a, 'Roland'), 'Roland');
+    expect(c.current_member_id).toBe('m_ama');
+  });
+
+  it('sends whose turn the screen showed, so the server can refuse a second tap', () => {
+    expect(card).toContain('await api.nextTurn(turn.turn_id, from)');
+    expect(card).toContain('if (e?.status === 409)');
+    // After a refusal the list is read again rather than guessed.
+    expect(card).toMatch(/turn_already_moved'\), 'info'\);[\s\S]{0,140}load\(\);/);
+  });
+});
+
+describe('when', () => {
+  const t = (k: string, p?: Record<string, string | number>) => `${k}:${p?.n ?? ''}`;
+  it('says it in the Family tab\'s own words', () => {
+    const now = Date.parse('2026-11-09T12:00:00Z');
+    expect(turnWhen('2026-11-09T11:59:40Z', t, now)).toBe('when_now:');
+    expect(turnWhen('2026-11-09T11:30:00Z', t, now)).toBe('when_minutes:30');
+    expect(turnWhen('2026-11-08T12:00:00Z', t, now)).toBe('when_days:1');
+    expect(turnWhen('not a date', t, now)).toBe('');
+  });
+});
+
+describe('the card', () => {
+  it('sits with everyone on the Family tab, under "This week", not on one child\'s page', () => {
+    const at = kids.indexOf('<WhoseTurnCard');
+    expect(at).toBeGreaterThan(kids.indexOf('testID="family-week"'));
+    expect(at).toBeLessThan(kids.indexOf('testID="family-latest"'));
+    expect(kids).toContain('{!isFocused && !kidsHidden ? (\n                <WhoseTurnCard');
+  });
+
+  it('only appears when there are two to take turns', () => {
+    expect(card).toContain('if (people.length < 2 || turns === null) return null;');
+  });
+
+  it('lets a helper say done but not change the rules', () => {
+    expect(kids).toContain('canEdit={!viewerIsHelper}');
+    expect(card).toContain('if (!canEdit) return;');
+    expect(card).toMatch(/\{canEdit \? \(\s*<View style=\{styles\.ideas\}>/);
+  });
+
+  it('is worded in all four languages', () => {
+    const keys = ['turn_title', 'turn_add', 'turn_empty', 'turn_idea_other', 'turn_now', 'turn_then', 'turn_last',
+      'turn_done', 'turn_done_a11y', 'turn_new_title', 'turn_edit_title', 'turn_name_label', 'turn_name_placeholder',
+      'turn_order_label', 'turn_order_help', 'turn_need_two', 'turn_current_label', 'turn_delete', 'turn_save',
+      'turn_created', 'turn_already_moved', 'turn_save_failed', ...TURN_IDEAS];
+    for (const key of keys) {
+      expect((i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length).toBe(4);
+    }
+    expect(i18n).toContain('turn_title: "À qui le tour ?"');
+    expect(i18n).toContain('turn_idea_front_seat: "Place devant"');
+  });
+});

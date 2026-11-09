@@ -2607,6 +2607,32 @@ def public_routine(r: dict) -> dict:
     }
 
 
+def public_turn(t: dict) -> dict:
+    """A "whose turn?" rotation: the people in order, whose turn it is now, and
+    the last few turns taken (the proof a child asks for: "I went last time")."""
+    members = list(t.get("member_ids") or [])
+    current = t.get("current_member_id")
+    if current not in members:
+        current = members[0] if members else None
+    nxt = None
+    if current and len(members) > 1:
+        nxt = members[(members.index(current) + 1) % len(members)]
+    return {
+        "turn_id": t["turn_id"],
+        "name": t.get("name") or "",
+        "icon": t.get("icon"),
+        "member_ids": members,
+        "current_member_id": current,
+        "next_member_id": nxt,
+        "history": [
+            {"member_id": h.get("member_id"), "at": iso(h.get("at")), "by": h.get("by") or ""}
+            for h in (t.get("history") or [])
+        ],
+        "created_at": iso(t["created_at"]),
+        "updated_at": iso(t.get("updated_at") or t["created_at"]),
+    }
+
+
 def public_meal(m: dict) -> dict:
     return {
         "meal_id": m["meal_id"],
@@ -4769,6 +4795,7 @@ INDEXES = {
     "redemptions": ["redemption_id"],
     "rewards": ["family_id", "reward_id"],
     "routines": ["family_id", "routine_id"],
+    "turns": ["family_id", "turn_id"],
     "santa_draws": ["draw_id"],
     "shopping_history": ["family_id", "history_id"],
     "shopping_list": ["family_id", "item_id"],
@@ -5686,6 +5713,34 @@ class RoutinePatchIn(BaseModel):
     star_reward: Optional[int] = None
 
 
+TURN_NAME_MAX = 40
+TURN_MEMBERS_MAX = 8
+TURN_HISTORY_KEPT = 10
+
+
+class TurnIn(BaseModel):
+    name: str = Field(min_length=1, max_length=TURN_NAME_MAX)
+    # In rotation order. Two at least: a turn with one person is not a turn.
+    member_ids: List[str] = Field(min_length=2, max_length=TURN_MEMBERS_MAX)
+    # See CardIn.icon.
+    icon: Optional[str] = None
+
+
+class TurnPatchIn(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=TURN_NAME_MAX)
+    member_ids: Optional[List[str]] = Field(default=None, min_length=2, max_length=TURN_MEMBERS_MAX)
+    icon: Optional[str] = None
+    # "Actually it's Leo's turn": a parent putting it right by hand.
+    current_member_id: Optional[str] = None
+
+
+class TurnNextIn(BaseModel):
+    # Whose turn the person tapping SAW. If it has already moved on (a second
+    # parent tapped first, or a double tap), nothing moves again: a turn that
+    # skips a child is exactly the unfairness this exists to end.
+    from_member_id: str
+
+
 class MealPlanIn(BaseModel):
     day: str  # "monday", "tuesday", etc.
     meal_type: str = "dinner"  # breakfast, lunch, dinner, snack
@@ -6210,6 +6265,7 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
     "rewards", "routine_logs", "routines", "shopping_aisles", "shopping_history",
+    "turns",
     "shopping_list",
     # "templates" has no feature behind it any more — the recurring-template
     # endpoints were removed once it was found that nothing could ever create
@@ -7535,6 +7591,7 @@ async def export_my_data(include_files: bool = False, user=Depends(require_user)
         "shopping_list": await household_rows("shopping_list", public_shopping_item),
         "routines": await household_rows("routines", public_routine),
         "chores": await household_rows("chores", public_chore),
+        "turns": await household_rows("turns", public_turn),
     }
 
 
@@ -8095,6 +8152,25 @@ async def delete_family_member(member_id: str, user=Depends(require_full_member)
         {"family_id": family_id, "current_assignee": member_id},
         {"$set": {"current_assignee": None}},
     )
+
+    # A "whose turn?" keeps going without them. If it was their turn, it passes
+    # to whoever came after them; one person left is no longer a rotation.
+    async for turn in database["turns"].find(
+        {"family_id": family_id, "member_ids": member_id}, {"_id": 0}
+    ):
+        order = list(turn.get("member_ids") or [])
+        remaining = [m for m in order if m != member_id]
+        if len(remaining) < 2:
+            await database["turns"].delete_one({"turn_id": turn["turn_id"], "family_id": family_id})
+            continue
+        current = turn.get("current_member_id")
+        if current == member_id or current not in remaining:
+            after = order[(order.index(member_id) + 1) % len(order)] if member_id in order else remaining[0]
+            current = after if after in remaining else remaining[0]
+        await database["turns"].update_one(
+            {"turn_id": turn["turn_id"], "family_id": family_id},
+            {"$set": {"member_ids": remaining, "current_member_id": current}},
+        )
 
     # A routine is a checklist worth keeping; it just belongs to nobody now,
     # which the completion path already handles.
@@ -19367,6 +19443,132 @@ async def log_routine_completion(routine_id: str, user: dict = Depends(require_u
         "stars_awarded": txn["delta"] if txn else 0,
         "member_id": routine.get("member_id"),
     }
+
+
+# -----------------------------------------------------------------------------
+# Whose turn? — fair rotations between siblings (front seat, choosing the film)
+# -----------------------------------------------------------------------------
+async def _turn_members(database, family_id: str, member_ids: List[str]) -> List[str]:
+    """The ids, tidied: no blanks, no repeats, every one a member of THIS
+    household. Anything else is refused, never silently dropped, so a rotation
+    can never quietly leave a child out."""
+    cleaned = [m.strip() for m in member_ids if m and m.strip()]
+    if len(set(cleaned)) != len(cleaned):
+        raise HTTPException(400, "Each person can only be in a rotation once.")
+    if len(cleaned) < 2:
+        raise HTTPException(400, "A rotation needs at least two people.")
+    found = await database["family_members"].find(
+        {"family_id": family_id, "member_id": {"$in": cleaned}}, {"_id": 0, "member_id": 1}
+    ).to_list(None)
+    if {f["member_id"] for f in found} != set(cleaned):
+        raise HTTPException(400, "Everyone in a rotation must be in this family.")
+    return cleaned
+
+
+async def _turn_or_404(database, family_id: str, turn_id: str) -> dict:
+    turn = await database["turns"].find_one({"turn_id": turn_id, "family_id": family_id}, {"_id": 0})
+    if not turn:
+        raise HTTPException(404, "Rotation not found")
+    return turn
+
+
+@app.get("/api/turns")
+async def list_turns(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["turns"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(50)
+    return [public_turn(r) for r in rows]
+
+
+@app.post("/api/turns")
+async def create_turn(body: TurnIn, user: dict = Depends(require_full_member), database=Depends(get_db)):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "A rotation needs a name.")
+    members = await _turn_members(database, user["family_id"], body.member_ids)
+    now = utcnow()
+    turn = {
+        "turn_id": new_id("turn"),
+        "family_id": user["family_id"],
+        "name": name,
+        "member_ids": members,
+        "current_member_id": members[0],
+        "history": [],
+        "created_at": now,
+        "updated_at": now,
+    }
+    turn["icon"], turn["icon_auto"] = _resolve_icon(body.icon, name)
+    await database["turns"].insert_one(turn)
+    return public_turn(turn)
+
+
+@app.patch("/api/turns/{turn_id}")
+async def update_turn(turn_id: str, body: TurnPatchIn, user: dict = Depends(require_full_member), database=Depends(get_db)):
+    turn = await _turn_or_404(database, user["family_id"], turn_id)
+    sent = body.model_dump(exclude_unset=True)
+    updates: dict = {}
+    if sent.get("name") is not None:
+        name = sent["name"].strip()
+        if not name:
+            raise HTTPException(400, "A rotation needs a name.")
+        updates["name"] = name
+        if turn.get("icon_auto", True) and "icon" not in sent:
+            updates["icon"] = guess_icon(name)
+            updates["icon_auto"] = True
+    if "icon" in sent:
+        updates["icon"], updates["icon_auto"] = _resolve_icon(sent["icon"], updates.get("name") or turn["name"])
+    members = turn.get("member_ids") or []
+    if sent.get("member_ids") is not None:
+        members = await _turn_members(database, user["family_id"], sent["member_ids"])
+        updates["member_ids"] = members
+    current = turn.get("current_member_id")
+    if sent.get("current_member_id") is not None:
+        current = sent["current_member_id"]
+        if current not in members:
+            raise HTTPException(400, "That person is not in this rotation.")
+        updates["current_member_id"] = current
+    elif current not in members:
+        # Whoever had the turn was taken out of the rotation: it goes to the
+        # first person, rather than to nobody.
+        updates["current_member_id"] = members[0]
+    if not updates:
+        raise HTTPException(400, "No updates provided")
+    updates["updated_at"] = utcnow()
+    await database["turns"].update_one(
+        {"turn_id": turn_id, "family_id": user["family_id"]}, {"$set": updates})
+    return public_turn({**turn, **updates})
+
+
+@app.post("/api/turns/{turn_id}/next")
+async def next_turn(turn_id: str, body: TurnNextIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    """Their turn is done: it passes to the next person in the rotation."""
+    turn = await _turn_or_404(database, user["family_id"], turn_id)
+    shown = public_turn(turn)
+    if shown["current_member_id"] != body.from_member_id:
+        raise HTTPException(409, "already_moved")
+    members = shown["member_ids"]
+    current = shown["current_member_id"]
+    nxt = members[(members.index(current) + 1) % len(members)]
+    history = ([{"member_id": current, "at": utcnow(), "by": user.get("name") or ""}]
+               + list(turn.get("history") or []))[:TURN_HISTORY_KEPT]
+    now = utcnow()
+    # Conditional on the turn still being where the tapper saw it. Two taps
+    # that both read the same state above: only one of them moves it.
+    result = await database["turns"].update_one(
+        {"turn_id": turn_id, "family_id": user["family_id"], "current_member_id": turn.get("current_member_id")},
+        {"$set": {"current_member_id": nxt, "history": history, "updated_at": now}},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "already_moved")
+    return public_turn({**turn, "current_member_id": nxt, "history": history, "updated_at": now})
+
+
+@app.delete("/api/turns/{turn_id}")
+async def delete_turn(turn_id: str, user: dict = Depends(require_full_member), database=Depends(get_db)):
+    result = await database["turns"].delete_one({"turn_id": turn_id, "family_id": user["family_id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Rotation not found")
+    return {"ok": True}
 
 
 # -----------------------------------------------------------------------------
