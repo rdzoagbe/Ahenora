@@ -9,7 +9,7 @@
  * the rotations up; anyone in the shared day (a grandparent too) can say
  * "done". The server keeps the order and refuses a tap that would skip a child.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { Check, Plus, Repeat, Trash2, X } from 'lucide-react-native';
 import { api, FamilyMember, Turn } from '../api';
@@ -38,6 +38,9 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
   const people = useMemo(() => turnPeople(members), [members]);
   const [turns, setTurns] = useState<Turn[] | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
+  // The same set, read synchronously: a double tap lands before the state
+  // above re-renders, so it is the ref that stops the second request.
+  const inFlight = useRef<Set<string>>(new Set());
   // A failed read shows nothing rather than an empty card: "no rotations
   // yet" with one-tap starters would invite a second copy of each one.
   const [failed, setFailed] = useState(false);
@@ -56,16 +59,21 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
       setFailed(true);
     });
   }, []);
-  useEffect(() => { load(); }, [load, refreshKey]);
+  // Again whenever the Family tab reloads (pull to refresh, coming back to
+  // the tab): the members list is fetched afresh each time, so it is the
+  // signal. Another parent's "Done" shows up without leaving the screen.
+  useEffect(() => { load(); }, [load, refreshKey, members]);
 
   if (people.length < 2 || turns === null || (failed && turns.length === 0)) return null;
-  // A rotation only lists people still in the family; the server tidies
-  // removals, this just keeps a stale screen from showing a blank face.
-  const shown = turns.filter((r) => r.current_member_id && members.some((m) => m.member_id === r.current_member_id));
+  // Every rotation is shown, always: hiding one (say, whose turn it is points
+  // at someone just removed, before the server's tidy-up reaches this screen)
+  // would make it impossible to open or delete, and bring back the starters.
+  const shown = turns;
 
   const done = async (turn: Turn) => {
     const from = turn.current_member_id;
-    if (!from || busy.has(turn.turn_id)) return;
+    if (!from || inFlight.current.has(turn.turn_id)) return;
+    inFlight.current.add(turn.turn_id);
     setBusy((b) => new Set(b).add(turn.turn_id));
     const before = turn;
     setTurns((prev) => (prev ?? []).map((r) => (r.turn_id === turn.turn_id ? advanceLocally(r, user?.name || '') : r)));
@@ -74,16 +82,15 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
       setTurns((prev) => (prev ?? []).map((r) => (r.turn_id === saved.turn_id ? saved : r)));
     } catch (e: any) {
       // 409: someone else already passed it on. Show what is true now.
-      if (e?.status === 409) {
-        showToast(t('turn_already_moved'), 'info');
-      } else {
-        // Not saved: put back what the server still has, so the screen never
-        // shows a turn that was not recorded, even if the re-read fails too.
-        setTurns((prev) => (prev ?? []).map((r) => (r.turn_id === before.turn_id ? before : r)));
-        showToast(apiErrorText(e, t, 'turn_save_failed'), 'error');
-      }
+      // Not saved, either way: put back what the screen showed before the
+      // tap, so it never shows a turn the server did not record, even if the
+      // re-read below fails too. The re-read then shows what is true now.
+      setTurns((prev) => (prev ?? []).map((r) => (r.turn_id === before.turn_id ? before : r)));
+      if (e?.status === 409) showToast(t('turn_already_moved'), 'info');
+      else showToast(apiErrorText(e, t, 'turn_save_failed'), 'error');
       load();
     } finally {
+      inFlight.current.delete(turn.turn_id);
       setBusy((b) => { const n = new Set(b); n.delete(turn.turn_id); return n; });
     }
   };
@@ -127,19 +134,26 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
     if (!clean || order.length < 2 || saving) return;
     setSaving(true);
     try {
+      // Whose turn it is goes to the server only when it was changed in the
+      // sheet, and with whose turn the sheet showed: a rename saved after
+      // someone tapped "Done" must not quietly undo that turn.
+      const moved = editing && current && order.includes(current) && current !== editing.current_member_id;
       const saved = editing
         ? await api.updateTurn(editing.turn_id, {
           name: clean,
           member_ids: order,
-          ...(current && order.includes(current) ? { current_member_id: current } : {}),
+          ...(moved && editing.current_member_id
+            ? { current_member_id: current!, seen_current_member_id: editing.current_member_id }
+            : {}),
         })
         : await api.createTurn({ name: clean, member_ids: order });
       setTurns((prev) => (editing
         ? (prev ?? []).map((r) => (r.turn_id === saved.turn_id ? saved : r))
         : [...(prev ?? []), saved]));
       setSheetOpen(false);
-    } catch (e) {
-      showToast(apiErrorText(e, t, 'turn_save_failed'), 'error');
+    } catch (e: any) {
+      if (e?.status === 409) { showToast(t('turn_already_moved'), 'info'); load(); setSheetOpen(false); }
+      else showToast(apiErrorText(e, t, 'turn_save_failed'), 'error');
     } finally {
       setSaving(false);
     }
@@ -201,9 +215,11 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
         ) : null}
         {shown.map((turn, i) => {
           const who = members.find((m) => m.member_id === turn.current_member_id);
-          const whoName = nameOf(members, turn.current_member_id);
+          const whoName = nameOf(members, turn.current_member_id) || '?';
           const nextName = nameOf(members, turn.next_member_id);
-          const last = turn.history[0];
+          // The last turn, by somebody still in the family: a name that would
+          // come out blank is not shown at all.
+          const last = turn.history.find((h) => nameOf(members, h.member_id));
           return (
             <View key={turn.turn_id} style={[styles.row, i > 0 && styles.rowLine]}>
               <PressScale
@@ -214,7 +230,7 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
                 disabled={!canEdit}
                 style={styles.rowMain}
               >
-                <PersonAvatar name={who?.name || whoName} avatar={who?.avatar} size={44} />
+                <PersonAvatar name={who?.name || whoName || '?'} avatar={who?.avatar} size={44} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.rowName} numberOfLines={1}>{turn.name}</Text>
                   <Text style={styles.rowWho} numberOfLines={1} testID={`turn-who-${turn.turn_id}`}>{t('turn_now', { name: whoName })}</Text>

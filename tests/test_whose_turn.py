@@ -193,6 +193,91 @@ class WhoseTurn(unittest.TestCase):
         self.assertEqual(self.listed(), [])
         self.assertIsNone(run(self.db["turns"].find_one({"turn_id": t["turn_id"]})))
 
+    # --- races with an edit (review of 2026-11-09) ---------------------------
+    def test_a_rename_saved_after_a_done_does_not_undo_the_turn(self):
+        t = self.create()
+        self.done(t["turn_id"], "m_ama")            # someone else: Leo's turn now
+        # The sheet was opened while it was Ama's turn, and is now saved with
+        # only a new name: nothing about whose turn it is goes with it.
+        t2 = run(server.update_turn(t["turn_id"], server.TurnPatchIn(name="Car front seat"),
+                                    user=dict(PARENT), database=self.db))
+        self.assertEqual(t2["current_member_id"], "m_leo")
+
+    def test_setting_the_turn_from_a_stale_sheet_is_refused(self):
+        t = self.create()
+        self.done(t["turn_id"], "m_ama")            # Leo's turn now
+        with self.assertRaises(HTTPException) as ctx:
+            run(server.update_turn(t["turn_id"], server.TurnPatchIn(
+                current_member_id="m_kofi", seen_current_member_id="m_ama"),
+                user=dict(PARENT), database=self.db))
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual(self.listed()[0]["current_member_id"], "m_leo")
+        # Seen right, it goes through.
+        t3 = run(server.update_turn(t["turn_id"], server.TurnPatchIn(
+            current_member_id="m_kofi", seen_current_member_id="m_leo"),
+            user=dict(PARENT), database=self.db))
+        self.assertEqual(t3["current_member_id"], "m_kofi")
+
+    def test_a_done_read_before_an_edit_of_the_rotation_does_not_land(self):
+        t = self.create()
+        stale = run(self.db["turns"].find_one({"turn_id": t["turn_id"]}))
+        # A parent takes Leo out of the rotation...
+        run(server.update_turn(t["turn_id"], server.TurnPatchIn(member_ids=["m_ama", "m_kofi"]),
+                               user=dict(PARENT), database=self.db))
+        # ...while a "done" that read the rotation before that edit lands.
+        result = run(self.db["turns"].update_one(
+            {"turn_id": t["turn_id"], "family_id": "fam1",
+             "current_member_id": stale["current_member_id"], "updated_at": stale["updated_at"]},
+            {"$set": {"current_member_id": "m_leo"}}))
+        self.assertEqual(result.matched_count, 0, "the version moved, so the stale write matches nothing")
+        self.assertEqual(self.listed()[0]["current_member_id"], "m_ama")
+        src = open(server.__file__, encoding="utf-8").read()
+        self.assertIn('"current_member_id": turn.get("current_member_id"), "updated_at": turn.get("updated_at")}', src)
+
+    # --- every way a member leaves ------------------------------------------
+    def test_a_teen_joining_takes_their_child_profiles_place(self):
+        t = self.create(members=("m_ama", "m_leo"))
+        self.done(t["turn_id"], "m_ama")             # Leo's turn
+        teen = {"user_id": "u_leo", "family_id": "fam1", "name": "Leo", "email": "leo@x.com"}
+        run(self.db["users"].insert_one(dict(teen)))
+        member = run(server.add_user_to_family_if_needed(self.db, dict(teen), "fam1", role="teen"))
+        after = self.listed()[0]
+        self.assertEqual(after["member_ids"], ["m_ama", member["member_id"]])
+        self.assertEqual(after["current_member_id"], member["member_id"], "still Leo's turn")
+        self.assertEqual(after["history"][0]["member_id"], "m_ama")
+
+    def test_removal_drops_their_past_turns_too(self):
+        t = self.create()
+        self.done(t["turn_id"], "m_ama")
+        self.done(t["turn_id"], "m_leo")
+        run(server._turns_without_member(self.db, "fam1", "m_leo"))
+        after = self.listed()[0]
+        self.assertEqual([h["member_id"] for h in after["history"]], ["m_ama"])
+        self.assertEqual(after["current_member_id"], "m_kofi")
+
+    def test_every_path_that_removes_a_member_tidies_the_rotations(self):
+        """A rotation still holding someone who left passes the turn to nobody.
+        Any function that deletes a family_members row must tidy rotations, or
+        purge the whole household, or be one of the named exceptions."""
+        import ast
+        src = open(server.__file__, encoding="utf-8").read()
+        tree = ast.parse(src)
+        exceptions = {
+            # Test accounts of the production smoke run, never in a rotation.
+            "smoke_cleanup",
+        }
+        offenders = []
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            body = ast.get_source_segment(src, fn) or ""
+            if 'family_members"].delete_' not in body:
+                continue
+            if fn.name in exceptions or "_turns_without_member" in body or fn.name == "_purge_family":
+                continue
+            offenders.append(fn.name)
+        self.assertEqual(offenders, [], "these remove a member without tidying rotations")
+
     # --- who may do what ----------------------------------------------------
     def test_another_household_sees_and_touches_nothing(self):
         t = self.create()

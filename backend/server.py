@@ -2856,6 +2856,7 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
         # Retire the managed child profile this teen is replacing — same name,
         # no login — so they don't appear (or count) twice.
         teen_name = (user.get("name") or "").strip().lower()
+        retired_child_ids: List[str] = []
         async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
             if (m.get("role") or "").strip().lower() == "child" and not m.get("user_id") \
                and (m.get("name") or "").strip().lower() == teen_name and teen_name:
@@ -2870,6 +2871,9 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
                         detail="That person is recorded as under 13. An account of their own "
                                "is for 13 and over.")
                 await database["family_members"].delete_one({"member_id": m["member_id"]})
+                retired_child_ids.append(m["member_id"])
+    else:
+        retired_child_ids = []
 
     existing = await database["family_members"].find_one(
         {
@@ -2882,6 +2886,8 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
         {"_id": 0},
     )
     if existing:
+        for old in retired_child_ids:
+            await _turns_without_member(database, family_id, old, replacement=existing.get("member_id"))
         return existing
 
     # Backstop the young-people cap at accept time, the way the parent cap is
@@ -2923,6 +2929,9 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
         "created_at": utcnow(),
     }
     await database["family_members"].insert_one(member)
+    # The teen takes the child profile's place in any "whose turn?" rotation.
+    for old in retired_child_ids:
+        await _turns_without_member(database, family_id, old, replacement=member["member_id"])
     return member
 
 
@@ -5734,6 +5743,10 @@ class TurnPatchIn(BaseModel):
     icon: Optional[str] = None
     # "Actually it's Leo's turn": a parent putting it right by hand.
     current_member_id: Optional[str] = None
+    # Whose turn the sheet SHOWED when it was opened. With current_member_id,
+    # it must still be true, or the change is refused (409): otherwise a
+    # rename saved after someone tapped "Done" would quietly undo that turn.
+    seen_current_member_id: Optional[str] = None
 
 
 class TurnNextIn(BaseModel):
@@ -6461,6 +6474,9 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
         deleted_household = True
     elif family_id:
         # A co-parent remains — take only this member out; the family stays.
+        async for gone in database["family_members"].find(
+                {"family_id": family_id, "user_id": fresh["user_id"]}, {"_id": 0, "member_id": 1}):
+            await _turns_without_member(database, family_id, gone.get("member_id"))
         await database["family_members"].delete_many(
             {"family_id": family_id, "user_id": fresh["user_id"]})
         await _purge_departing_parent(database, family_id, fresh["user_id"])
@@ -8155,24 +8171,9 @@ async def delete_family_member(member_id: str, user=Depends(require_full_member)
         {"$set": {"current_assignee": None}},
     )
 
-    # A "whose turn?" keeps going without them. If it was their turn, it passes
-    # to whoever came after them; one person left is no longer a rotation.
-    async for turn in database["turns"].find(
-        {"family_id": family_id, "member_ids": member_id}, {"_id": 0}
-    ):
-        order = list(turn.get("member_ids") or [])
-        remaining = [m for m in order if m != member_id]
-        if len(remaining) < 2:
-            await database["turns"].delete_one({"turn_id": turn["turn_id"], "family_id": family_id})
-            continue
-        current = turn.get("current_member_id")
-        if current == member_id or current not in remaining:
-            after = order[(order.index(member_id) + 1) % len(order)] if member_id in order else remaining[0]
-            current = after if after in remaining else remaining[0]
-        await database["turns"].update_one(
-            {"turn_id": turn["turn_id"], "family_id": family_id},
-            {"$set": {"member_ids": remaining, "current_member_id": current}},
-        )
+    # A "whose turn?" keeps going without them (the same helper every removal
+    # path calls).
+    await _turns_without_member(database, family_id, member_id)
 
     # A routine is a checklist worth keeping; it just belongs to nobody now,
     # which the completion path already handles.
@@ -11972,6 +11973,9 @@ async def admin_purge_account(payload: PurgeAccountIn, user=Depends(require_user
         await _purge_family(database, family_id)
         deleted_household = True
     elif family_id:
+        async for gone in database["family_members"].find(
+                {"family_id": family_id, "user_id": target["user_id"]}, {"_id": 0, "member_id": 1}):
+            await _turns_without_member(database, family_id, gone.get("member_id"))
         await database["family_members"].delete_many(
             {"family_id": family_id, "user_id": target["user_id"]})
 
@@ -19450,6 +19454,48 @@ async def log_routine_completion(routine_id: str, user: dict = Depends(require_u
 # -----------------------------------------------------------------------------
 # Whose turn? — fair rotations between siblings (front seat, choosing the film)
 # -----------------------------------------------------------------------------
+async def _turns_without_member(database, family_id: str, member_id: str,
+                                replacement: Optional[str] = None) -> None:
+    """Take somebody out of every "whose turn?" rotation, or hand their place to
+    `replacement` (a teen's own account replacing the child profile it grew
+    out of). Called by EVERY path that removes a member row: a rotation left
+    pointing at someone gone would pass the turn to nobody, and hide itself.
+
+    Their turn passes to whoever came after them; their past turns go from the
+    history, since that is a record about a person no longer in the family.
+    A rotation left with fewer than two people goes.
+    """
+    if not family_id or not member_id:
+        return
+    async for turn in database["turns"].find(
+        {"family_id": family_id, "member_ids": member_id}, {"_id": 0}
+    ):
+        order = list(turn.get("member_ids") or [])
+        history = list(turn.get("history") or [])
+        current = turn.get("current_member_id")
+        if replacement and replacement not in order:
+            order = [replacement if m == member_id else m for m in order]
+            if current == member_id:
+                current = replacement
+            history = [{**h, "member_id": replacement} if h.get("member_id") == member_id else h
+                       for h in history]
+        else:
+            remaining = [m for m in order if m != member_id]
+            if len(remaining) < 2:
+                await database["turns"].delete_one({"turn_id": turn["turn_id"], "family_id": family_id})
+                continue
+            if current == member_id or current not in remaining:
+                after = order[(order.index(member_id) + 1) % len(order)]
+                current = after if after in remaining else remaining[0]
+            order = remaining
+            history = [h for h in history if h.get("member_id") != member_id]
+        await database["turns"].update_one(
+            {"turn_id": turn["turn_id"], "family_id": family_id},
+            {"$set": {"member_ids": order, "current_member_id": current,
+                      "history": history, "updated_at": utcnow()}},
+        )
+
+
 async def _turn_members(database, family_id: str, member_ids: List[str]) -> List[str]:
     """The ids, tidied: no blanks, no repeats, every one a member of THIS
     household. Anything else is refused, never silently dropped, so a rotation
@@ -19527,6 +19573,9 @@ async def update_turn(turn_id: str, body: TurnPatchIn, user: dict = Depends(requ
         updates["member_ids"] = members
     current = turn.get("current_member_id")
     if sent.get("current_member_id") is not None:
+        seen = sent.get("seen_current_member_id")
+        if seen is not None and seen != public_turn(turn)["current_member_id"]:
+            raise HTTPException(409, "already_moved")
         current = sent["current_member_id"]
         if current not in members:
             raise HTTPException(400, "That person is not in this rotation.")
@@ -19559,7 +19608,8 @@ async def next_turn(turn_id: str, body: TurnNextIn, user: dict = Depends(require
     # Conditional on the turn still being where the tapper saw it. Two taps
     # that both read the same state above: only one of them moves it.
     result = await database["turns"].update_one(
-        {"turn_id": turn_id, "family_id": user["family_id"], "current_member_id": turn.get("current_member_id")},
+        {"turn_id": turn_id, "family_id": user["family_id"],
+         "current_member_id": turn.get("current_member_id"), "updated_at": turn.get("updated_at")},
         {"$set": {"current_member_id": nxt, "history": history, "updated_at": now}},
     )
     if not result.matched_count:
