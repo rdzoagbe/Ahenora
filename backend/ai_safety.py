@@ -708,17 +708,43 @@ def validate_document_scan(parsed: dict, members: list) -> dict:
 MAX_SCAN_ITEMS = 100
 
 
+# Why a read came back with no list: the reason each refusal is raised with,
+# and the name the Metrics screen counts it under. Kept next to the raises so
+# a reworded reason cannot quietly fall into "other".
+SHOPPING_SCAN_UNREAD = {
+    "model refused": "not_a_list",      # the model saw no list (or a face)
+    "nothing readable": "nothing_readable",
+    "unparseable": "unparseable",
+    "items not a list": "unparseable",
+    "not an object": "unparseable",
+    "blocked content": "blocked",
+    "too many for the camera": "too_many",
+}
+
+
+def _scan_item_name(item) -> str:
+    """The name in one entry. The model is asked for {"name": ...}, but a
+    bare string ("Gari") is a name too and is taken as one."""
+    if isinstance(item, dict):
+        return str(item.get("name") or "")
+    if isinstance(item, str):
+        return item
+    return ""
+
+
 def read_shopping_scan(parsed: dict) -> tuple:
     """Check a scanned shopping list before it is shown: (items, left_out).
 
     Names go through the same sanitiser as typed items. Only leakage terms
     are screened — cleaning products are legitimate groceries here.
 
-    One line the model could not make into an item (blank, a stray symbol, a
-    shape that is not an item) is left out; it no longer throws away every
-    good line read with it. The read is refused only when nothing usable is
-    left, when the model itself refused, or on leakage — which says the
-    answer is not a list at all.
+    An entry with no name in it (blank, null, a number) is left out; it no
+    longer throws away every good line read with it. The read is refused only
+    when nothing usable is left, when the model itself refused, or on leakage
+    — which says the answer is not a list at all.
+
+    Past MAX_SCAN_ITEMS the rest are only COUNTED, not cleaned: they are not
+    shown, so a runaway answer costs a count, not thousands of sanitiser runs.
     """
     if not isinstance(parsed, dict):
         raise UnsafeRecipe("not an object")
@@ -730,25 +756,35 @@ def read_shopping_scan(parsed: dict) -> tuple:
         raise UnsafeRecipe("items not a list")
 
     out = []
+    left_out = 0
     for item in raw:
-        if not isinstance(item, dict):
+        if len(out) >= MAX_SCAN_ITEMS:
+            left_out += 1 if _scan_item_name(item).strip() else 0
             continue
-        name = sanitize_user_text(str(item.get("name") or ""), MAX_INGREDIENT_LEN)
+        name = sanitize_user_text(_scan_item_name(item), MAX_INGREDIENT_LEN)
         if not name:
             continue
         lowered = name.lower()
         for term in _LEAKAGE_TERMS:
             if term in lowered:
                 raise UnsafeRecipe("blocked content")
-        out.append({"name": name, "unsure": bool(item.get("unsure"))})
+        out.append({"name": name, "unsure": bool(isinstance(item, dict) and item.get("unsure"))})
     if not out:
         raise UnsafeRecipe("nothing readable")
-    return out[:MAX_SCAN_ITEMS], max(0, len(out) - MAX_SCAN_ITEMS)
+    return out, left_out
 
 
 def validate_shopping_scan(parsed: dict) -> list:
-    """The items alone, for the camera's shopping pass (vision_extract)."""
-    return read_shopping_scan(parsed)[0]
+    """The items alone, for the camera's shopping pass (vision_extract).
+
+    That pass has no way to say "the list goes on", so a list longer than it
+    can show is refused there, and the photo stays a document — visible, as
+    it was before the limit was raised — rather than cut short in silence.
+    """
+    items, left_out = read_shopping_scan(parsed)
+    if left_out:
+        raise UnsafeRecipe("too many for the camera")
+    return items
 
 
 MAX_QUESTION_LEN = 120

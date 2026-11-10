@@ -716,6 +716,7 @@ export default function MetricsScreen() {
                     ['nothing_readable', 'Nothing readable'],
                     ['unparseable', 'Answer not readable'],
                     ['blocked', 'Blocked content'],
+                    ['pdf_unreadable', 'PDF the model would not open'],
                     ['other', 'Other'],
                   ];
                   const counts = reasons.map(([key, label]) =>

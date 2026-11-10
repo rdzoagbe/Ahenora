@@ -312,7 +312,7 @@ class ValidateShoppingScan(unittest.TestCase):
 
     def test_rejects_wrong_shapes(self):
         for bad in [None, [], {}, {"items": "rice"}, {"items": []},
-                    {"items": ["rice"]}, {"items": [{"name": ""}]}]:
+                    {"items": [None, 3]}, {"items": [{"name": ""}]}]:
             with self.assertRaises(UnsafeRecipe, msg=repr(bad)):
                 validate_shopping_scan(bad)
 
@@ -321,10 +321,38 @@ class ValidateShoppingScan(unittest.TestCase):
 
     def test_one_line_it_could_not_read_does_not_lose_the_others(self):
         items = validate_shopping_scan({"items": [
-            {"name": "Rice 1 kg"}, {"name": ""}, {"name": "   "}, "Gari", None,
+            {"name": "Rice 1 kg"}, {"name": ""}, {"name": "   "}, None, 42,
             {"name": "Tomatoes x6", "unsure": True},
         ]})
         self.assertEqual([i["name"] for i in items], ["Rice 1 kg", "Tomatoes x6"])
+
+    def test_a_bare_name_is_an_item_too(self):
+        items = validate_shopping_scan({"items": [{"name": "Rice"}, "Gari", "Plantain"]})
+        self.assertEqual([i["name"] for i in items], ["Rice", "Gari", "Plantain"])
+
+    def test_the_camera_pass_never_cuts_a_long_list_short_in_silence(self):
+        # vision_extract cannot say "the list goes on": past the limit the
+        # photo stays a document, as it did before the limit was raised.
+        with self.assertRaises(UnsafeRecipe):
+            validate_shopping_scan({"items": [{"name": f"Item {n}"} for n in range(MAX_SCAN_ITEMS + 1)]})
+
+    def test_a_runaway_answer_is_counted_not_cleaned(self):
+        import ai_safety
+        calls = []
+        real = ai_safety.sanitize_user_text
+        ai_safety.sanitize_user_text = lambda v, n=0: calls.append(v) or real(v, n)
+        try:
+            _, left_out = read_shopping_scan({"items": [{"name": f"Item {n}"} for n in range(5000)]})
+        finally:
+            ai_safety.sanitize_user_text = real
+        self.assertEqual(left_out, 5000 - MAX_SCAN_ITEMS)
+        self.assertEqual(len(calls), MAX_SCAN_ITEMS)
+
+    def test_every_refusal_reason_has_a_metrics_name(self):
+        import ai_safety, inspect, re
+        raised = set(re.findall(r'raise UnsafeRecipe\("([^"]+)"\)', inspect.getsource(ai_safety.read_shopping_scan)
+                                + inspect.getsource(ai_safety.validate_shopping_scan)))
+        self.assertTrue(raised <= set(ai_safety.SHOPPING_SCAN_UNREAD), raised - set(ai_safety.SHOPPING_SCAN_UNREAD))
 
     def test_a_long_list_is_kept_and_what_is_past_the_limit_is_counted(self):
         items, left_out = read_shopping_scan({"items": [{"name": f"Item {n}"} for n in range(MAX_SCAN_ITEMS + 25)]})

@@ -3112,8 +3112,8 @@ export const api = {
     request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
   clearCheckedShopping: () =>
     request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
-  // left_out: items read past the server's limit (100), counted so the
-  // review can say so rather than drop them in silence.
+  // left_out: items read past the server's limit (MAX_SCAN_ITEMS), counted
+  // so the review can say so rather than drop them in silence.
   scanShoppingList: (imageBase64: string) =>
     request<{ items: { name: string; unsure: boolean }[]; left_out?: number }>('/shopping/scan', {
       method: 'POST',

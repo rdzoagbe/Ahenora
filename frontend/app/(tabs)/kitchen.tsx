@@ -3129,8 +3129,15 @@ export default function Kitchen() {
         ) : scanPhase === 'review' ? (
           <>
             <Text style={styles.suggestSub}>{scanItems.length === 1 ? t('scan_sub_one') : t('scan_sub', { n: scanItems.length })}</Text>
-            {scanLeftOut > 0 ? (
-              <Text testID="scan-left-out" style={styles.scanError}>{t('scan_left_out', { n: scanLeftOut })}</Text>
+            {scanLeftOut > 0 && scanItems.length > 0 ? (
+              // Information on a read that worked, not a failure: the amber
+              // of "hard to read", not the red of an error. Names the last
+              // item read, so it is plain where to carry on by hand.
+              <Text testID="scan-left-out" style={styles.scanUnsure}>
+                {scanLeftOut === 1
+                  ? t('scan_left_out_one', { last: scanItems[scanItems.length - 1].name })
+                  : t('scan_left_out', { n: scanLeftOut, last: scanItems[scanItems.length - 1].name })}
+              </Text>
             ) : null}
             {scanItems.map((item, idx) => (
               <PressScale

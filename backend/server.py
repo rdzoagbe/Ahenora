@@ -88,6 +88,7 @@ from ai_safety import (
     SHOPPING_SCAN_SYSTEM_PROMPT,
     validate_shopping_scan,
     read_shopping_scan,
+    SHOPPING_SCAN_UNREAD,
     RECEIPT_SCAN_SYSTEM_PROMPT,
     validate_receipt_scan,
     RECEIPT_UNITS,
@@ -17581,17 +17582,6 @@ def shopping_pdf_bytes(pdf_b64: str) -> bytes:
     return data
 
 
-# Why a read came back with no list, as the Metrics screen counts it.
-_SCAN_UNREAD_REASONS = {
-    "model refused": "not_a_list",      # the model saw no list (or a face)
-    "nothing readable": "nothing_readable",
-    "unparseable": "unparseable",
-    "items not a list": "unparseable",
-    "not an object": "unparseable",
-    "blocked content": "blocked",
-}
-
-
 def shopping_picture_opens(image_b64: str) -> None:
     """Refuse, before any allowance or model, a picture this server cannot
     open. A picture imported from Files can be a format Pillow does not read
@@ -17687,7 +17677,7 @@ async def scan_shopping_list(
         # Counted by reason, so the Metrics screen can say WHY lists go
         # unread: a 422 is not an error, and the log line alone was the only
         # trace when a real one was reported.
-        await _bump_metric(f"shopping_scan_unread_{_SCAN_UNREAD_REASONS.get(exc.reason, 'other')}")
+        await _bump_metric(f"shopping_scan_unread_{SHOPPING_SCAN_UNREAD.get(exc.reason, 'other')}")
         raise HTTPException(422, f"We could not read a shopping list in that {kind}.")
     except Exception as exc:
         log.warning("shopping scan (%s) failed: %s", kind, exc)
@@ -17695,6 +17685,7 @@ async def scan_shopping_list(
         # this file's problem, not an outage: say it about the file, and do
         # not send the person to retry the same thing.
         if pdf_bytes is not None and _MODEL_REFUSED_INPUT.search(str(exc)):
+            await _bump_metric("shopping_scan_unread_pdf_unreadable")
             raise HTTPException(422, "We could not read a shopping list in that PDF.")
         raise HTTPException(502, f"We could not read a shopping list in that {kind}.")
 

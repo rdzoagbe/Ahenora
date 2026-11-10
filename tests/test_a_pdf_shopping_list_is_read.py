@@ -225,6 +225,8 @@ class APdfShoppingList(unittest.TestCase):
         server._gemini_generate = invalid
         self.assertEqual(self.refused({"pdf_base64": pdf()}), 422)
         self.assertEqual(self.used(), 0)
+        row = run(self.db["metrics_daily"].find_one({"name": "shopping_scan_unread_pdf_unreadable"}))
+        self.assertEqual(row["count"], 1)
 
     def test_failures_name_the_pdf_not_a_photo(self):
         async def refused(contents, system="", **kwargs):
