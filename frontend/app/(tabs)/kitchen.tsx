@@ -38,6 +38,7 @@ import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
 import { pickListFile } from '../../src/pickListFile';
+import { offerUndo } from '../../src/trashUndo';
 import { pickPicture, type PictureSource } from '../../src/pickPicture';
 import { SECTION_ART } from '../../src/sectionArt';
 
@@ -726,12 +727,14 @@ export default function Kitchen() {
   const deleteShopItem = useCallback(async (itemId: string) => {
     setShopItems((prev) => prev.filter((i) => i.item_id !== itemId));
     try {
-      await api.deleteShoppingItem(itemId);
+      const res = await api.deleteShoppingItem(itemId);
+      // In Recently deleted for 30 days; "Annuler" brings it straight back.
+      offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] }, load);
     } catch {
       showToast(t('vault_could_not_delete_restored'), 'error');
       load();
     }
-  }, [load, showToast]);
+  }, [load, showToast, t]);
 
   // Multi-select: pick a few items and delete just those, instead of the
   // all-or-nothing "clear the whole list". Plain functions — a manual
@@ -759,8 +762,9 @@ export default function Kitchen() {
     setShopItems((prev) => prev.filter((i) => !selectedIds.has(i.item_id)));
     exitSelect();
     try {
-      await Promise.all(ids.map((id) => api.deleteShoppingItem(id)));
-      showToast(`${ids.length} ${t('kitchen_items_removed')}`, 'success');
+      const results = await Promise.all(ids.map((id) => api.deleteShoppingItem(id)));
+      offerUndo(showToast, t, `${ids.length} ${t('kitchen_items_removed')}`,
+        { trashIds: results.map((r) => r?.trash_id) }, load);
     } catch {
       showToast(t('vault_could_not_delete_restored'), 'error');
       load();
@@ -772,12 +776,13 @@ export default function Kitchen() {
     if (checkedIds.size === 0) return;
     setShopItems((prev) => prev.filter((i) => !checkedIds.has(i.item_id)));
     try {
-      await api.clearCheckedShopping();
+      const res = await api.clearCheckedShopping();
+      offerUndo(showToast, t, t('trash_moved_n', { n: checkedIds.size }), { batchIds: [res?.batch_id] }, load);
     } catch {
       showToast(t('vault_could_not_clear_restored'), 'error');
       load();
     }
-  }, [shopItems, load, showToast]);
+  }, [shopItems, load, showToast, t]);
 
   const clearAllShop = useCallback(() => {
     if (shopItems.length === 0) return;
@@ -798,7 +803,8 @@ export default function Kitchen() {
             const clearedMeals = meals;
             if (hasPlan) setMeals([]);
             try {
-              await api.clearAllShopping();
+              const cleared = await api.clearAllShopping();
+              let mealsBatch: string | null | undefined = null;
               let planSaved = false;
               if (hasPlan) {
                 // Snapshot the current plan under a dated name, then clear it.
@@ -814,7 +820,7 @@ export default function Kitchen() {
                 // Only clear the planner if the plan was safely saved. If the
                 // save failed, keep the meals rather than deleting them unsaved.
                 if (planSaved) {
-                  await api.clearAllMeals();
+                  mealsBatch = (await api.clearAllMeals())?.batch_id;
                   setSavedPlans(await api.listSavedPlans().catch(() => savedPlans));
                 } else {
                   // Put the optimistically-cleared meals back on screen.
@@ -824,14 +830,15 @@ export default function Kitchen() {
               setShopHistory(await api.listShoppingHistory().catch(() => []));
               // Only promise the plan was saved when it really was; if a plan
               // existed but couldn't be saved, it's been kept, not lost.
-              showToast(
+              // "Annuler" puts the whole list (and the plan cleared with it)
+              // back; Recently deleted has every line for 30 days.
+              offerUndo(showToast, t,
                 hasPlan && planSaved
                   ? t('kitchen_shop_cleared_plan_saved')
                   : hasPlan
                     ? t('kitchen_shop_cleared_plan_kept')
                     : t('kitchen_cleared'),
-                'success',
-              );
+                { batchIds: [cleared?.batch_id, mealsBatch] }, load);
             } catch {
               showToast(t('vault_could_not_update'), 'error');
               if (hasPlan) setMeals(clearedMeals);
@@ -853,8 +860,8 @@ export default function Kitchen() {
         onPress: async () => {
           setMeals([]);
           try {
-            await api.clearAllMeals();
-            showToast(t('kitchen_cleared'), 'success');
+            const res = await api.clearAllMeals();
+            offerUndo(showToast, t, t('kitchen_cleared'), { batchIds: [res?.batch_id] }, load);
           } catch {
             showToast(t('vault_could_not_update'), 'error');
             load();
@@ -887,8 +894,11 @@ export default function Kitchen() {
 
   const deleteMeal = useCallback(async (id: string) => {
     setMeals((prev) => prev.filter((m) => m.meal_id !== id));
-    try { await api.deleteMeal(id); } catch { showToast(t('vault_could_not_delete_restored'), 'error'); load(); }
-  }, [load, showToast]);
+    try {
+      const res = await api.deleteMeal(id);
+      offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] }, load);
+    } catch { showToast(t('vault_could_not_delete_restored'), 'error'); load(); }
+  }, [load, showToast, t]);
 
   const syncMealsToShopping = useCallback(async () => {
     try {
@@ -1413,7 +1423,11 @@ export default function Kitchen() {
   const deletePlan = useCallback(async (id: string) => {
     let previous: typeof savedPlans = [];
     setSavedPlans((prev) => { previous = prev; return prev.filter((p) => p.plan_id !== id); });
-    try { await api.deleteSavedPlan(id); } catch {
+    try {
+      const res = await api.deleteSavedPlan(id);
+      offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] },
+        () => { api.listSavedPlans().then(setSavedPlans).catch(() => undefined); });
+    } catch {
       setSavedPlans(previous);
       showToast(t('vault_could_not_delete_restored'), 'error');
     }
@@ -3419,7 +3433,7 @@ export default function Kitchen() {
         onPick={(aisle) => { if (aisleItem) moveToAisle(aisleItem, aisle); }}
         onClose={() => setAisleItem(null)}
       />
-      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />
     </SwipeableTabView>
   );
 }

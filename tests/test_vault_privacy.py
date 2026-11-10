@@ -78,8 +78,10 @@ class VaultPrivacy(unittest.TestCase):
             asyncio.run(server.delete_vault_doc(doc["doc_id"], user=dict(KEIGH)))
         self.assertEqual(ctx.exception.status_code, 403)
         # The owner still can.
+        # (Into Recently deleted, which says where: a trash id.)
         self.assertEqual(
-            asyncio.run(server.delete_vault_doc(doc["doc_id"], user=dict(ROLAND))),
+            {k: v for k, v in asyncio.run(server.delete_vault_doc(doc["doc_id"], user=dict(ROLAND))).items()
+             if k != "trash_id"},
             {"ok": True},
         )
 

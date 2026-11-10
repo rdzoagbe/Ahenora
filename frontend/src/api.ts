@@ -1490,6 +1490,18 @@ export interface BillingEventLog {
 }
 
 /** One line read off a till receipt, before anyone has confirmed it. */
+/** Something in Recently deleted, as the bin lists it. */
+export interface TrashEntry {
+  trash_id: string;
+  kind: 'shopping_item' | 'card' | 'vault_doc' | 'expense' | 'meal' | 'saved_plan' | string;
+  label: string;
+  deleted_by_name: string;
+  deleted_at: string;
+  expires_at: string;
+  /** Set when one delete removed several things (a cleared list). */
+  batch_id: string | null;
+}
+
 export interface ScannedReceiptItem {
   name: string;
   /** null when the amount could not be read — then there is no unit price. */
@@ -2729,7 +2741,7 @@ export const api = {
   },
   deleteCard: (id: string) => {
     cache.invalidatePrefix('listCards');
-    return request(`/cards/${id}`, { method: 'DELETE' }).then((r) => {
+    return request<{ ok: boolean; trash_id?: string | null }>(`/cards/${id}`, { method: 'DELETE' }).then((r) => {
       cache.invalidatePrefix('listCards');
       return r;
     });
@@ -2866,7 +2878,7 @@ export const api = {
   deleteVaultDoc: (id: string) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();
-    return request(`/vault/${id}`, { method: 'DELETE' }).then(settleVault);
+    return request<{ ok: boolean; trash_id?: string | null }>(`/vault/${id}`, { method: 'DELETE' }).then(settleVault);
   },
   // Rewards
   listRewards: () => {
@@ -3137,10 +3149,12 @@ export const api = {
     request<ShoppingItem>('/shopping', { method: 'POST', body: data }),
   updateShoppingItem: (itemId: string, data: { checked?: boolean; name?: string; category?: string; ticked_from?: string }) =>
     request<ShoppingItem>(`/shopping/${itemId}`, { method: 'PATCH', body: data }),
+  // Each delete goes to Recently deleted and says where (trash_id, or the
+  // batch_id of a cleared list), so the app can offer "Annuler".
   deleteShoppingItem: (itemId: string) =>
-    request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
+    request<{ ok: boolean; trash_id?: string }>(`/shopping/${itemId}`, { method: 'DELETE' }),
   clearCheckedShopping: () =>
-    request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
+    request<{ deleted: number; batch_id?: string | null }>('/shopping', { method: 'DELETE' }),
   // left_out: items read past the server's limit (MAX_SCAN_ITEMS), counted
   // so the review can say so rather than drop them in silence.
   scanShoppingList: (imageBase64: string) =>
@@ -3162,7 +3176,7 @@ export const api = {
       body: { names, categories: categories?.map((c) => c || 'Other') || [] },
     }),
   // Wipes the whole list (it's archived to history first, so it's recoverable).
-  clearAllShopping: () => request<{ deleted: number }>('/shopping/all', { method: 'DELETE' }),
+  clearAllShopping: () => request<{ deleted: number; batch_id?: string | null }>('/shopping/all', { method: 'DELETE' }),
   /** `before` (an ISO moment) reaches the trips older than the page shown. */
   listShoppingHistory: (before?: string) =>
     request<ShoppingHistoryEntry[]>(`/shopping/history${before ? `?before=${encodeURIComponent(before)}` : ''}`),
@@ -3212,7 +3226,7 @@ export const api = {
   }) =>
     request<Expense>('/expenses', { method: 'POST', body: data }),
   deleteExpense: (expenseId: string) =>
-    request<{ ok: boolean }>(`/expenses/${expenseId}`, { method: 'DELETE' }),
+    request<{ ok: boolean; trash_id?: string }>(`/expenses/${expenseId}`, { method: 'DELETE' }),
   // Shared-expense settle-up between the two parents.
   getSettlement: () => request<SettlementInfo>('/expenses/settlement'),
   settleUp: () => request<SettlementInfo>('/expenses/settlement/settle', { method: 'POST' }),
@@ -3265,8 +3279,8 @@ export const api = {
     // On Free this spends one of the month's meals: the next subscription read
     // has to show the new count, not the cached one.
     request<MealPlan>('/meals', { method: 'POST', body: data }).finally(invalidateUsageCaches),
-  deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
-  clearAllMeals: () => request<{ deleted: number }>('/meals/all', { method: 'DELETE' }),
+  deleteMeal: (id: string) => request<{ ok: boolean; trash_id?: string }>(`/meals/${id}`, { method: 'DELETE' }),
+  clearAllMeals: () => request<{ deleted: number; batch_id?: string | null }>('/meals/all', { method: 'DELETE' }),
   suggestMealsAI: (lang: string, variant = 0) =>
     request<{ meals: { day: string; title: string; uses: string[]; need: string[]; minutes: number }[] }>(
       `/meals/suggest-ai?lang=${encodeURIComponent(lang)}&variant=${variant}`,
@@ -3312,7 +3326,20 @@ export const api = {
   listSavedPlans: (before?: string) =>
     request<SavedMealPlan[]>(`/meals/saved${before ? `?before=${encodeURIComponent(before)}` : ''}`),
   reuseSavedPlan: (id: string) => request<{ ok: boolean; added: number }>(`/meals/saved/${id}/reuse`, { method: 'POST' }),
-  deleteSavedPlan: (id: string) => request<{ ok: boolean }>(`/meals/saved/${id}`, { method: 'DELETE' }),
+  deleteSavedPlan: (id: string) => request<{ ok: boolean; trash_id?: string | null }>(`/meals/saved/${id}`, { method: 'DELETE' }),
+
+  // Recently deleted: 30 days to bring something back.
+  listTrash: () => request<TrashEntry[]>('/trash'),
+  restoreTrash: (trashId: string) => {
+    // A restored card or document is new to the lists that hold them.
+    cache.invalidatePrefix('listCards');
+    return request<{ kind: string; ref: string; label: string }>(`/trash/${trashId}/restore`, { method: 'POST' })
+      .then(settleVault);
+  },
+  restoreTrashBatch: (batchId: string) =>
+    request<{ restored: number }>('/trash/restore-batch', { method: 'POST', body: { batch_id: batchId } }),
+  purgeTrash: (trashId: string) => request<{ ok: boolean }>(`/trash/${trashId}`, { method: 'DELETE' }),
+  emptyTrash: () => request<{ deleted: number }>('/trash', { method: 'DELETE' }),
 
   // Carpool
   listCarpools: () => request<Carpool[]>('/carpools'),

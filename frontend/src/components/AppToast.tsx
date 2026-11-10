@@ -88,7 +88,7 @@ export default function AppToast({
         <Icon color={color} size={15} />
         <Text style={styles.text}>{message}</Text>
         {action ? (
-          <Pressable onPress={action.onPress} hitSlop={10} accessibilityRole="button">
+          <Pressable testID="toast-action" onPress={action.onPress} hitSlop={10} accessibilityRole="button">
             <Text style={[styles.action, { color }]}>{action.label}</Text>
           </Pressable>
         ) : null}

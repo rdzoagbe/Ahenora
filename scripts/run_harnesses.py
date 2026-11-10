@@ -133,6 +133,11 @@ HARNESSES = [
     # then the rest added and both read as ONE receipt; and a receipt as a PDF
     # file. The read is stubbed; the server's tests hold Gemini's side. ~20s.
     "e2e_long_receipt.py",
+    # Recently deleted: "Annuler" after a delete, a cleared list as one row in
+    # the bin with any one item coming back alone, an expense restored, and
+    # erasing / emptying each asked first. The server's tests hold who may see
+    # what and the Coffre's storage. ~20s.
+    "e2e_recently_deleted.py",
     # The meal planner and the claim it is sold on: "plan dinners, share the
     # list". Buys the plan through a real RevenueCat webhook rather than
     # granting itself entitlements, then checks the shopping list actually

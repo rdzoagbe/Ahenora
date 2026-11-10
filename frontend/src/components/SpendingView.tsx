@@ -19,6 +19,9 @@ import { splitQuantity } from '../shoppingAisles';
 import { localeFor } from '../utils/date';
 import { logger } from '../logger';
 import { apiErrorText } from '../apiError';
+import AppToast from './AppToast';
+import { useToast } from '../hooks/useToast';
+import { offerUndo } from '../trashUndo';
 
 const CATEGORY = 'Groceries';
 const MONTHS = 6;
@@ -97,6 +100,8 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const ui = useUI();
   const { t, lang, bumpData, user } = useStore();
   const owner = user?.user_id ?? '';
+  // "Annuler" after deleting an expense (it goes to Recently deleted).
+  const { toast, showToast } = useToast();
   const styles = createStyles(ui);
   const locale = localeFor(lang);
   const money = (n: number) => formatMoney(n, lang);
@@ -415,13 +420,15 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await api.deleteExpense(id);
+      const res = await api.deleteExpense(id);
       await load();
+      // Its receipt lines go with it, and come back with it.
+      offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] }, load);
     } catch (e) {
       logger.warn('expense delete failed', e);
       Alert.alert(t('exp_save_failed'), apiErrorText(e, t, 'err_please_try_again'));
     }
-  }, [load, t]);
+  }, [load, t, showToast]);
 
   // "Ce mois-ci" is this month, so far. It used to lead with the newest
   // FINISHED month whenever there was one (the month it could compare), so on
@@ -1044,6 +1051,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
           ) : null}
         </Wrapper>
       )}
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />
     </View>
   );
 }
