@@ -17574,6 +17574,22 @@ def shopping_pdf_bytes(pdf_b64: str) -> bytes:
     return data
 
 
+def shopping_picture_opens(image_b64: str) -> None:
+    """Refuse, before any allowance or model, a picture this server cannot
+    open. A picture imported from Files can be a format Pillow does not read
+    (HEIC without its plugin) or a renamed document: the file's problem, said
+    as a free 400, not a 502 the app tells as an outage. Image.open reads the
+    header only; the full decode happens once, in _gemini_vision.
+    """
+    try:
+        PIL.Image.open(io.BytesIO(base64.b64decode(image_b64)))
+    except Exception:  # noqa: BLE001 — any way of not opening is "not readable"
+        # Pillow says it several ways: UnidentifiedImageError for an unknown
+        # format, a bare OSError for a PNG broken after its signature,
+        # binascii.Error for base64 that does not decode.
+        raise HTTPException(400, "That file is not a picture we can read.")
+
+
 @app.post("/api/shopping/scan")
 async def scan_shopping_list(
     payload: dict = Body(...),
@@ -17604,6 +17620,7 @@ async def scan_shopping_list(
             raise HTTPException(400, "No photo attached.")
         if len(image_b64) > MAX_IMAGE_B64_CHARS:
             raise HTTPException(413, "That photo is too large.")
+        shopping_picture_opens(image_b64)
 
     kind = "PDF" if pdf_bytes is not None else "photo"
     if not GOOGLE_API_KEY or (pdf_bytes is not None and genai_types is None):

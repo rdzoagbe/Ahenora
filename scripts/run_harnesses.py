@@ -123,11 +123,12 @@ HARNESSES = [
     # been held together in a browser. The scan itself is stubbed: reading a
     # photo is Gemini's, and the server's tests hold that side. ~25s.
     "e2e_shop_receipts.py",
-    # A shopping list that arrived as a PDF: picked from files, sent as the
-    # PDF itself, read into the same ticked review as a photo, and a file
-    # that is not a PDF or is far too heavy said so before any upload. The
-    # read is stubbed; the server's tests hold Gemini's side. ~15s.
-    "e2e_shopping_pdf.py",
+    # A shopping list that arrived as a FILE (PDF, or a JPG/PNG not in the
+    # gallery): picked from files, sent to the right reader, read into the
+    # same ticked review as a photo; HEIC, Word, too-heavy and unreadable
+    # files said so, the last by the real server. The read is stubbed; the
+    # server's tests hold Gemini's side. ~20s.
+    "e2e_shopping_file.py",
     # The meal planner and the claim it is sold on: "plan dinners, share the
     # list". Buys the plan through a real RevenueCat webhook rather than
     # granting itself entitlements, then checks the shopping list actually
