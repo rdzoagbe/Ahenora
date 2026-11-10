@@ -4964,6 +4964,9 @@ INDEXES = {
     "support_tickets": ["ticket_id"],
     "vault": ["family_id", "doc_id"],
     "web_push_subscriptions": ["user_id", "endpoint"],
+    # Recently deleted: listed per household, restored by id or by the batch a
+    # cleared list went in. expires_at is a TTL index, made below.
+    "trash": ["family_id", "trash_id", "batch_id"],
 }
 
 
@@ -4982,6 +4985,13 @@ async def ensure_indexes():
                 await db[collection].create_index(field)
             except Exception as e:
                 log.warning("could not index %s.%s: %s", collection, field, e)
+    # The bin empties itself: MongoDB removes an entry once expires_at passes
+    # (its TTL monitor runs about once a minute). /api/trash also skips anything
+    # past it, so a late sweep is never visible.
+    try:
+        await db["trash"].create_index("expires_at", expireAfterSeconds=0)
+    except Exception as e:
+        log.warning("could not index trash.expires_at (TTL): %s", e)
 
 
 def _resolve_icon(chosen, title: str, card_type: Optional[str] = None):
@@ -6432,6 +6442,8 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "rewards", "routine_logs", "routines", "shopping_aisles", "shopping_history",
     "turns",
     "shopping_list",
+    # Recently deleted: the household's deleted rows, whole, for 30 days.
+    "trash",
     # "templates" has no feature behind it any more — the recurring-template
     # endpoints were removed once it was found that nothing could ever create
     # one. The COLLECTION stays listed: rows written before it went are still
@@ -6663,7 +6675,9 @@ async def _purge_departing_parent(database: Any, family_id: str, user_id: str) -
     The household's shared things stay: they belong to the people still in it.
     But a private card or a private vault document was never anybody else's,
     and once its owner's account is gone nobody can open it again; keeping it
-    would be keeping a deleted person's data (audit, 2026-10-02)."""
+    would be keeping a deleted person's data (audit, 2026-10-02). The same
+    goes for their private things in Recently deleted."""
+    await database["trash"].delete_many({"family_id": family_id, "private_to": user_id})
     cards = [c async for c in database["cards"].find(
         {"family_id": family_id, "created_by_user_id": user_id}, {"_id": 0})]
     for card in cards:
@@ -7736,6 +7750,14 @@ async def export_my_data(include_files: bool = False, user=Depends(require_user)
             return []
         return [shape(r) async for r in database[collection].find({"family_id": fid}, {"_id": 0})]
 
+    # Recently deleted is still held, so it is in the copy: as the bin lists
+    # it to this person (what it was, who deleted it, when it goes).
+    recently_deleted = []
+    if fid:
+        async for e in database["trash"].find({"family_id": fid}, {"_id": 0, "doc": 0, "extra": 0}):
+            if _trash_visible(e, fresh):
+                recently_deleted.append(public_trash(e))
+
     settings = await database["notification_settings"].find_one({"user_id": uid}, {"_id": 0})
     sub = await build_subscription(fid) if fid else {}
 
@@ -7760,6 +7782,7 @@ async def export_my_data(include_files: bool = False, user=Depends(require_user)
         "routines": await household_rows("routines", public_routine),
         "chores": await household_rows("chores", public_chore),
         "turns": await household_rows("turns", public_turn),
+        "recently_deleted": recently_deleted,
     }
 
 
@@ -13090,18 +13113,18 @@ async def share_card(card_id: str, user=Depends(require_user)):
 async def delete_card(card_id: str, user=Depends(require_user)):
     database = get_db()
     card = await database["cards"].find_one(
-        {"card_id": card_id, "family_id": user["family_id"]},
-        {"_id": 0, "shared": 1, "created_by_user_id": 1},
-    )
+        {"card_id": card_id, "family_id": user["family_id"]}, {"_id": 0})
+    trash_id = None
     if card:
         refuse_unless_owner_of_private(card, user)
+        (trash_id,) = await move_to_trash(database, user, "card", [card])
     await database["cards"].delete_one({"card_id": card_id, "family_id": user["family_id"]})
     # Deleting a card from the completed history takes its feed lines with it —
     # "done" and "created" for a thing that no longer exists would otherwise
     # linger. Scoped to the family and the card's own id, so nothing else moves.
     await database["activity"].delete_many(
         {"family_id": user["family_id"], "ref": card_id})
-    return {"ok": True}
+    return {"ok": True, "trash_id": trash_id}
 
 
 @app.get("/api/cards/conflicts")
@@ -13414,14 +13437,19 @@ async def delete_vault_doc(doc_id: str, user=Depends(require_full_member)):
     )
     if doc and doc.get("owner_user_id") not in (None, user["user_id"]):
         raise HTTPException(status_code=403, detail="Only the owner can delete this document")
+    trash_id = None
     if doc:
+        # Into Recently deleted, where it no longer counts toward the storage
+        # (Roland, 2026-11-10); restoring counts it again.
         size = len(doc["image_base64"].encode("utf-8"))
+        await make_room_in_trash_for_vault(database, user, size)
+        (trash_id,) = await move_to_trash(database, user, "vault_doc", [doc])
         await database["vault"].delete_one({"doc_id": doc_id})
         await database["families"].update_one(
             {"family_id": user["family_id"]},
             {"$inc": {"vault_bytes_used": -size}, "$set": {"updated_at": utcnow()}},
         )
-    return {"ok": True}
+    return {"ok": True, "trash_id": trash_id}
 
 
 # -----------------------------------------------------------------------------
@@ -17445,21 +17473,28 @@ async def clear_all_shopping(user=Depends(require_user)):
             "items": names,
             "created_at": utcnow(),
         })
-    result = await database["shopping_list"].delete_many({"family_id": user["family_id"]})
+    batch_id = new_id("tbatch")
+    full = [d async for d in database["shopping_list"].find({"family_id": user["family_id"]}, {"_id": 0})]
+    await move_to_trash(database, user, "shopping_item", full, batch_id=batch_id)
+    # Only what went into the bin: a line added meanwhile on the other phone
+    # stays on the list rather than vanish without a copy.
+    result = await database["shopping_list"].delete_many(
+        {"family_id": user["family_id"], "item_id": {"$in": [d["item_id"] for d in full]}})
     if names:
         await log_activity(database, user, "list_cleared", "", len(names))
-    return {"deleted": result.deleted_count}
+    return {"deleted": result.deleted_count, "batch_id": batch_id if full else None}
 
 
 @app.delete("/api/shopping/{item_id}")
 async def delete_shopping_item(item_id: str, user=Depends(require_user)):
     database = get_db()
-    result = await database["shopping_list"].delete_one(
-        {"item_id": item_id, "family_id": user["family_id"]}
-    )
-    if result.deleted_count == 0:
+    item = await database["shopping_list"].find_one(
+        {"item_id": item_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not item:
         raise HTTPException(404, "Item not found")
-    return {"ok": True}
+    (trash_id,) = await move_to_trash(database, user, "shopping_item", [item])
+    await database["shopping_list"].delete_one({"item_id": item_id, "family_id": user["family_id"]})
+    return {"ok": True, "trash_id": trash_id}
 
 
 def public_shopping_history(h: dict) -> dict:
@@ -17481,12 +17516,19 @@ async def clear_checked_shopping(user=Depends(require_user)):
             "items": names,
             "created_at": utcnow(),
         })
+    # Each one also into Recently deleted, as one batch: "Annuler" brings the
+    # trip back whole, the bin brings back any single line of it.
+    batch_id = new_id("tbatch")
+    full = [d async for d in database["shopping_list"].find(
+        {"family_id": user["family_id"], "checked": True}, {"_id": 0})]
+    await move_to_trash(database, user, "shopping_item", full, batch_id=batch_id)
+    # Only what went into the bin (a line ticked meanwhile stays).
     result = await database["shopping_list"].delete_many(
-        {"family_id": user["family_id"], "checked": True}
+        {"family_id": user["family_id"], "item_id": {"$in": [d["item_id"] for d in full]}}
     )
     # The shop is over: tell the other parent, once, how much was bought.
     await notify_shop_done(database, user, user["family_id"], len(names))
-    return {"deleted": result.deleted_count}
+    return {"deleted": result.deleted_count, "batch_id": batch_id if full else None}
 
 
 @app.get("/api/shopping/history")
@@ -18572,17 +18614,22 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
 @app.delete("/api/expenses/{expense_id}")
 async def delete_expense(expense_id: str, user=Depends(require_full_member)):
     database = get_db()
-    result = await database["expenses"].delete_one(
-        {"expense_id": expense_id, "family_id": user["family_id"]}
-    )
-    if result.deleted_count == 0:
+    expense = await database["expenses"].find_one(
+        {"expense_id": expense_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not expense:
         raise HTTPException(404, "Expense not found")
+    # Its receipt lines go in with it, so restoring brings its prices back too.
+    lines = [{k: v for k, v in line.items() if k != "_id"} async for line in database["expense_items"].find(
+        {"expense_id": expense_id, "family_id": user["family_id"]})]
+    (trash_id,) = await move_to_trash(database, user, "expense", [expense],
+                                      extra={expense_id: {"expense_items": lines}})
+    await database["expenses"].delete_one({"expense_id": expense_id, "family_id": user["family_id"]})
     # The lines go with it. Leaving them would keep a deleted receipt quoting
     # prices in comparisons — the one kind of stale data nobody would think to
     # look for, because the receipt it came from is no longer on the screen.
     await database["expense_items"].delete_many(
         {"expense_id": expense_id, "family_id": user["family_id"]})
-    return {"ok": True}
+    return {"ok": True, "trash_id": trash_id}
 
 
 async def compute_settlement(database, family_id: str, me_user_id: str) -> dict:
@@ -20047,18 +20094,23 @@ async def create_meal(body: MealPlanIn, user: dict = Depends(require_user), data
 # Registered before /{meal_id} so "all" isn't captured as a meal id.
 @app.delete("/api/meals/all")
 async def clear_all_meals(user: dict = Depends(require_user), database=Depends(get_db)):
-    result = await database["meals"].delete_many({"family_id": user["family_id"]})
-    return {"deleted": result.deleted_count}
+    batch_id = new_id("tbatch")
+    full = [m async for m in database["meals"].find({"family_id": user["family_id"]}, {"_id": 0})]
+    await move_to_trash(database, user, "meal", full, batch_id=batch_id)
+    # Only what went into the bin (a meal added meanwhile stays).
+    result = await database["meals"].delete_many(
+        {"family_id": user["family_id"], "meal_id": {"$in": [m["meal_id"] for m in full]}})
+    return {"deleted": result.deleted_count, "batch_id": batch_id if full else None}
 
 
 @app.delete("/api/meals/{meal_id}")
 async def delete_meal(meal_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
-    result = await database["meals"].delete_one(
-        {"meal_id": meal_id, "family_id": user["family_id"]}
-    )
-    if result.deleted_count == 0:
+    meal = await database["meals"].find_one({"meal_id": meal_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not meal:
         raise HTTPException(404, "Meal not found")
-    return {"ok": True}
+    (trash_id,) = await move_to_trash(database, user, "meal", [meal])
+    await database["meals"].delete_one({"meal_id": meal_id, "family_id": user["family_id"]})
+    return {"ok": True, "trash_id": trash_id}
 
 
 class SavedPlanIn(BaseModel):
@@ -20140,10 +20192,15 @@ async def reuse_saved_plan(plan_id: str, user: dict = Depends(require_user), dat
 
 @app.delete("/api/meals/saved/{plan_id}")
 async def delete_saved_plan(plan_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    plan = await database["meal_plans_saved"].find_one(
+        {"plan_id": plan_id, "family_id": user["family_id"]}, {"_id": 0})
+    trash_id = None
+    if plan:
+        (trash_id,) = await move_to_trash(database, user, "saved_plan", [plan])
     await database["meal_plans_saved"].delete_one(
         {"plan_id": plan_id, "family_id": user["family_id"]}
     )
-    return {"ok": True}
+    return {"ok": True, "trash_id": trash_id}
 
 
 RECIPE_LANGUAGE_NAMES = {
@@ -23081,6 +23138,277 @@ async def admin_reply_support_ticket(
 # -----------------------------------------------------------------------------
 # Railway entrypoint
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Recently deleted ("Récemment supprimés")
+# -----------------------------------------------------------------------------
+#
+# Asked for on 2026-11-10: "I can't put back recently deleted items... if I
+# mistakenly deleted my list I can restore recently deleted without putting
+# back all the list, and it should be the same for any place where we have
+# data stored, documents etc." Until then every delete but "clear the whole
+# list" was final.
+#
+# A delete MOVES the row here, whole, and out of its own collection, so no
+# screen, count, search or brief has to learn to skip deleted rows: they are
+# simply not there. Restoring puts the row back exactly as it was. Thirty days
+# after deletion the database erases the entry by itself (a TTL index on
+# expires_at); the listing also skips anything past it, whatever the TTL
+# monitor's timing.
+#
+# Decided with Roland, 2026-11-10:
+#   * the privacy policy says, in one line, that deleted items stay here 30
+#     days and are then erased;
+#   * health details (medicines, vaccinations) never come here: deleting them
+#     withdraws consent, which the policy promises is immediate (they get a
+#     short "Annuler" in the app instead);
+#   * a Coffre document here does not count toward the household's storage;
+#     restoring counts it again, and is refused if it no longer fits.
+#
+# A private item (a private card, any Coffre document, whose owner alone may
+# delete it) is listed and restorable by that person only; everything else by
+# the household, under the same rule its delete had.
+
+TRASH_DAYS = 30
+
+
+def _trash_label_expense(doc: dict) -> str:
+    who = (doc.get("merchant") or doc.get("description") or "").strip()
+    amount = doc.get("amount")
+    try:
+        figure = f"{float(amount):.2f}"
+    except (TypeError, ValueError):
+        figure = ""
+    return f"{who} · {figure}" if who and figure else (who or figure)
+
+
+# kind -> how a row of it is found, named, and who may bring it back.
+TRASH_KINDS = {
+    "shopping_item": {"collection": "shopping_list", "id": "item_id",
+                      "label": lambda d: d.get("name", ""), "full_member": False},
+    "card": {"collection": "cards", "id": "card_id",
+             "label": lambda d: d.get("title", ""), "full_member": False},
+    "vault_doc": {"collection": "vault", "id": "doc_id",
+                  "label": lambda d: d.get("title", ""), "full_member": True},
+    "expense": {"collection": "expenses", "id": "expense_id",
+                "label": _trash_label_expense, "full_member": True},
+    "meal": {"collection": "meals", "id": "meal_id",
+             "label": lambda d: d.get("title", ""), "full_member": False},
+    "saved_plan": {"collection": "meal_plans_saved", "id": "plan_id",
+                   "label": lambda d: d.get("name", ""), "full_member": False},
+}
+
+
+# The fields each kind's own visibility rule reads, kept beside the entry so
+# the bin asks the same question the list did: _card_visible_to for a card
+# (an assigned task is its parents' and assignee's, a private card its
+# author's), _may_see_vault_doc for a Coffre document (shared by name, or
+# its owner's).
+_TRASH_SIGHT_FIELDS = ("created_by_user_id", "shared", "visible_to", "owner_user_id", "visibility")
+
+
+def _trash_sight(kind: str, doc: dict) -> Optional[dict]:
+    if kind not in ("card", "vault_doc"):
+        return None
+    return {k: doc[k] for k in _TRASH_SIGHT_FIELDS if k in doc}
+
+
+def _trash_private_to(kind: str, doc: dict) -> Optional[str]:
+    """Whose eyes only, in the bin as before: a Coffre document is its owner's
+    (only the owner may delete it); a card is its author's when not shared."""
+    if kind == "vault_doc":
+        return doc.get("owner_user_id")
+    if kind == "card" and doc.get("shared", True) is False:
+        return doc.get("created_by_user_id")
+    return None
+
+
+async def move_to_trash(database, user: dict, kind: str, docs: list, *,
+                        batch_id: Optional[str] = None, extra: Optional[dict] = None) -> list:
+    """File `docs` (rows of `kind`, already read) in the bin. Returns their
+    trash ids. The caller deletes them from their own collection after."""
+    now = utcnow()
+    spec = TRASH_KINDS[kind]
+    entries = []
+    for doc in docs:
+        row = {k: v for k, v in doc.items() if k != "_id"}
+        entry = {
+            "trash_id": new_id("trash"),
+            "family_id": user["family_id"],
+            "kind": kind,
+            "ref": row.get(spec["id"]),
+            "label": str(spec["label"](row) or "")[:120],
+            "doc": row,
+            "extra": (extra or {}).get(row.get(spec["id"])) if extra else None,
+            "private_to": _trash_private_to(kind, row),
+            "sight": _trash_sight(kind, row),
+            "bytes": len((row.get("image_base64") or "").encode("utf-8")) if kind == "vault_doc" else 0,
+            "deleted_by": user["user_id"],
+            "deleted_by_name": user.get("name", ""),
+            "deleted_at": now,
+            "expires_at": now + timedelta(days=TRASH_DAYS),
+            "batch_id": batch_id,
+        }
+        entries.append(entry)
+    if entries:
+        await database["trash"].insert_many(entries)
+    return [e["trash_id"] for e in entries]
+
+
+async def make_room_in_trash_for_vault(database, user: dict, size: int) -> None:
+    """A document in the bin no longer counts toward the Coffre's storage, but
+    it is still held. So the bin holds at most as much as the plan's Coffre
+    does: past that, the oldest deleted documents are erased first, earlier
+    than 30 days. Without it, uploading and deleting in turn would store
+    without limit."""
+    sub = await build_subscription(user["family_id"])
+    limit = sub["limits"]["vault_bytes"]
+    rows = [e async for e in database["trash"].find(
+        {"family_id": user["family_id"], "kind": "vault_doc"},
+        {"_id": 0, "trash_id": 1, "bytes": 1, "deleted_at": 1}).sort("deleted_at", 1)]
+    held = sum(int(e.get("bytes") or 0) for e in rows)
+    evict = []
+    for e in rows:
+        if held + size <= limit:
+            break
+        evict.append(e["trash_id"])
+        held -= int(e.get("bytes") or 0)
+    if evict:
+        await database["trash"].delete_many({"trash_id": {"$in": evict}})
+
+
+def _trash_visible(entry: dict, user: dict) -> bool:
+    """The one rule for listing, restoring, erasing and the data copy: the
+    people who could see it before it was deleted, and nobody else."""
+    if entry.get("private_to") and entry["private_to"] != user["user_id"]:
+        return False
+    if TRASH_KINDS.get(entry.get("kind"), {}).get("full_member") and bool(user.get("is_helper")):
+        return False
+    sight = entry.get("sight")
+    if sight is not None:
+        if entry["kind"] == "card" and not _card_visible_to(sight, user["user_id"]):
+            return False
+        if entry["kind"] == "vault_doc" and not _may_see_vault_doc(sight, user):
+            return False
+    # Never a bare compare: a date read back from Mongo can be naive.
+    return not _expired(entry.get("expires_at"))
+
+
+def public_trash(entry: dict) -> dict:
+    return {
+        "trash_id": entry["trash_id"],
+        "kind": entry["kind"],
+        "label": entry.get("label", ""),
+        "deleted_by_name": entry.get("deleted_by_name", ""),
+        "deleted_at": iso(entry["deleted_at"]),
+        "expires_at": iso(entry["expires_at"]),
+        "batch_id": entry.get("batch_id"),
+    }
+
+
+async def _trash_entry_for(database, trash_id: str, user: dict) -> dict:
+    entry = await database["trash"].find_one(
+        {"trash_id": trash_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not entry or not _trash_visible(entry, user):
+        raise HTTPException(404, "Not in Recently deleted")
+    return entry
+
+
+async def _restore_entry(database, entry: dict, user: dict) -> dict:
+    kind = entry["kind"]
+    spec = TRASH_KINDS[kind]
+    doc = dict(entry["doc"])
+    done = {"kind": kind, "ref": doc.get(spec["id"]), "label": entry.get("label", "")}
+    size = len((doc.get("image_base64") or "").encode("utf-8")) if kind == "vault_doc" else 0
+    if kind == "vault_doc":
+        # Back on the storage it left: refused, as a new upload would be, if
+        # it no longer fits the plan. Checked before the row is claimed, so a
+        # refusal leaves it in the bin.
+        sub = await build_subscription(user["family_id"])
+        family = await get_family_doc(user["family_id"])
+        if not is_admin_user(user) and family.get("vault_bytes_used", 0) + size > sub["limits"]["vault_bytes"]:
+            plan_limit_error(
+                family_id=user["family_id"], feature="vault_storage", current_plan=sub["plan"],
+                limit=sub["limits"]["vault_bytes"], used=family.get("vault_bytes_used", 0),
+                message="Not enough Coffre storage to restore this document.")
+    # Claim the row: of two restores at once (a double tap, two phones) only
+    # the one that removes it goes on, so nothing comes back twice.
+    if (await database["trash"].delete_one({"trash_id": entry["trash_id"]})).deleted_count == 0:
+        return done
+    # Already back by another way: leaving the bin is all there is to do.
+    if await database[spec["collection"]].find_one(
+            {spec["id"]: doc.get(spec["id"]), "family_id": user["family_id"]}, {"_id": 0, spec["id"]: 1}):
+        return done
+    try:
+        await database[spec["collection"]].insert_one(doc)
+        lines = [dict(line) for line in ((entry.get("extra") or {}).get("expense_items") or [])] \
+            if kind == "expense" else []
+        if lines:
+            await database["expense_items"].insert_many(lines)
+    except Exception:
+        # Not back, so not lost either: into the bin again.
+        await database["trash"].insert_one({k: v for k, v in entry.items() if k != "_id"})
+        raise
+    if size:
+        await database["families"].update_one(
+            {"family_id": user["family_id"]},
+            {"$inc": {"vault_bytes_used": size}, "$set": {"updated_at": utcnow()}})
+    return done
+
+
+@app.get("/api/trash")
+async def list_trash(user=Depends(require_user)):
+    """What this person may bring back, newest first."""
+    database = get_db()
+    rows = [e async for e in database["trash"].find(
+        {"family_id": user["family_id"]}, {"_id": 0, "doc": 0, "extra": 0}).sort("deleted_at", -1)]
+    return [public_trash(e) for e in rows if _trash_visible(e, user)][:500]
+
+
+@app.post("/api/trash/{trash_id}/restore")
+async def restore_trash(trash_id: str, user=Depends(require_user)):
+    database = get_db()
+    entry = await _trash_entry_for(database, trash_id, user)
+    return await _restore_entry(database, entry, user)
+
+
+class TrashBatchIn(BaseModel):
+    batch_id: str = Field(max_length=64)
+
+
+@app.post("/api/trash/restore-batch")
+async def restore_trash_batch(body: TrashBatchIn, user=Depends(require_user)):
+    """Everything one delete removed at once ("Annuler" after clearing a list)."""
+    database = get_db()
+    entries = [e async for e in database["trash"].find(
+        {"family_id": user["family_id"], "batch_id": body.batch_id}, {"_id": 0})]
+    restored = []
+    for entry in entries:
+        if not _trash_visible(entry, user):
+            continue
+        restored.append(await _restore_entry(database, entry, user))
+    return {"restored": len(restored)}
+
+
+@app.delete("/api/trash/{trash_id}")
+async def purge_trash(trash_id: str, user=Depends(require_user)):
+    """Erase one thing now instead of in 30 days."""
+    database = get_db()
+    await _trash_entry_for(database, trash_id, user)
+    await database["trash"].delete_one({"trash_id": trash_id})
+    return {"ok": True}
+
+
+@app.delete("/api/trash")
+async def empty_trash(user=Depends(require_user)):
+    """Erase now everything this person sees in the bin (nobody else's)."""
+    database = get_db()
+    mine = [e["trash_id"] async for e in database["trash"].find(
+        {"family_id": user["family_id"]}, {"_id": 0, "doc": 0, "extra": 0}) if _trash_visible(e, user)]
+    if mine:
+        await database["trash"].delete_many({"trash_id": {"$in": mine}})
+    return {"deleted": len(mine)}
+
+
 if __name__ == "__main__":
     import uvicorn
 

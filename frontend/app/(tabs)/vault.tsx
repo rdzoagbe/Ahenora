@@ -34,6 +34,7 @@ import { CATEGORY_STATIC } from '../../src/documentCategories';
 import { useStore } from '../../src/store';
 
 import { api, logEvent, Entitlements, ExpiryAlert, FamilyMember, VaultDoc, VaultVisibility } from '../../src/api';
+import { offerUndo } from '../../src/trashUndo';
 import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
 import { refreshOutcome } from '../../src/refreshOutcome';
@@ -421,8 +422,10 @@ export default function Vault() {
     setDocs((prev) => prev.filter((d) => d.doc_id !== doc.doc_id));
     setPreview(null);
     try {
-      await api.deleteVaultDoc(doc.doc_id);
-      showToast(t('vault_document_deleted'), 'success');
+      const res = await api.deleteVaultDoc(doc.doc_id);
+      // In Recently deleted for 30 days, where it no longer counts toward the
+      // storage; "Annuler" brings it straight back (if it still fits).
+      offerUndo(showToast, t, t('vault_document_deleted'), { trashIds: [res?.trash_id] }, load);
     } catch (e: any) {
       logger.warn('Delete vault document failed:', e?.message || e);
       setDocs(previous);
@@ -1008,7 +1011,7 @@ export default function Vault() {
       />
 
       <LoadingOverlay visible={loading} label={t('vault_loading')} />
-      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />
     </SwipeableTabView>
   );
 }

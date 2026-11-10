@@ -16,6 +16,9 @@ export type ToastState = {
  * screen unmounted mid-toast set state on a gone component. Four screens each
  * carried their own timer-less copy of this; they now share it.
  */
+// A toast with a way back ("Annuler") stays long enough to reach for it.
+export const ACTION_TOAST_MS = 6000;
+
 export function useToast(duration = 2300) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -37,7 +40,7 @@ export function useToast(duration = 2300) {
     ) => {
       clear();
       setToast({ message, tone, action });
-      timer.current = setTimeout(() => setToast(null), duration);
+      timer.current = setTimeout(() => setToast(null), action ? Math.max(duration, ACTION_TOAST_MS) : duration);
     },
     [clear, duration],
   );

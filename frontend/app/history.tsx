@@ -13,6 +13,9 @@ import { activityPhrase } from '../src/activityPhrase';
 import { groupByWeek } from '../src/completedHistory';
 import { localeFor } from '../src/utils/date';
 import { logger } from '../src/logger';
+import AppToast from '../src/components/AppToast';
+import { useToast } from '../src/hooks/useToast';
+import { offerUndo } from '../src/trashUndo';
 
 /**
  * Everything that left Home, in one place, with a way back.
@@ -27,6 +30,7 @@ export default function HistoryRoute() {
   const ui = useUI();
   const router = useRouter();
   const { t, lang } = useStore();
+  const { toast, showToast } = useToast();
   const styles = useMemo(() => createStyles(ui), [ui]);
 
   const [loading, setLoading] = useState(true);
@@ -81,7 +85,8 @@ export default function HistoryRoute() {
         onPress: async () => {
           setDone((prev) => prev.filter((c) => c.card_id !== card.card_id));
           try {
-            await api.deleteCard(card.card_id);
+            const res = await api.deleteCard(card.card_id);
+            offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] }, load);
           } catch (e) {
             logger.warn('delete failed', e);
             Alert.alert(t('set_error'), t('set_delete_error'));
@@ -201,6 +206,7 @@ export default function HistoryRoute() {
           </View>
         ) : null}
       </ScrollView>
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />
     </SafeAreaView>
   );
 }
