@@ -14,7 +14,7 @@ jest.mock('expo-file-system/legacy', () => ({
   EncodingType: { Base64: 'base64' },
 }), { virtual: true });
 
-import { bareBase64, looksLikePdf, pickPdf, PDF_MAX_BYTES } from '../pickPdf';
+import { bareBase64, plainlyNotPdf, pickPdf, PDF_MAX_BYTES } from '../pickPdf';
 
 const root = path.join(__dirname, '..', '..', '..');
 const kitchen = fs.readFileSync(path.join(root, 'frontend', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
@@ -28,11 +28,16 @@ beforeEach(() => {
 });
 
 describe('what counts as a PDF', () => {
-  it('goes by the type, or by the name when the phone does not say the type', () => {
-    expect(looksLikePdf('liste.pdf', null)).toBe(true);
-    expect(looksLikePdf('LISTE.PDF', '')).toBe(true);
-    expect(looksLikePdf('scan', 'application/pdf')).toBe(true);
-    expect(looksLikePdf('photo.jpg', 'image/jpeg')).toBe(false);
+  it('turns away only what is plainly something else', () => {
+    expect(plainlyNotPdf('liste.pdf', null)).toBe(false);
+    expect(plainlyNotPdf('LISTE.PDF', '')).toBe(false);
+    expect(plainlyNotPdf('scan', 'application/pdf')).toBe(false);
+    expect(plainlyNotPdf('photo.jpg', 'image/jpeg')).toBe(true);
+  });
+
+  it('lets through a provider that says neither type nor name: the server reads the header', () => {
+    expect(plainlyNotPdf('Liste courses', null)).toBe(false);
+    expect(plainlyNotPdf('Liste courses', 'application/octet-stream')).toBe(false);
   });
 
   it('strips a data URL down to the base64 the server expects', () => {
@@ -53,6 +58,12 @@ describe('picking one', () => {
     await expect(pickPdf()).resolves.toEqual({ base64: 'JVBERi0x' });
     expect(mockGetDocument.mock.calls[0][0]).toMatchObject({ type: 'application/pdf', multiple: false });
     expect(mockReadAsString).toHaveBeenCalledWith('file:///cache/l.pdf', { encoding: 'base64' });
+  });
+
+  it('does not read the file while picking it, so the size is checked first', async () => {
+    mockGetDocument.mockResolvedValue({ canceled: true, assets: null });
+    await pickPdf();
+    expect(mockGetDocument.mock.calls[0][0]).toMatchObject({ base64: false });
   });
 
   it('a cancelled pick is nothing, not an error', async () => {
@@ -84,8 +95,18 @@ describe('the scan sheet', () => {
 
   it('sends the PDF to the shopping reader, into the same ticked review', () => {
     expect(api).toContain("body: { pdf_base64: pdfBase64 }");
-    expect(kitchen).toContain('const { items } = await api.scanShoppingPdf(picked.base64);');
-    expect(kitchen).toMatch(/scanShoppingPdf\(picked\.base64\);\s*setScanItems\(items\.map\(\(i\) => \(\{ \.\.\.i, checked: !i\.unsure \}\)\)\);/);
+    expect(kitchen).toContain("await readScan('pdf', () => api.scanShoppingPdf(base64));");
+    expect(kitchen).toContain("await readScan('photo', () => api.scanShoppingList(base64));");
+    // One review for both: unsure lines come unticked.
+    expect(kitchen).toMatch(/const \{ items \} = await read\(\);\s*setScanItems\(items\.map\(\(i\) => \(\{ \.\.\.i, checked: !i\.unsure \}\)\)\);/);
+  });
+
+  it('a file that would not open is not told as "no connection"', () => {
+    expect(kitchen).toMatch(/picked = await pickPdf\(\);\s*\} catch \(e: any\) \{[\s\S]{0,300}setScanError\(t\('scan_pdf_open_failed'\)\);/);
+  });
+
+  it('the server\'s "not a PDF" and "too large" are said as such', () => {
+    expect(kitchen).toContain("setScanError(t(e.status === 413 ? 'scan_pdf_too_large' : 'scan_pdf_not_pdf'));");
   });
 
   it('an empty allowance closes the sheet for a PDF exactly as for a photo', () => {
@@ -94,7 +115,7 @@ describe('the scan sheet', () => {
   });
 
   it('is worded in all four languages', () => {
-    for (const key of ['scan_pdf', 'scan_pdf_failed', 'scan_pdf_too_large', 'scan_pdf_not_pdf', 'scan_pdf_again', 'scan_note_pdf']) {
+    for (const key of ['scan_pdf', 'scan_pdf_failed', 'scan_pdf_too_large', 'scan_pdf_not_pdf', 'scan_pdf_open_failed', 'scan_pdf_again', 'scan_note_pdf']) {
       expect((i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length).toBe(4);
     }
     expect(i18n).toContain('scan_pdf: "Importer un PDF"');

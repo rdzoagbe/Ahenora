@@ -420,6 +420,18 @@ export default function Kitchen() {
     setShowScan(true);
   }, []);
 
+  // One way into the review for a photo and a PDF alike.
+  const readScan = useCallback(async (
+    source: 'photo' | 'pdf',
+    read: () => Promise<{ items: { name: string; unsure: boolean }[] }>,
+  ) => {
+    setScanPhase('reading');
+    setScanSource(source);
+    const { items } = await read();
+    setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
+    setScanPhase('review');
+  }, []);
+
   const scanFailed = useCallback((e: any, fallbackKey: string) => {
     setScanPhase('idle');
     // Out of AI allowance is not a failure of the app, and it must not be a
@@ -456,43 +468,47 @@ export default function Kitchen() {
       const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
       if (!base64) return;
 
-      setScanPhase('reading');
-      setScanSource('photo');
-      const { items } = await api.scanShoppingList(base64);
-      setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
-      setScanPhase('review');
+      await readScan('photo', () => api.scanShoppingList(base64));
     } catch (e: any) {
       scanFailed(e, 'scan_failed');
     }
-  }, [t, scanFailed]);
+  }, [t, readScan, scanFailed]);
 
   // A list that arrived as a PDF (an email, a school or club list, one typed
   // on a computer): read the same way, into the same ticked review.
   const pickScanPdf = useCallback(async () => {
     setScanError(null);
+    let picked: Awaited<ReturnType<typeof pickPdf>>;
     try {
-      const picked = await pickPdf();
-      if (!picked) return;
-      if ('problem' in picked) {
-        setScanError(t(picked.problem === 'too_large' ? 'scan_pdf_too_large'
-          : picked.problem === 'not_pdf' ? 'scan_pdf_not_pdf' : 'vault_files_update_needed'));
-        return;
-      }
-      setScanPhase('reading');
-      setScanSource('pdf');
-      const { items } = await api.scanShoppingPdf(picked.base64);
-      setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
-      setScanPhase('review');
+      picked = await pickPdf();
     } catch (e: any) {
-      // Too big or too many pages, said in the sheet's own words.
-      if (e?.status === 413) {
+      // Opening the file failed on this phone (an iCloud file not downloaded,
+      // a provider that went away): nothing was sent, so it is not the
+      // network's fault and must not be told as "no connection".
+      logger.warn('pickPdf failed:', e?.message || e);
+      setScanError(t('scan_pdf_open_failed'));
+      return;
+    }
+    if (!picked) return;
+    if ('problem' in picked) {
+      setScanError(t(picked.problem === 'too_large' ? 'scan_pdf_too_large'
+        : picked.problem === 'not_pdf' ? 'scan_pdf_not_pdf' : 'vault_files_update_needed'));
+      return;
+    }
+    const { base64 } = picked;
+    try {
+      await readScan('pdf', () => api.scanShoppingPdf(base64));
+    } catch (e: any) {
+      // The server's own reasons, said in the sheet's words: too big or too
+      // many pages; not a PDF after all (its header says otherwise).
+      if (e?.status === 413 || e?.status === 400) {
         setScanPhase('idle');
-        setScanError(t('scan_pdf_too_large'));
+        setScanError(t(e.status === 413 ? 'scan_pdf_too_large' : 'scan_pdf_not_pdf'));
         return;
       }
       scanFailed(e, 'scan_pdf_failed');
     }
-  }, [t, scanFailed]);
+  }, [t, readScan, scanFailed]);
 
   const toggleScanItem = useCallback((idx: number) => {
     setScanItems((prev) => prev.map((it, i) => (i === idx ? { ...it, checked: !it.checked } : it)));

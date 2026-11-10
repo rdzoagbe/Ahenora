@@ -11,7 +11,9 @@ Holds, in a real browser against the real server, on a French household:
     than another photo;
   * "Ajouter" puts exactly the ticked items on the list;
   * a file that is not a PDF, or one too heavy for a shopping list, is said
-    so in the sheet and never uploaded.
+    so in the sheet and never uploaded;
+  * a file called .pdf that is not one inside is told "not a PDF" by the
+    real server (its header), and the sheet says so — not "server trouble".
 
 The reading itself is stubbed: it is Gemini's, and the server's tests
 (tests/test_a_pdf_shopping_list_is_read.py) hold that side.
@@ -97,8 +99,11 @@ async def run(r, tok):
 
         async def route(ro):
             path = ro.request.url.split("/api/", 1)[1]
-            if path.startswith("shopping/scan"):
-                sent.append(json.loads(ro.request.post_data or "{}"))
+            body = json.loads(ro.request.post_data or "{}") if path.startswith("shopping/scan") else {}
+            # Only a real PDF is "read" here; anything else goes to the real
+            # server, which turns it away on its header before any model.
+            if path.startswith("shopping/scan") and base64.b64decode(body.get("pdf_base64", "")).startswith(b"%PDF-"):
+                sent.append(body)
                 await ro.fulfill(status=200, content_type="application/json", body=json.dumps(READ))
                 return
             resp = await ctx.request.fetch(
@@ -135,6 +140,13 @@ async def run(r, tok):
         await page.wait_for_timeout(800)
         body = await page.locator("body").inner_text()
         r["a_heavy_pdf_is_turned_away_before_upload"] = "trop long pour une liste de courses" in body and not sent
+
+        # Called .pdf, a PNG inside: the real server reads the header.
+        await pick(page, {"name": "liste.pdf", "mimeType": "application/pdf",
+                          "buffer": b"\x89PNG\r\n\x1a\n" + b"0" * 400})
+        await page.wait_for_timeout(1500)
+        body = await page.locator("body").inner_text()
+        r["a_renamed_picture_is_told_not_a_pdf_by_the_server"] = "Ce fichier n’est pas un PDF." in body and not sent
 
         # The real thing.
         await pick(page, {"name": "liste.pdf", "mimeType": "application/pdf", "buffer": PDF})

@@ -150,6 +150,23 @@ class APdfShoppingList(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.used(), 0)
 
+    def test_a_list_saved_many_times_is_counted_by_its_pages_not_its_saves(self):
+        # An incremental save appends a fresh copy of the page objects; three
+        # pages saved five times are still three pages.
+        body = b"%PDF-1.7\n" + b"".join(
+            b"%d 0 obj << /Type /Page /Parent 2 0 R >> endobj\n" % n
+            for _ in range(5) for n in (3, 4, 5))
+        body += b"%" + b"x" * 400 + b"\n%%EOF\n"
+        out = self.scan({"pdf_base64": base64.b64encode(body).decode()})
+        self.assertEqual(len(out["items"]), 3)
+
+    def test_counting_pages_stays_quick_on_a_hostile_file(self):
+        import time
+        for hostile in ((b"1 0 obj " * 700000), (b"1 0 obj " + b"/Type /Page " * 400000), os.urandom(5 << 20)):
+            started = time.monotonic()
+            server.pdf_page_count_seen(hostile[:5 << 20], server.SHOPPING_PDF_MAX_PAGES + 1)
+            self.assertLess(time.monotonic() - started, 0.5)
+
     def test_ten_pages_is_still_allowed(self):
         self.assertEqual(len(self.scan({"pdf_base64": pdf(pages=server.SHOPPING_PDF_MAX_PAGES)})["items"]), 3)
 
@@ -172,6 +189,25 @@ class APdfShoppingList(unittest.TestCase):
         server._gemini_generate = refused
         self.assertEqual(self.refused({"pdf_base64": pdf()}), 422)
         self.assertEqual(self.used(), 0)
+
+    def test_a_pdf_the_model_will_not_take_is_this_files_problem_not_an_outage(self):
+        # Password-protected or damaged: Gemini answers 400 INVALID_ARGUMENT.
+        # That is a 422 about the file, which the app says as "could not read
+        # that PDF", never the 502 it says as "server trouble".
+        async def invalid(contents, system="", **kwargs):
+            raise RuntimeError("400 INVALID_ARGUMENT. {'error': {'code': 400}}")
+        server._gemini_generate = invalid
+        self.assertEqual(self.refused({"pdf_base64": pdf()}), 422)
+        self.assertEqual(self.used(), 0)
+
+    def test_failures_name_the_pdf_not_a_photo(self):
+        async def refused(contents, system="", **kwargs):
+            return '{"refused": true}'
+        server._gemini_generate = refused
+        with self.assertRaises(HTTPException) as caught:
+            self.scan({"pdf_base64": pdf()})
+        self.assertIn("PDF", caught.exception.detail)
+        self.assertNotIn("photo", caught.exception.detail)
 
     def test_a_model_failure_costs_nothing(self):
         async def broken(contents, system="", **kwargs):

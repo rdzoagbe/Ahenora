@@ -17,8 +17,16 @@ export type PickedPdf =
   | { problem: 'too_large' | 'not_pdf' | 'update_needed' }
   | null; // cancelled
 
-export function looksLikePdf(name?: string | null, mimeType?: string | null): boolean {
-  return (mimeType || '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(name || '');
+/**
+ * Only what is plainly something else is turned away here. The picker was
+ * already asked for PDFs, and a document provider (Drive, a scanner app, a
+ * mail attachment) can hand one back with no type and no ".pdf" in its name;
+ * the server reads the file's own header and has the last word.
+ */
+export function plainlyNotPdf(name?: string | null, mimeType?: string | null): boolean {
+  const type = (mimeType || '').toLowerCase();
+  if (type === 'application/pdf' || /\.pdf$/i.test(name || '')) return false;
+  return type !== '' && type !== 'application/octet-stream';
 }
 
 /** "data:application/pdf;base64,JVBER…" → "JVBER…"; bare base64 is kept. */
@@ -41,18 +49,29 @@ export async function pickPdf(): Promise<PickedPdf> {
     type: 'application/pdf',
     copyToCacheDirectory: true,
     multiple: false,
-    // On the web the picker reads the file itself; on a phone it is read
-    // from the cache copy below.
-    base64: web,
+    // Not read yet: the size is checked first, so a 300 MB file is turned
+    // away without being loaded into memory as text.
+    base64: false,
   });
   if (res?.canceled || !res?.assets?.[0]) return null;
   const asset = res.assets[0];
-  if (!looksLikePdf(asset.name, asset.mimeType)) return { problem: 'not_pdf' };
+  if (plainlyNotPdf(asset.name, asset.mimeType)) return { problem: 'not_pdf' };
   if (asset.size && asset.size > PDF_MAX_BYTES) return { problem: 'too_large' };
   if (web) {
-    return asset.base64 ? { base64: bareBase64(asset.base64) } : null;
+    const file: Blob | undefined = asset.file;
+    if (!file) return null;
+    return { base64: bareBase64(await readAsDataUrl(file)) };
   }
   const FS = require('expo-file-system/legacy');
   const base64 = await FS.readAsStringAsync(asset.uri, { encoding: FS.EncodingType.Base64 });
   return { base64 };
+}
+
+function readAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.readAsDataURL(file);
+  });
 }

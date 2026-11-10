@@ -17502,7 +17502,44 @@ async def delete_shopping_history(history_id: str, user=Depends(require_user)):
 # a shopping list needs it.
 SHOPPING_PDF_MAX_BYTES = 5 * 1024 * 1024
 SHOPPING_PDF_MAX_PAGES = 10
-_PDF_PAGE_OBJECT = re.compile(rb"/Type[ \t\r\n]{0,8}/Page(?![a-zA-Z])")
+# "12 0 obj << /Type /Page ..." — the object NUMBER is what is counted, so a
+# PDF saved incrementally (each save appends a fresh copy of the pages it
+# touched) is not counted once per save. Two simple patterns rather than one
+# clever one: a single expression spanning "obj ... /Page" backtracks for
+# seconds on a hostile file, and this runs on the request's event loop.
+_PDF_PAGE_TYPE = re.compile(rb"/Type[ \t\r\n]{0,8}/Page(?![a-zA-Z])")
+_PDF_OBJ_HEADER = re.compile(rb"(\d{1,10})[ \t\r\n]+\d{1,5}[ \t\r\n]+obj\b")
+# More page markers than any shopping list, saved any number of times, has.
+_PDF_PAGE_MARKERS_LOOKED_AT = 2000
+
+# How google-genai words a request the model will not take: "400
+# INVALID_ARGUMENT. {...}".
+_MODEL_REFUSED_INPUT = re.compile(r"^\s*400\b|INVALID_ARGUMENT")
+
+
+def pdf_page_count_seen(data: bytes, stop_after: int) -> int:
+    """Distinct page objects visible in the clear, counting no further than
+    `stop_after` (the caller only needs to know whether it is over).
+
+    Each "/Type /Page" is tied to the object it sits in by looking back for
+    that object's "N G obj" header; a marker with no header in reach counts
+    on its own, which can only over-count.
+    """
+    seen = set()
+    for index, marker in enumerate(_PDF_PAGE_TYPE.finditer(data)):
+        if index >= _PDF_PAGE_MARKERS_LOOKED_AT:
+            return stop_after
+        window = data[max(0, marker.start() - 512):marker.start()]
+        closed = window.rfind(b"endobj")
+        if closed >= 0:
+            window = window[closed + 6:]
+        header = None
+        for header in _PDF_OBJ_HEADER.finditer(window):
+            pass
+        seen.add(header.group(1) if header else b"@%d" % marker.start())
+        if len(seen) >= stop_after:
+            break
+    return len(seen)
 
 
 def shopping_pdf_bytes(pdf_b64: str) -> bytes:
@@ -17511,10 +17548,16 @@ def shopping_pdf_bytes(pdf_b64: str) -> bytes:
     The page count is read from the page objects the file shows in the clear.
     A PDF that packs them into compressed object streams shows none, so this
     is a ceiling that catches the ordinary long document, not a guarantee;
-    the byte limit is the hard bound.
+    the byte limit is the hard bound. (A real parser would count those too,
+    at the price of a new dependency parsing untrusted files on the server;
+    what gets past this is bounded by the 5 MB, read once on the fast model,
+    and still counted as one of the family's scans.)
+
+    Not _decode_doc_bytes: that one decodes leniently, and here a file that
+    is not valid base64 is told so rather than read as whatever it decodes to.
     """
     if "," in pdf_b64:
-        pdf_b64 = pdf_b64.split(",")[-1]
+        pdf_b64 = pdf_b64.split(",", 1)[1]
     if len(pdf_b64) < 100:
         raise HTTPException(400, "No PDF attached.")
     if len(pdf_b64) > (SHOPPING_PDF_MAX_BYTES * 4) // 3 + 4:
@@ -17526,7 +17569,7 @@ def shopping_pdf_bytes(pdf_b64: str) -> bytes:
     # The header may sit after a little junk (the spec allows 1024 bytes).
     if b"%PDF-" not in data[:1024]:
         raise HTTPException(400, "That file is not a PDF.")
-    if len(_PDF_PAGE_OBJECT.findall(data)) > SHOPPING_PDF_MAX_PAGES:
+    if pdf_page_count_seen(data, SHOPPING_PDF_MAX_PAGES + 1) > SHOPPING_PDF_MAX_PAGES:
         raise HTTPException(413, "That PDF has too many pages.")
     return data
 
@@ -17562,8 +17605,9 @@ async def scan_shopping_list(
         if len(image_b64) > MAX_IMAGE_B64_CHARS:
             raise HTTPException(413, "That photo is too large.")
 
+    kind = "PDF" if pdf_bytes is not None else "photo"
     if not GOOGLE_API_KEY or (pdf_bytes is not None and genai_types is None):
-        raise HTTPException(503, "Photo scanning is unavailable right now.")
+        raise HTTPException(503, f"{'PDF' if pdf_bytes is not None else 'Photo'} scanning is unavailable right now.")
 
     sub = await build_subscription(user["family_id"])
     family = await get_family_doc(user["family_id"])
@@ -17597,11 +17641,16 @@ async def scan_shopping_list(
             raise UnsafeRecipe("unparseable")
         items = validate_shopping_scan(parsed)
     except UnsafeRecipe as exc:
-        log.info("shopping scan rejected by safety gate: %s", exc.reason)
-        raise HTTPException(422, "We could not read a shopping list in that photo.")
+        log.info("shopping scan (%s) rejected by safety gate: %s", kind, exc.reason)
+        raise HTTPException(422, f"We could not read a shopping list in that {kind}.")
     except Exception as exc:
-        log.warning("shopping scan failed: %s", exc)
-        raise HTTPException(502, "We could not read a shopping list in that photo.")
+        log.warning("shopping scan (%s) failed: %s", kind, exc)
+        # A PDF the model refuses as input (password-protected, damaged) is
+        # this file's problem, not an outage: say it about the file, and do
+        # not send the person to retry the same thing.
+        if pdf_bytes is not None and _MODEL_REFUSED_INPUT.search(str(exc)):
+            raise HTTPException(422, "We could not read a shopping list in that PDF.")
+        raise HTTPException(502, f"We could not read a shopping list in that {kind}.")
 
     if not is_admin_user(user):
         # Guarded so two concurrent scans cannot both push the counter past the
