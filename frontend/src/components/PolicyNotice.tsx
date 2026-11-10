@@ -81,7 +81,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   },
   ghostText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 13 },
   primary: {
-    height: 34, paddingHorizontal: 14, borderRadius: 17, backgroundColor: ui.orange,
+    height: 34, paddingHorizontal: 14, borderRadius: 17, backgroundColor: ui.orangeDeep,
     alignItems: 'center', justifyContent: 'center',
   },
   primaryText: { color: '#fff', fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
