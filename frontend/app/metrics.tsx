@@ -707,10 +707,42 @@ export default function MetricsScreen() {
                     </View>
                   ) : null}
                 </View>
+                {/* A shopping list the model ANSWERED but that came back with
+                    no list is not a failed call, so the rate above never shows
+                    it. Counted by reason (backend _SCAN_UNREAD_REASONS). */}
+                {(() => {
+                  const reasons: [string, string][] = [
+                    ['not_a_list', 'Model saw no list'],
+                    ['nothing_readable', 'Nothing readable'],
+                    ['unparseable', 'Answer not readable'],
+                    ['blocked', 'Blocked content'],
+                    ['pdf_unreadable', 'PDF the model would not open'],
+                    ['other', 'Other'],
+                  ];
+                  const counts = reasons.map(([key, label]) =>
+                    [label, stats.eventTotals.get(`shopping_scan_unread_${key}`) || 0] as const);
+                  const total = counts.reduce((a, [, n]) => a + n, 0);
+                  return (
+                    <View style={styles.card}>
+                      <View style={[styles.eventRow, { borderTopWidth: 0 }]}>
+                        <Text style={styles.eventLabel}>Shopping lists not read (14 days)</Text>
+                        <Text style={[styles.eventCount, total > 0 && { color: ui.danger }]}>{total}</Text>
+                      </View>
+                      {counts.filter(([, n]) => n > 0).map(([label, n]) => (
+                        <View key={label} style={styles.eventRow}>
+                          <Text style={styles.eventLabel}>{label}</Text>
+                          <Text style={styles.eventCount}>{n}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })()}
                 <Text style={styles.hint}>
                   Covers every AI feature (recipes, scans, suggestions) — they all
                   route through one call path. A dropping success rate or a
-                  standing last-error means users are hitting failures.
+                  standing last-error means users are hitting failures. Shopping
+                  lists the model answered but that came back with no list are
+                  counted separately, by reason.
                 </Text>
               </>
             );

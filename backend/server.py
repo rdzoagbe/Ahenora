@@ -87,6 +87,8 @@ from ai_safety import (
     validate_chef_answer,
     SHOPPING_SCAN_SYSTEM_PROMPT,
     validate_shopping_scan,
+    read_shopping_scan,
+    SHOPPING_SCAN_UNREAD,
     RECEIPT_SCAN_SYSTEM_PROMPT,
     validate_receipt_scan,
     RECEIPT_UNITS,
@@ -17669,9 +17671,13 @@ async def scan_shopping_list(
         parsed = extract_json(text)
         if parsed is None:
             raise UnsafeRecipe("unparseable")
-        items = validate_shopping_scan(parsed)
+        items, left_out = read_shopping_scan(parsed)
     except UnsafeRecipe as exc:
         log.info("shopping scan (%s) rejected by safety gate: %s", kind, exc.reason)
+        # Counted by reason, so the Metrics screen can say WHY lists go
+        # unread: a 422 is not an error, and the log line alone was the only
+        # trace when a real one was reported.
+        await _bump_metric(f"shopping_scan_unread_{SHOPPING_SCAN_UNREAD.get(exc.reason, 'other')}")
         raise HTTPException(422, f"We could not read a shopping list in that {kind}.")
     except Exception as exc:
         log.warning("shopping scan (%s) failed: %s", kind, exc)
@@ -17679,6 +17685,7 @@ async def scan_shopping_list(
         # this file's problem, not an outage: say it about the file, and do
         # not send the person to retry the same thing.
         if pdf_bytes is not None and _MODEL_REFUSED_INPUT.search(str(exc)):
+            await _bump_metric("shopping_scan_unread_pdf_unreadable")
             raise HTTPException(422, "We could not read a shopping list in that PDF.")
         raise HTTPException(502, f"We could not read a shopping list in that {kind}.")
 
@@ -17693,7 +17700,7 @@ async def scan_shopping_list(
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
-    return {"items": items}
+    return {"items": items, "left_out": left_out}
 
 
 

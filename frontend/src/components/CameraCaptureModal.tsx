@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
+import { pickPicture } from '../pickPicture';
 import {
   X, Sparkles, Camera, Image as ImageIcon, FileScan, Check, ChefHat, ShoppingCart, Receipt, Lock,
 } from 'lucide-react-native';
@@ -105,13 +106,14 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
     setErr(null);
 
     try {
-      if (Platform.OS !== 'web') {
-        if (source === 'camera') {
-          const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-        } else {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
+      // The camera's permission is asked here, before the OS scanner, which
+      // drives the camera too; pickPicture asks again only as a no-op.
+      if (Platform.OS !== 'web' && source === 'camera') {
+        const p = await ImagePicker.requestCameraPermissionsAsync();
+        if (!p.granted) {
+          setErr(t('cam_camera_permission_denied'));
+          setPhase('error');
+          return;
         }
       }
 
@@ -150,23 +152,14 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
       // also why extraction was mediocre: the model was reading a photo of a
       // TABLE with a letter on it. The server crops to the document after
       // this, so the gallery path and web still end up with the page.
-      const shot = {
-        base64: true,
-        quality: 0.55,
-        allowsEditing: true,
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      } as const;
-      const res =
-        source === 'camera'
-          ? await ImagePicker.launchCameraAsync(shot)
-          : await ImagePicker.launchImageLibraryAsync(shot);
-
-      if (res.canceled || !res.assets?.[0]) return;
-
-      const asset = res.assets[0];
-      const imageBase64 = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-
-      await runScan(imageBase64);
+      const picked = await pickPicture(source, { where: '/vision/extract', allowsEditing: true });
+      if (!picked) return;
+      if ('problem' in picked) {
+        setErr(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
+        setPhase('error');
+        return;
+      }
+      await runScan(`data:image/jpeg;base64,${picked.base64}`);
     } catch (e: any) {
       setErr(apiErrorText(e, t, 'cam_could_not_open_camera'));
       setPhase('error');

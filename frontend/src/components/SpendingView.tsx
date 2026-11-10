@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View,
+  ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 import { Camera, Plus, Trash2, TrendingDown, TrendingUp, Scale, Check, ShoppingCart } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { pickPicture, type PictureSource } from '../pickPicture';
 
 import { PressScale } from './PressScale';
 import ErrorState from './ErrorState';
@@ -197,30 +197,19 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
    * scan — a misread PRICE is worse than a misread item, because it does not
    * look wrong. It just quietly makes every later comparison false.
    */
-  const captureReceipt = useCallback(async (source: 'camera' | 'library') => {
+  const captureReceipt = useCallback(async (source: PictureSource) => {
     setScanError(null);
+    // allowsEditing for the same reason as the document scanner: a receipt
+    // cropped to the receipt is a fraction of the bytes and a far easier read
+    // than a photo of a whole worktop.
+    const picked = await pickPicture(source, { where: '/expenses/scan-receipt', allowsEditing: true });
+    if (!picked) return;
+    if ('problem' in picked) {
+      setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
+      return;
+    }
+    const { base64 } = picked;
     try {
-      if (Platform.OS !== 'web') {
-        const perm = source === 'camera'
-          ? await ImagePicker.requestCameraPermissionsAsync()
-          : await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) {
-          throw new Error(t(source === 'camera'
-            ? 'cam_camera_permission_denied' : 'cam_gallery_permission_denied'));
-        }
-      }
-      const res = source === 'camera'
-        // allowsEditing for the same reason as the document scanner: a
-        // receipt cropped to the receipt is a fraction of the bytes and a
-        // far easier read than a photo of a whole worktop.
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, allowsEditing: true, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, allowsEditing: true, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (res.canceled || !res.assets?.[0]) return;
-      const asset = res.assets[0];
-      // Native hands back base64; web hands back a data URL instead.
-      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64) return;
-
       setScanning(true);
       const read = await api.scanReceipt(base64);
       // The last receipt's note goes only once this one has been read: a

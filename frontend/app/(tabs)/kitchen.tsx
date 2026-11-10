@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal, Platform } from 'react-native';
+import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useClientValue } from '../../src/hooks/useClientValue';
@@ -22,7 +21,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
+import { api, reportPictureProblem, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices, ShopDue } from '../../src/api';
 import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed, findNameMatch, fold } from '../../src/shopPrices';
 import { formatMoney } from '../../src/money';
@@ -39,6 +38,7 @@ import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
 import { pickListFile } from '../../src/pickListFile';
+import { pickPicture, type PictureSource } from '../../src/pickPicture';
 import { SECTION_ART } from '../../src/sectionArt';
 
 type KitchenView = 'shop' | 'meal' | 'spend';
@@ -413,6 +413,8 @@ export default function Kitchen() {
   // What was read, so the review says "your PDF" rather than "your photo",
   // and offers another file rather than another photo.
   const [scanSource, setScanSource] = useState<'photo' | 'pdf' | 'image_file'>('photo');
+  // Items read past the server's limit: said in the review, never dropped quietly.
+  const [scanLeftOut, setScanLeftOut] = useState(0);
 
   const openScan = useCallback(() => {
     setScanPhase('idle');
@@ -424,12 +426,14 @@ export default function Kitchen() {
   // One way into the review for a photo and a PDF alike.
   const readScan = useCallback(async (
     source: 'photo' | 'pdf' | 'image_file',
-    read: () => Promise<{ items: { name: string; unsure: boolean }[] }>,
+    read: () => Promise<{ items: { name: string; unsure: boolean }[]; left_out?: number }>,
   ) => {
     setScanPhase('reading');
     setScanSource(source);
-    const { items } = await read();
+    setScanLeftOut(0);
+    const { items, left_out: leftOut } = await read();
     setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
+    setScanLeftOut(leftOut ?? 0);
     setScanPhase('review');
   }, []);
 
@@ -448,29 +452,24 @@ export default function Kitchen() {
     setScanError(apiErrorText(e, t, fallbackKey));
   }, [t, showToast]);
 
-  const pickScan = useCallback(async (source: 'camera' | 'library') => {
+  const pickScan = useCallback(async (source: PictureSource) => {
     setScanError(null);
+    // Getting the picture and reading it fail for different reasons and are
+    // told differently (pickPicture.ts says why).
+    const picked = await pickPicture(source, { where: '/shopping/scan' });
+    if (!picked) return;
+    if ('problem' in picked) {
+      setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
+      return;
+    }
     try {
-      if (Platform.OS !== 'web') {
-        if (source === 'camera') {
-          const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-        } else {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
-        }
-      }
-      const res = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (res.canceled || !res.assets?.[0]) return;
-      // Native supplies base64 directly; web supplies a data URL instead.
-      const asset = res.assets[0];
-      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64) return;
-
-      await readScan('photo', () => api.scanShoppingList(base64));
+      await readScan('photo', () => api.scanShoppingList(picked.base64));
     } catch (e: any) {
+      // A 4xx answer, kept for the admin panel: the server does not log it as
+      // an error, and request() already reports a 5xx.
+      if (e?.status >= 400 && e.status < 500 && e.status !== 402) {
+        reportPictureProblem('/shopping/scan', `${source} read: status ${e.status}`);
+      }
       scanFailed(e, 'scan_failed');
     }
   }, [t, readScan, scanFailed]);
@@ -576,28 +575,17 @@ export default function Kitchen() {
     setShowCapture(true);
   }, []);
 
-  const pickCapture = useCallback(async (source: 'camera' | 'library') => {
+  const pickCapture = useCallback(async (source: PictureSource) => {
     setCaptureError(null);
+    const picked = await pickPicture(source, { where: '/meals/capture' });
+    if (!picked) return;
+    if ('problem' in picked) {
+      setCaptureError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
+      return;
+    }
     try {
-      if (Platform.OS !== 'web') {
-        if (source === 'camera') {
-          const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-        } else {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
-        }
-      }
-      const res = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (res.canceled || !res.assets?.[0]) return;
-      const asset = res.assets[0];
-      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64) return;
-
       setCapturePhase('reading');
-      const { captured: recipe } = await api.captureRecipe(base64);
+      const { captured: recipe } = await api.captureRecipe(picked.base64);
       setCaptured(recipe);
       setCapturePhase('review');
     } catch (e: any) {
@@ -3125,6 +3113,16 @@ export default function Kitchen() {
         ) : scanPhase === 'review' ? (
           <>
             <Text style={styles.suggestSub}>{scanItems.length === 1 ? t('scan_sub_one') : t('scan_sub', { n: scanItems.length })}</Text>
+            {scanLeftOut > 0 && scanItems.length > 0 ? (
+              // Information on a read that worked, not a failure: the amber
+              // of "hard to read", not the red of an error. Names the last
+              // item read, so it is plain where to carry on by hand.
+              <Text testID="scan-left-out" style={styles.scanUnsure}>
+                {scanLeftOut === 1
+                  ? t('scan_left_out_one', { last: scanItems[scanItems.length - 1].name })
+                  : t('scan_left_out', { n: scanLeftOut, last: scanItems[scanItems.length - 1].name })}
+              </Text>
+            ) : null}
             {scanItems.map((item, idx) => (
               <PressScale
                 key={`${item.name}-${idx}`}
