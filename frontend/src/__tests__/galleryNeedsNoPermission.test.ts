@@ -28,6 +28,8 @@ jest.mock('expo-file-system/legacy', () => ({
   EncodingType: { Base64: 'base64' },
 }), { virtual: true });
 jest.mock('../api', () => ({ reportPictureProblem: (...a: unknown[]) => mockReport(...a) }));
+const mockScanPages = jest.fn();
+jest.mock('../documentScanner', () => ({ scanDocumentPages: (...a: unknown[]) => mockScanPages(...a) }));
 
 import { pickPicture } from '../pickPicture';
 
@@ -35,7 +37,7 @@ const chosen = (asset: Record<string, unknown>) => ({ canceled: false, assets: [
 
 beforeEach(() => {
   mockOS = 'android';
-  [mockCameraPermission, mockLibraryPermission, mockLaunchCamera, mockLaunchLibrary, mockReadAsString, mockReport]
+  [mockCameraPermission, mockLibraryPermission, mockLaunchCamera, mockLaunchLibrary, mockReadAsString, mockReport, mockScanPages]
     .forEach((m) => m.mockReset());
   mockCameraPermission.mockResolvedValue({ granted: true });
 });
@@ -44,7 +46,7 @@ describe('the gallery', () => {
   it('opens without asking for any permission', async () => {
     mockLaunchLibrary.mockResolvedValue(chosen({ base64: 'AAAA', fileName: 'liste.jpg' }));
     await expect(pickPicture('library', { where: '/shopping/scan' }))
-      .resolves.toEqual({ base64: 'AAAA', fileName: 'liste.jpg' });
+      .resolves.toEqual({ base64: 'AAAA', fileName: 'liste.jpg', pages: ['AAAA'], dropped: 0 });
     expect(mockLibraryPermission).not.toHaveBeenCalled();
     expect(mockCameraPermission).not.toHaveBeenCalled();
   });
@@ -94,6 +96,88 @@ describe('the camera', () => {
     mockLaunchCamera.mockResolvedValue(chosen({ base64: 'DDDD' }));
     await pickPicture('camera', { where: '/expenses/scan-receipt', allowsEditing: true, quality: 0.6 });
     expect(mockLaunchCamera.mock.calls[0][0]).toMatchObject({ base64: true, allowsEditing: true, quality: 0.6 });
+  });
+});
+
+describe('the document scanner', () => {
+  it('frames the paper itself: pages come back read, top to bottom', async () => {
+    mockScanPages.mockResolvedValue({ kind: 'scanned', uris: ['file:///s/1.jpg', 'file:///s/2.jpg'] });
+    mockReadAsString.mockImplementation(async (uri: string) => (uri.endsWith('1.jpg') ? 'P1' : 'P2'));
+    await expect(pickPicture('camera', { where: '/expenses/scan-receipt', scanner: { maxPages: 3 } }))
+      .resolves.toEqual({ base64: 'P1', fileName: null, pages: ['P1', 'P2'], dropped: 0 });
+    expect(mockScanPages).toHaveBeenCalledWith(3);
+    expect(mockLaunchCamera).not.toHaveBeenCalled();
+  });
+
+  it('keeps no more pages than asked, and counts the rest (an iPhone has no cap)', async () => {
+    mockOS = 'ios';
+    mockScanPages.mockResolvedValue({ kind: 'scanned', uris: ['a', 'b', 'c', 'd', 'e'] });
+    mockReadAsString.mockImplementation(async (uri: string) => `P-${uri}`);
+    await expect(pickPicture('camera', { where: '/expenses/scan-receipt', scanner: { maxPages: 3 } }))
+      .resolves.toEqual({ base64: 'P-a', fileName: null, pages: ['P-a', 'P-b', 'P-c'], dropped: 2 });
+    expect(mockReadAsString).toHaveBeenCalledTimes(3);   // the dropped pages are not even read
+  });
+
+  it("opens Android's scanner without asking for the app's own camera permission", async () => {
+    mockCameraPermission.mockResolvedValue({ granted: false });
+    mockScanPages.mockResolvedValue({ kind: 'scanned', uris: ['file:///s/1.jpg'] });
+    mockReadAsString.mockResolvedValue('P1');
+    await expect(pickPicture('camera', { where: '/shopping/scan', scanner: { maxPages: 1 } }))
+      .resolves.toMatchObject({ pages: ['P1'] });
+    expect(mockCameraPermission).not.toHaveBeenCalled();
+  });
+
+  it('backing out of the scanner is nothing, and no second camera opens', async () => {
+    mockScanPages.mockResolvedValue({ kind: 'cancelled' });
+    await expect(pickPicture('camera', { where: '/shopping/scan', scanner: { maxPages: 1 } })).resolves.toBeNull();
+    expect(mockLaunchCamera).not.toHaveBeenCalled();
+  });
+
+  it('where there is no scanner, the plain camera opens as before', async () => {
+    mockScanPages.mockResolvedValue({ kind: 'unavailable' });
+    mockLaunchCamera.mockResolvedValue(chosen({ base64: 'CAM' }));
+    await expect(pickPicture('camera', { where: '/shopping/scan', scanner: { maxPages: 1 } }))
+      .resolves.toMatchObject({ base64: 'CAM', pages: ['CAM'], dropped: 0 });
+  });
+
+  it('asks an iPhone for the camera first, and a refusal is the named problem', async () => {
+    mockOS = 'ios';
+    mockCameraPermission.mockResolvedValue({ granted: false });
+    await expect(pickPicture('camera', { where: '/shopping/scan', scanner: { maxPages: 1 } }))
+      .resolves.toEqual({ problem: 'camera_denied' });
+    expect(mockScanPages).not.toHaveBeenCalled();
+  });
+
+  it('is never used for the gallery, or on the web', async () => {
+    mockLaunchLibrary.mockResolvedValue(chosen({ base64: 'LIB' }));
+    await pickPicture('library', { where: '/shopping/scan', scanner: { maxPages: 1 } });
+    mockOS = 'web';
+    mockLaunchCamera.mockResolvedValue(chosen({ base64: null, uri: 'data:image/png;base64,WEB' }));
+    await pickPicture('camera', { where: '/shopping/scan', scanner: { maxPages: 1 } });
+    expect(mockScanPages).not.toHaveBeenCalled();
+  });
+
+  it('a scanned page that cannot be read is "unreadable", and reported', async () => {
+    mockScanPages.mockResolvedValue({ kind: 'scanned', uris: ['file:///s/1.jpg'] });
+    mockReadAsString.mockRejectedValue(new Error('gone'));
+    await expect(pickPicture('camera', { where: '/shopping/scan', scanner: { maxPages: 1 } }))
+      .resolves.toEqual({ problem: 'unreadable' });
+    expect(mockReport).toHaveBeenCalledWith('/shopping/scan', 'camera: gone');
+  });
+
+  it('is what the shopping-list, recipe, receipt and Home cameras open', () => {
+    const kitchen = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
+    const camera = fs.readFileSync(path.join(__dirname, '..', 'components', 'CameraCaptureModal.tsx'), 'utf8');
+    expect(kitchen).toContain("pickPicture(source, { where: '/shopping/scan', scanner: { maxPages: 1 } })");
+    expect(kitchen).toContain("pickPicture(source, { where: '/meals/capture', scanner: { maxPages: 1 } })");
+    expect(camera).toContain("pickPicture(source, { where: '/vision/extract', allowsEditing: true, scanner: { maxPages: 1 } })");
+    // And says so when an iPhone shot more pages than are read.
+    expect((kitchen.match(/if \(picked\.dropped > 0\) showToast\(t\('scan_first_page_only'\), 'info'\);/g) || []).length).toBe(2);
+  });
+
+  it('is only ever reached through the guarded wrapper', () => {
+    const camera = fs.readFileSync(path.join(__dirname, '..', 'components', 'CameraCaptureModal.tsx'), 'utf8');
+    expect(camera).not.toContain('scanDocument(');
   });
 });
 

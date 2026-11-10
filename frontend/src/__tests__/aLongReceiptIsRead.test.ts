@@ -19,8 +19,8 @@ describe('a receipt in parts', () => {
   });
 
   it('reads the parts so far together with the new one', () => {
-    expect(SPENDING).toContain('const pictures = [...parts, base64];');
-    expect(SPENDING).toContain("await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous);");
+    expect(SPENDING).toContain('const pictures = [...parts, ...got.pages];');
+    expect(SPENDING).toContain("await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous, got.dropped);");
   });
 
   it('sends the token from the earlier read, so the rest is not a second scan', () => {
@@ -54,6 +54,23 @@ describe('a receipt in parts', () => {
   it('forgets the parts when the receipt is saved or put away', () => {
     expect(SPENDING).toContain('setScan(null); setKeep([]); setParts([]);');
     expect(SPENDING).toMatch(/setScan\(null\);\s*setParts\(\[\]\);/);
+  });
+});
+
+describe('the scanner', () => {
+  it('shoots a long receipt in pages, up to what one receipt can be read from', () => {
+    expect(SPENDING).toContain("where: '/expenses/scan-receipt', allowsEditing: true, scanner: { maxPages: room },");
+    expect(SPENDING).toContain('const got = await pickReceiptPages(source, RECEIPT_MAX_PARTS);');
+    expect(SPENDING).toContain("await readReceipt(() => api.scanReceipt(pages), pages, 'photo', undefined, dropped);");
+  });
+
+  it('adds only as many pages as there is room for, and says when an iPhone gave more', () => {
+    expect(SPENDING).toContain('const room = (scan?.max_parts ?? RECEIPT_MAX_PARTS) - parts.length;');
+    // Said only once the read has worked, with how many pages it was read from.
+    expect(SPENDING).toContain('setPagesCapped(dropped > 0 ? pictures.length : 0);');
+    const body = SPENDING.slice(SPENDING.indexOf('const readReceipt = useCallback'), SPENDING.indexOf('const pickReceiptPages'));
+    expect(body.indexOf('setPagesCapped(dropped > 0')).toBeLessThan(body.indexOf('} catch (e: any) {'));
+    expect((I18N.match(/^\s*exp_scan_pages_capped:/gm) || []).length).toBe(4);
   });
 });
 

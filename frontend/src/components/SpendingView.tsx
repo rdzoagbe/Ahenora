@@ -130,6 +130,8 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   // The photos the receipt on review was read from, top to bottom: the next
   // part is read together with them. Empty for a PDF.
   const [parts, setParts] = useState<string[]>([]);
+  // More pages were scanned than one receipt can be read from: how many were.
+  const [pagesCapped, setPagesCapped] = useState(0);
   const [keep, setKeep] = useState<boolean[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
   // The shopping list, read when a receipt is scanned, so the review can show
@@ -225,6 +227,8 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     // The review this read continues ("Ajouter la suite"): what the person
     // already decided there is kept, not thrown away by the new read.
     previous?: { scan: ScannedReceipt; keep: boolean[]; shop: string; amount: string; when: string },
+    // Pages an iPhone's scanner shot past what one receipt is read from.
+    dropped = 0,
   ) => {
     try {
       setScanning(true);
@@ -234,6 +238,9 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setTicked(null);
       setScan(result);
       setParts(pictures);
+      // Said about THIS read only: how many pages it was read from, when more
+      // were shot. Any other read (a file, a part that fitted) clears it.
+      setPagesCapped(dropped > 0 ? pictures.length : 0);
       setUntick(new Set());
       // Only for the review: without the list, nothing is offered to tick.
       api.listShopping().then(setListItems).catch(() => setListItems([]));
@@ -273,22 +280,33 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   // allowsEditing for the same reason as the document scanner: a receipt
   // cropped to the receipt is a fraction of the bytes and a far easier read
   // than a photo of a whole worktop.
-  const pickReceiptPhoto = useCallback(async (source: PictureSource): Promise<string | null> => {
-    const picked = await pickPicture(source, { where: '/expenses/scan-receipt', allowsEditing: true });
+  // The camera is the phone's document scanner: it frames the receipt itself,
+  // straightens it, and lets a long one be shot in up to `room` pages with
+  // its own "add a page" and "done" buttons, all read as one receipt. The
+  // plain camera (web, a build without the scanner) keeps the system crop
+  // step for the same reason: a receipt cropped to the receipt is a
+  // fraction of the bytes and a far easier read than a photo of a worktop.
+  const pickReceiptPages = useCallback(async (source: PictureSource, room: number): Promise<{ pages: string[]; dropped: number } | null> => {
+    const picked = await pickPicture(source, {
+      where: '/expenses/scan-receipt', allowsEditing: true, scanner: { maxPages: room },
+    });
     if (!picked) return null;
     if ('problem' in picked) {
       setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
       return null;
     }
-    return picked.base64;
+    // pickPicture keeps at most `room` pages (an iPhone's scanner has no cap)
+    // and counts the rest; the review says so once the read has worked.
+    return { pages: picked.pages, dropped: picked.dropped };
   }, [t]);
 
   const captureReceipt = useCallback(async (source: PictureSource) => {
     setScanError(null);
-    const base64 = await pickReceiptPhoto(source);
-    if (!base64) return;
-    await readReceipt(() => api.scanReceipt([base64]), [base64], 'photo');
-  }, [pickReceiptPhoto, readReceipt]);
+    const got = await pickReceiptPages(source, RECEIPT_MAX_PARTS);
+    if (!got) return;
+    const { pages, dropped } = got;
+    await readReceipt(() => api.scanReceipt(pages), pages, 'photo', undefined, dropped);
+  }, [pickReceiptPages, readReceipt]);
 
   /**
    * The rest of a receipt too long for one sharp photo. The parts so far and
@@ -297,12 +315,13 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
    */
   const addReceiptPart = useCallback(async () => {
     setScanError(null);
-    const base64 = await pickReceiptPhoto('camera');
-    if (!base64) return;
-    const pictures = [...parts, base64];
+    const room = (scan?.max_parts ?? RECEIPT_MAX_PARTS) - parts.length;
+    const got = await pickReceiptPages('camera', room);
+    if (!got) return;
+    const pictures = [...parts, ...got.pages];
     const previous = scan ? { scan, keep, shop, amount, when } : undefined;
-    await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous);
-  }, [parts, scan, keep, shop, amount, when, pickReceiptPhoto, readReceipt]);
+    await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous, got.dropped);
+  }, [parts, scan, keep, shop, amount, when, pickReceiptPages, readReceipt]);
 
   /** A digital receipt (PDF), or a picture of one that is not in the gallery. */
   const importReceiptFile = useCallback(async () => {
@@ -392,6 +411,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setUntick(new Set());
       setScan(null);
       setParts([]);
+      setPagesCapped(0);
       setKeep([]);
       setShop('');
       setAmount('');
@@ -848,6 +868,9 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
               {(scan.parts ?? 1) > 1 ? (
                 <Text testID="exp-scan-parts" style={styles.hint}>{t('exp_scan_parts', { n: scan.parts ?? 1 })}</Text>
               ) : null}
+              {pagesCapped > 0 ? (
+                <Text testID="exp-scan-pages-capped" style={styles.hint}>{t('exp_scan_pages_capped', { n: pagesCapped })}</Text>
+              ) : null}
               {/* The rest of a receipt too long for one sharp photo. */}
               {/* Said here, by the button, not at the top of a screen the
                   person has scrolled away from. */}
@@ -984,7 +1007,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                         : t('exp_save_tick_n', { n: toTick.length })}
                 </Text>
               </PressScale>
-              <PressScale onPress={() => { setScan(null); setKeep([]); setParts([]); }} style={styles.quiet}>
+              <PressScale onPress={() => { setScan(null); setKeep([]); setParts([]); setPagesCapped(0); }} style={styles.quiet}>
                 <Text style={styles.quietText}>{t('cancel')}</Text>
               </PressScale>
             </View>
