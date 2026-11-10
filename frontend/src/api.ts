@@ -3118,6 +3118,13 @@ export const api = {
       body: { image_base64: imageBase64 },
       timeoutMs: VISION_TIMEOUT_MS,
     }),
+  // A PDF of a shopping list, read like a photo of one: candidates only.
+  scanShoppingPdf: (pdfBase64: string) =>
+    request<{ items: { name: string; unsure: boolean }[] }>('/shopping/scan', {
+      method: 'POST',
+      body: { pdf_base64: pdfBase64 },
+      timeoutMs: VISION_TIMEOUT_MS,
+    }),
   bulkAddShopping: (names: string[], categories?: (string | undefined)[]) =>
     request<{ ok: boolean; added: number; items?: { name: string; category: string }[] }>('/shopping/bulk', {
       method: 'POST',
