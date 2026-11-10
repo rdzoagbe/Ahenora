@@ -16,7 +16,7 @@ jest.mock('expo-file-system/legacy', () => ({
 }), { virtual: true });
 
 import {
-  bareBase64, isHeic, kindOf, plainlyUnsupported, pickListFile,
+  bareBase64, decodedSize, isHeic, kindOf, plainlyUnsupported, pickListFile,
   IMAGE_MAX_BYTES, LIST_FILE_TYPES, PDF_MAX_BYTES,
 } from '../pickListFile';
 
@@ -44,6 +44,22 @@ describe('what the file is', () => {
     expect(kindOf(JPEG_B64)).toBe('image');
     expect(kindOf(PNG_B64)).toBe('image');
     expect(kindOf('UEsDBBQ')).toBeNull(); // a .docx (zip)
+  });
+
+  it('finds a PDF header after a few stray bytes, as the server does', () => {
+    expect(kindOf('77u/DQolUERGLTEuNwo=')).toBe('pdf');
+  });
+
+  it('knows an HEIC by its content, when the provider said neither type nor name', () => {
+    expect(kindOf('AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWlj')).toBe('heic');
+  });
+
+  it('counts bytes exactly, padding and all, so a file at the limit is not refused', () => {
+    expect(decodedSize('QQ==')).toBe(1);
+    expect(decodedSize('QUI=')).toBe(2);
+    expect(decodedSize('QUJD')).toBe(3);
+    const atLimit = 'A'.repeat(Math.ceil((PDF_MAX_BYTES * 4) / 3) - 1) + '=';
+    expect(decodedSize(atLimit)).toBeLessThanOrEqual(PDF_MAX_BYTES);
   });
 
   it('turns away only what is plainly something else before reading it', () => {
@@ -123,6 +139,18 @@ describe('picking one', () => {
     expect(mockReadAsString).not.toHaveBeenCalled();
   });
 
+  it('a file named PDF over the PDF limit is turned away before it is read', async () => {
+    picked({ name: 'catalogue.pdf', mimeType: 'application/pdf', size: PDF_MAX_BYTES + 1 });
+    await expect(pickListFile()).resolves.toEqual({ problem: 'too_large' });
+    expect(mockReadAsString).not.toHaveBeenCalled();
+  });
+
+  it('an HEIC with no type and no name is sent to the gallery too', async () => {
+    picked({ name: 'IMG_1234', mimeType: 'application/octet-stream' });
+    mockReadAsString.mockResolvedValue('AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWlj');
+    await expect(pickListFile()).resolves.toEqual({ problem: 'heic' });
+  });
+
   it('a PDF keeps the tighter limit, measured on what was read', async () => {
     picked({ name: 'big.pdf', mimeType: 'application/pdf', size: undefined });
     mockReadAsString.mockResolvedValue(PDF_B64 + 'A'.repeat(Math.ceil((PDF_MAX_BYTES * 4) / 3) + 8));
@@ -152,8 +180,9 @@ describe('the scan sheet', () => {
     expect(kitchen).toMatch(/const \{ items \} = await read\(\);\s*setScanItems\(items\.map\(\(i\) => \(\{ \.\.\.i, checked: !i\.unsure \}\)\)\);/);
   });
 
-  it('after a file, offers another file rather than another photo', () => {
+  it('after a file, offers another file rather than another photo, and says "your file"', () => {
     expect(kitchen).toContain("t(scanSource === 'photo' ? 'scan_retake' : 'scan_file_again')");
+    expect(kitchen).toContain("scanSource === 'image_file' ? 'scan_note_file' : 'scan_note'");
   });
 
   it('a file that would not open is not told as "no connection"', () => {
@@ -171,7 +200,7 @@ describe('the scan sheet', () => {
 
   it('is worded in all four languages', () => {
     for (const key of ['scan_file', 'scan_file_hint', 'scan_file_too_large', 'scan_file_not_supported', 'scan_file_heic',
-      'scan_file_open_failed', 'scan_file_again', 'scan_pdf_failed', 'scan_note_pdf']) {
+      'scan_file_open_failed', 'scan_file_again', 'scan_pdf_failed', 'scan_note_pdf', 'scan_note_file']) {
       expect((i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length).toBe(4);
     }
     expect(i18n).toContain('scan_file: "Importer un fichier"');

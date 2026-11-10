@@ -53,14 +53,48 @@ export function plainlyUnsupported(name?: string | null, mimeType?: string | nul
   return type !== '' && type !== 'application/octet-stream';
 }
 
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** The first `count` bytes of a base64 string (no atob: not on every engine). */
+export function headBytes(base64: string, count: number): number[] {
+  const out: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < base64.length && out.length < count; i += 1) {
+    const value = B64.indexOf(base64[i]);
+    if (value < 0) continue; // padding, line breaks
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((buffer >> bits) & 0xff);
+    }
+  }
+  return out;
+}
+
+const ascii = (bytes: number[]) => String.fromCharCode(...bytes);
+// The ftyp brands an iPhone photo is saved under.
+const HEIC_BRANDS = ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'];
+
 /**
- * What the file is, from its first bytes in base64: "%PDF-" is "JVBER",
- * a JPEG's FF D8 FF is "/9j/", a PNG's signature is "iVBORw0KGgo".
+ * What the file is, from its first bytes: "%PDF-" anywhere in the first
+ * 1024 (the PDF spec allows a little before it, and so does the server),
+ * a JPEG's FF D8 FF, a PNG's signature, or an HEIC's "ftyp" box.
  */
-export function kindOf(base64: string): ListFileKind | null {
-  if (base64.startsWith('JVBER')) return 'pdf';
-  if (base64.startsWith('/9j/') || base64.startsWith('iVBORw0KGgo')) return 'image';
+export function kindOf(base64: string): ListFileKind | 'heic' | null {
+  const head = headBytes(base64, 1024);
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image';
+  if (ascii(head.slice(0, 8)) === '\x89PNG\r\n\x1a\n') return 'image';
+  if (ascii(head.slice(4, 8)) === 'ftyp' && HEIC_BRANDS.includes(ascii(head.slice(8, 12)))) return 'heic';
+  if (ascii(head).includes('%PDF-')) return 'pdf';
   return null;
+}
+
+/** Bytes in a base64 string, exactly: padding does not count. */
+export function decodedSize(base64: string): number {
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
 }
 
 export async function pickListFile(): Promise<PickedListFile> {
@@ -84,7 +118,9 @@ export async function pickListFile(): Promise<PickedListFile> {
   const asset = res.assets[0];
   if (isHeic(asset.name, asset.mimeType)) return { problem: 'heic' };
   if (plainlyUnsupported(asset.name, asset.mimeType)) return { problem: 'not_supported' };
-  if (asset.size && asset.size > IMAGE_MAX_BYTES) return { problem: 'too_large' };
+  // Said to be a PDF: its own, tighter limit, before it is read.
+  const saysPdf = (asset.mimeType || '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(asset.name || '');
+  if (asset.size && asset.size > (saysPdf ? PDF_MAX_BYTES : IMAGE_MAX_BYTES)) return { problem: 'too_large' };
 
   let base64: string;
   if (Platform.OS === 'web') {
@@ -97,11 +133,12 @@ export async function pickListFile(): Promise<PickedListFile> {
   }
 
   const kind = kindOf(base64);
+  // An HEIC that came with no type and no name: known by its content.
+  if (kind === 'heic') return { problem: 'heic' };
   if (!kind) return { problem: 'not_supported' };
-  // A PDF has the tighter limit; measured on what was read, in case the
-  // picker did not say the size.
-  const bytes = Math.floor((base64.length * 3) / 4);
-  if (bytes > (kind === 'pdf' ? PDF_MAX_BYTES : IMAGE_MAX_BYTES)) return { problem: 'too_large' };
+  // Measured on what was read, in case the picker did not say the size or
+  // the name did not say PDF.
+  if (decodedSize(base64) > (kind === 'pdf' ? PDF_MAX_BYTES : IMAGE_MAX_BYTES)) return { problem: 'too_large' };
   return { kind, base64 };
 }
 

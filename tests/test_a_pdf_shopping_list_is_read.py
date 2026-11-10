@@ -247,6 +247,38 @@ class APdfShoppingList(unittest.TestCase):
         not_a_picture = base64.b64encode(b"%PDF-1.4 renamed" * 20).decode()
         self.assertEqual(self.refused({"image_base64": not_a_picture}), 400)
 
+    def test_a_half_downloaded_picture_is_the_files_problem_too(self):
+        # A JPG cut short (iCloud not finished): perfect header, missing
+        # pixels. Caught before the model, not as a 502 after it.
+        import io
+        import PIL.Image
+        buf = io.BytesIO()
+        PIL.Image.new("RGB", (400, 400), "white").save(buf, "JPEG")
+        cut = base64.b64encode(buf.getvalue()[:-600]).decode()
+        self.assertEqual(self.refused({"image_base64": cut}), 400)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.used(), 0)
+
+    def test_a_photo_saved_on_its_side_reaches_the_model_upright(self):
+        # A portrait photo saved as a file keeps its orientation in EXIF,
+        # which re-encoding drops; it is turned upright first.
+        import io
+        import PIL.Image
+        seen = []
+
+        async def generate(contents, system="", **kwargs):
+            seen.append(contents[1].size)
+            return ITEMS
+        server._gemini_generate = generate
+        server._gemini_vision = self._vision
+        picture = PIL.Image.new("RGB", (80, 40), "white")
+        exif = picture.getexif()
+        exif[0x0112] = 6   # "rotate 90° to view"
+        buf = io.BytesIO()
+        picture.save(buf, "JPEG", exif=exif)
+        self.scan({"image_base64": base64.b64encode(buf.getvalue()).decode()})
+        self.assertEqual(seen, [(40, 80)])
+
     def test_a_real_picture_still_reaches_the_model(self):
         seen = []
 

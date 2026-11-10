@@ -3172,7 +3172,7 @@ export default function Kitchen() {
             </PressScale>
             <View style={styles.cookAllergen}>
               <AlertTriangle color={ui.muted} size={14} />
-              <Text style={styles.cookAllergenText}>{t(scanSource === 'pdf' ? 'scan_note_pdf' : 'scan_note')}</Text>
+              <Text style={styles.cookAllergenText}>{t(scanSource === 'pdf' ? 'scan_note_pdf' : scanSource === 'image_file' ? 'scan_note_file' : 'scan_note')}</Text>
             </View>
           </>
         ) : (
