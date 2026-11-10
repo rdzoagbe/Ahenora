@@ -89,7 +89,8 @@ const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' 
  * figure does not announce itself — it quietly makes six months of history
  * false. Eight seconds of typing is right every time.
  */
-// Same as RECEIPT_MAX_PARTS on the server: a receipt in at most three photos.
+// Until the server has said (each read returns max_parts): a receipt in at
+// most three photos, as RECEIPT_MAX_PARTS on the server.
 const RECEIPT_MAX_PARTS = 3;
 
 export function SpendingView({ embedded = false }: { embedded?: boolean }) {
@@ -207,7 +208,19 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
    * A failed read leaves the review that was there (adding a part that could
    * not be read does not lose the part that could).
    */
-  const readReceipt = useCallback(async (read: () => Promise<ScannedReceipt>, pictures: string[]) => {
+  const figureOf = useCallback((r: ScannedReceipt) => {
+    const figure = r.total ?? r.lines_total;
+    return figure ? formatDecimal(figure, lang) : '';
+  }, [lang]);
+
+  const readReceipt = useCallback(async (
+    read: () => Promise<ScannedReceipt>,
+    pictures: string[],
+    from: 'photo' | 'file',
+    // The review this read continues ("Ajouter la suite"): what the person
+    // already decided there is kept, not thrown away by the new read.
+    previous?: { scan: ScannedReceipt; keep: boolean[]; shop: string; amount: string; when: string },
+  ) => {
     try {
       setScanning(true);
       const result = await read();
@@ -220,29 +233,37 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       // Only for the review: without the list, nothing is offered to tick.
       api.listShopping().then(setListItems).catch(() => setListItems([]));
       // Unsure lines start unticked. Saying "no" to a bad read must be the
-      // lazy option, not the diligent one.
-      setKeep(result.items.map((i) => !i.unsure));
-      setShop(result.shop || '');
+      // lazy option, not the diligent one. A line the person had unticked
+      // stays unticked when the receipt is read again with its next part.
+      const untickedBefore = new Set(previous
+        ? previous.scan.items.filter((_, i) => !previous.keep[i]).map((i) => i.name) : []);
+      setKeep(result.items.map((i) => !i.unsure && !untickedBefore.has(i.name)));
+      // A shop or a date the person corrected stays corrected.
+      setShop(previous && previous.shop !== (previous.scan.shop || '') ? previous.shop : (result.shop || ''));
+      setWhen(previous && previous.when !== (previous.scan.date || todayISO())
+        ? previous.when : (result.date || todayISO()));
       // Pre-filled the way the reader types money: "9,95" in French, "9.95"
       // in English. No printed total read (the top of a long receipt): the
-      // sum of the lines, and the review says that is what it is.
-      const figure = result.total ?? result.lines_total;
-      setAmount(figure ? formatDecimal(figure, lang) : '');
+      // sum of the lines, and the review says that is what it is. A printed
+      // total, once read, wins over a figure typed while there was none.
+      const typed = previous && previous.amount !== figureOf(previous.scan) ? previous.amount : null;
+      setAmount(typed !== null && result.total == null ? typed : figureOf(result));
       // An unreadable date comes back empty and today is the honest default —
       // it is at least a date the person can see is wrong.
-      setWhen(result.date || todayISO());
     } catch (e: any) {
       logger.warn('receipt scan failed', e);
       // Running out of allowance must not cost the expense. The reading is what
       // the allowance buys; typing the total was always available and stays so.
-      // A file the server cannot open, or one too big, said in the sheet's words.
-      setScanError(e?.status === 413 ? t('scan_file_too_large')
-        : e?.status === 400 ? t('scan_file_not_supported')
+      // The server's own reasons, in words that fit what was sent.
+      setScanError(e?.status === 413
+        ? t(from === 'file' ? 'scan_file_too_large' : 'exp_scan_photos_too_large')
+        : e?.status === 400
+          ? t(from === 'file' ? 'scan_file_not_supported' : 'scan_photo_open_failed')
           : apiErrorText(e, t, 'exp_scan_failed'));
     } finally {
       setScanning(false);
     }
-  }, [t, lang, setTicked]);
+  }, [t, setTicked, figureOf]);
 
   // allowsEditing for the same reason as the document scanner: a receipt
   // cropped to the receipt is a fraction of the bytes and a far easier read
@@ -261,7 +282,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     setScanError(null);
     const base64 = await pickReceiptPhoto(source);
     if (!base64) return;
-    await readReceipt(() => api.scanReceipt([base64]), [base64]);
+    await readReceipt(() => api.scanReceipt([base64]), [base64], 'photo');
   }, [pickReceiptPhoto, readReceipt]);
 
   /**
@@ -274,8 +295,9 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     const base64 = await pickReceiptPhoto('camera');
     if (!base64) return;
     const pictures = [...parts, base64];
-    await readReceipt(() => api.scanReceipt(pictures), pictures);
-  }, [parts, pickReceiptPhoto, readReceipt]);
+    const previous = scan ? { scan, keep, shop, amount, when } : undefined;
+    await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous);
+  }, [parts, scan, keep, shop, amount, when, pickReceiptPhoto, readReceipt]);
 
   /** A digital receipt (PDF), or a picture of one that is not in the gallery. */
   const importReceiptFile = useCallback(async () => {
@@ -299,8 +321,8 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       return;
     }
     const { kind, base64 } = picked;
-    if (kind === 'pdf') await readReceipt(() => api.scanReceiptPdf(base64), []);
-    else await readReceipt(() => api.scanReceipt([base64]), [base64]);
+    if (kind === 'pdf') await readReceipt(() => api.scanReceiptPdf(base64), [], 'file');
+    else await readReceipt(() => api.scanReceipt([base64]), [base64], 'file');
   }, [t, readReceipt]);
 
   /** Commit the reviewed receipt: the expense, and the lines kept with it. */
@@ -547,7 +569,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
               <Text style={styles.quietText}>{t('exp_scan_file')}</Text>
             </PressScale>
           ) : null}
-          {scanError ? <Text style={styles.scanErr}>{scanError}</Text> : null}
+          {scanError && !scan ? <Text style={styles.scanErr}>{scanError}</Text> : null}
 
           {/* One month or six — the same screen, so there is nothing new to learn. */}
           <View style={styles.seg}>
@@ -806,16 +828,24 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                   <Text style={styles.warnText}>{t('exp_scan_no_total', { lines: money(scan.lines_total) })}</Text>
                 </View>
               ) : null}
-              {(scan.skipped ?? 0) > 0 || (scan.left_out ?? 0) > 0 ? (
+              {(scan.skipped ?? 0) > 0 ? (
                 <Text testID="exp-scan-missed" style={styles.hint}>
-                  {t('exp_scan_missed', { n: (scan.skipped ?? 0) + (scan.left_out ?? 0) })}
+                  {t('exp_scan_missed', { n: scan.skipped ?? 0 })}
+                </Text>
+              ) : null}
+              {(scan.left_out ?? 0) > 0 ? (
+                <Text testID="exp-scan-left-out" style={styles.hint}>
+                  {t('exp_scan_left_out', { n: scan.left_out ?? 0 })}
                 </Text>
               ) : null}
               {(scan.parts ?? 1) > 1 ? (
                 <Text testID="exp-scan-parts" style={styles.hint}>{t('exp_scan_parts', { n: scan.parts ?? 1 })}</Text>
               ) : null}
               {/* The rest of a receipt too long for one sharp photo. */}
-              {parts.length > 0 && parts.length < RECEIPT_MAX_PARTS ? (
+              {/* Said here, by the button, not at the top of a screen the
+                  person has scrolled away from. */}
+              {scanError ? <Text testID="exp-scan-review-error" style={styles.scanErr}>{scanError}</Text> : null}
+              {parts.length > 0 && parts.length < (scan.max_parts ?? RECEIPT_MAX_PARTS) ? (
                 <PressScale
                   testID="exp-scan-add-part"
                   onPress={addReceiptPart}
@@ -826,7 +856,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                   <Text style={styles.ghostText}>{scanning ? t('exp_scan_reading') : t('exp_scan_add_part')}</Text>
                 </PressScale>
               ) : null}
-              {parts.length > 0 && parts.length < RECEIPT_MAX_PARTS ? (
+              {parts.length > 0 && parts.length < (scan.max_parts ?? RECEIPT_MAX_PARTS) ? (
                 <Text style={styles.hint}>{t('exp_scan_add_part_hint')}</Text>
               ) : null}
 

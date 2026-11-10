@@ -728,6 +728,8 @@ SHOPPING_SCAN_UNREAD = {
     "not an object": "unparseable",
     "blocked content": "blocked",
     "too many for the camera": "too_many",
+    "no total": "no_total",
+    "a line could not be read": "unreadable_line",
 }
 
 
@@ -1459,6 +1461,8 @@ def validate_suggestions(parsed: dict, owned: list) -> list:
 # whole receipt was refused; a big monthly shop read in two or three photos
 # (2026-11-10) can pass that. Past this, lines are counted, not dropped quietly.
 MAX_RECEIPT_ITEMS = 150
+# The most "rounding" a receipt's lines may differ from its total by.
+RECEIPT_RECONCILE_MAX = 0.50
 RECEIPT_UNITS = {"kg", "g", "l", "ml", "piece"}
 
 
@@ -1531,6 +1535,10 @@ def read_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) ->
     items = []
     skipped = 0
     left_out = 0
+    # A line printed against the basket ("REMISE -2,00", a coupon): not a
+    # product and not a price for the history, but money off the total, so
+    # it counts in what the lines add up to and is not "could not be read".
+    discounts = 0.0
     for row in raw:
         if len(items) >= MAX_RECEIPT_ITEMS:
             # Counted, not cleaned: they are not shown.
@@ -1550,7 +1558,14 @@ def read_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) ->
         try:
             line_total = _money(row.get("line_total"), "line_total")
         except UnsafeRecipe:
-            skipped += 1
+            try:
+                off = round(float(row.get("line_total")), 2)
+            except (TypeError, ValueError):
+                off = None
+            if off is not None and -10000 <= off < 0:
+                discounts += off
+            else:
+                skipped += 1
             continue
 
         unit = str(row.get("unit") or "piece").strip().lower()
@@ -1581,7 +1596,7 @@ def read_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) ->
         total = _money(parsed.get("total"), "total") if parsed.get("total") is not None else None
     except UnsafeRecipe:
         total = None
-    lines_total = round(sum(i["line_total"] for i in items), 2)
+    lines_total = round(sum(i["line_total"] for i in items) + discounts, 2)
 
     shop = sanitize_user_text(str(parsed.get("shop") or ""), 60)
     # Parsed, not pattern-matched. "2026-13-45" has the right shape and is not
@@ -1600,10 +1615,14 @@ def read_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) ->
         "total": total,
         "lines_total": lines_total,
         # True when the lines add up to the printed total, within a cent per
-        # line for rounding. False is not an error — it is something to show.
-        # None when there is no printed total to compare with.
-        "reconciles": None if total is None else abs(total - lines_total) <= max(0.05, 0.01 * len(items)),
+        # line for rounding (but never more than RECEIPT_RECONCILE_MAX: a
+        # 150-line receipt must not hide a 1,40 misread as "rounding"). False
+        # is not an error — it is something to show. None when there is no
+        # printed total to compare with.
+        "reconciles": None if total is None else
+            abs(total - lines_total) <= max(0.05, min(0.01 * len(items), RECEIPT_RECONCILE_MAX)),
         "items": items,
+        "discounts": round(discounts, 2),
         "skipped": skipped,
         "left_out": left_out,
     }
@@ -1621,5 +1640,9 @@ def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None
         raise UnsafeRecipe("no total")
     if out["left_out"]:
         raise UnsafeRecipe("too many for the camera")
+    # Nor can it say a line was left out, so a receipt it could not read
+    # whole stays a document there, as it always did.
+    if out["skipped"]:
+        raise UnsafeRecipe("a line could not be read")
     return out
 

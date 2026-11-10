@@ -159,6 +159,9 @@ async def run(r, tok):
         await page.locator('[data-testid="exp-scan-add-part"]').scroll_into_view_if_needed()
         await shot(page, "receipt-top-half.png")
 
+        # The person corrects the shop before adding the rest: kept.
+        await page.locator('[data-testid="exp-scan-shop"]').fill("Marché Frais Argenteuil")
+
         # The rest: both photos go up together, as one receipt.
         await choose(page, "exp-scan-add-part", {"name": "bas.png", "mimeType": "image/png", "buffer": PNG2})
         await page.wait_for_selector('[data-testid="exp-scan-parts"]', timeout=15000)
@@ -167,6 +170,7 @@ async def run(r, tok):
         r["both_photos_go_up_together"] = (len(sent) == 2 and
                                           [base64.b64decode(i) for i in both.get("images_base64", [])] == [PNG, PNG2])
         r["says_two_photos"] = "Lu en 2 photos" in await text_of(page, "exp-scan-parts")
+        r["a_corrected_shop_stays_corrected"] = (await page.locator('[data-testid="exp-scan-shop"]').input_value()) == "Marché Frais Argenteuil"
         r["the_printed_total_is_used"] = (await page.locator('[data-testid="exp-scan-total"]').input_value()) == "31,65"
         r["no_total_note_is_gone"] = await page.locator('[data-testid="exp-scan-no-total"]').count() == 0
         r["says_a_line_was_left_out"] = "1 ligne(s) illisible(s)" in await text_of(page, "exp-scan-missed")

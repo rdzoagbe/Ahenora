@@ -17673,7 +17673,7 @@ def shopping_pdf_bytes(pdf_b64: str) -> bytes:
     return data
 
 
-def shopping_picture_opens(image_b64: str) -> None:
+def shopping_picture_opens(image_b64: str) -> bytes:
     """Refuse, before any allowance or model, a picture this server cannot
     open. A picture imported from Files can be a format Pillow does not read
     (HEIC without its plugin), a renamed document, or a JPG only half
@@ -17686,7 +17686,7 @@ def shopping_picture_opens(image_b64: str) -> None:
     in a worker thread.
     """
     try:
-        vision_jpeg(image_b64)
+        return vision_jpeg(image_b64)
     except Exception:  # noqa: BLE001 — any way of not opening is "not readable"
         # Pillow says it several ways: UnidentifiedImageError for an unknown
         # format, a bare OSError for a PNG broken after its signature or a
@@ -18103,6 +18103,41 @@ async def shopping_due(timezone_name: Optional[str] = Query(default=None, alias=
 RECEIPT_MAX_PARTS = 3
 RECEIPT_REQUEST_MAX_BYTES = 19 * 1024 * 1024
 
+# "Ajouter la suite du ticket" is the SAME receipt read again with one more
+# photo, and must not cost a second scan (on Free, three a month, one long
+# receipt would have spent them all). Each read hands back a token signed over
+# the household and the photos it read; a continuation that presents it with
+# those same photos first is free. Signed with a key made at start-up, so no
+# secret has to be configured: after a restart, or on another worker, the
+# token simply does not verify and the continuation is charged as before —
+# never free by mistake. Short-lived, so it cannot be farmed.
+_RECEIPT_TOKEN_KEY = secrets.token_bytes(32)
+RECEIPT_CONTINUE_SECONDS = 15 * 60
+
+
+def _receipt_parts_digest(parts: list) -> str:
+    return "|".join(hashlib.sha256(p.encode("ascii", "ignore")).hexdigest() for p in parts)
+
+
+def receipt_read_token(family_id: str, parts: list, now: Optional[int] = None) -> str:
+    expires = int(now if now is not None else utcnow().timestamp()) + RECEIPT_CONTINUE_SECONDS
+    body = f"{family_id}|{expires}|{_receipt_parts_digest(parts)}".encode()
+    return f"{expires}.{hmac.new(_RECEIPT_TOKEN_KEY, body, hashlib.sha256).hexdigest()}"
+
+
+def receipt_continues(token: str, family_id: str, earlier_parts: list, now: Optional[int] = None) -> bool:
+    """Whether `token` was issued to this household for exactly these photos,
+    and has not expired."""
+    try:
+        expires_s, sig = str(token or "").split(".", 1)
+        expires = int(expires_s)
+    except ValueError:
+        return False
+    if expires < int(now if now is not None else utcnow().timestamp()) or not earlier_parts:
+        return False
+    body = f"{family_id}|{expires}|{_receipt_parts_digest(earlier_parts)}".encode()
+    return hmac.compare_digest(sig, hmac.new(_RECEIPT_TOKEN_KEY, body, hashlib.sha256).hexdigest())
+
 
 @app.post("/api/expenses/scan-receipt")
 async def scan_receipt(
@@ -18148,24 +18183,30 @@ async def scan_receipt(
                 raise HTTPException(400, "No photo attached.")
             if len(one) > MAX_IMAGE_B64_CHARS:
                 raise HTTPException(413, "That photo is too large.")
-            await run_in_threadpool(shopping_picture_opens, one)
             pictures.append(one)
-
-    kind = "PDF" if pdf_bytes is not None else "photo"
-    if not GOOGLE_API_KEY or genai_types is None:
-        raise HTTPException(503, f"{'PDF' if pdf_bytes is not None else 'Photo'} scanning is unavailable right now.")
 
     jpegs: list = []
     if pictures:
-        # Prepared already by the opens-check (vision_jpeg's cache). Google
-        # caps an inline request at 20 MB in total, base64 included.
-        jpegs = [await run_in_threadpool(vision_jpeg, one) for one in pictures]
+        # Every photo checked to open (a free 400 if not, said whatever else
+        # is the matter) and prepared for the model in the same step, side by
+        # side. Google caps an inline request at 20 MB in total, base64
+        # included.
+        jpegs = list(await asyncio.gather(
+            *(run_in_threadpool(shopping_picture_opens, one) for one in pictures)))
         if sum(len(j) for j in jpegs) * 4 // 3 > RECEIPT_REQUEST_MAX_BYTES:
             raise HTTPException(413, "Those photos are too large together.")
 
+    kind = "PDF" if pdf_bytes is not None else "photo"
+    if not GOOGLE_API_KEY or genai_types is None:
+        raise HTTPException(503, f"{kind.capitalize() if kind == 'photo' else kind} scanning is unavailable right now.")
+
+    # The rest of a receipt already read (and paid for) in this household.
+    continuing = len(pictures) > 1 and receipt_continues(
+        str(payload.get("read_token") or ""), user["family_id"], pictures[:-1])
+
     sub = await build_subscription(user["family_id"])
     family = await get_family_doc(user["family_id"])
-    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+    if not continuing and not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
             family_id=user["family_id"],
             feature="ai_scans",
@@ -18202,8 +18243,13 @@ async def scan_receipt(
             raise HTTPException(422, "We could not read a receipt in that PDF.")
         raise HTTPException(502, f"We could not read a receipt in that {kind}.")
     result["parts"] = len(pictures) if pictures else 1
+    # What the app needs to offer the rest: how many photos a receipt may be
+    # read from, and the token that makes the next part free.
+    result["max_parts"] = RECEIPT_MAX_PARTS
+    if pictures:
+        result["read_token"] = receipt_read_token(user["family_id"], pictures)
 
-    if not is_admin_user(user):
+    if not continuing and not is_admin_user(user):
         # Same guarded increment as the shopping scan: two concurrent scans
         # cannot both push the counter past the limit.
         await database["families"].update_one(

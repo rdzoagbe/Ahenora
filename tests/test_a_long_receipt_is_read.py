@@ -80,7 +80,7 @@ class TheReaderKeepsWhatItReads(unittest.TestCase):
             line("Eau Cristaline", 4, line_total=4.80),
             line("", line_total=1.00),                       # no name
             line("Champignons", line_total="illisible"),     # price not a number
-            line("Remboursement", line_total=-3.00),         # not a price
+            line("Prix", line_total=99999),                  # not a price
             "OIGNONS",                                       # not a line at all
             line("Lait 6x1 L", 2, line_total=13.90),
         ], total=22.69))
@@ -88,6 +88,20 @@ class TheReaderKeepsWhatItReads(unittest.TestCase):
         self.assertEqual(out["skipped"], 4)
         # The lines now fall short of the printed total, and that is shown.
         self.assertIs(out["reconciles"], False)
+
+    def test_a_discount_line_is_money_off_not_an_unreadable_line(self):
+        out = read_receipt_scan(receipt([
+            line("Eau Cristaline", 4, line_total=4.80),
+            line("Lait 6x1 L", 2, line_total=13.90),
+            line("Remise fidélité", line_total=-2.00),
+        ], total=16.70))
+        self.assertEqual(len(out["items"]), 2)          # never a price in the history
+        self.assertEqual((out["skipped"], out["discounts"]), (0, -2.00))
+        self.assertTrue(out["reconciles"])
+
+    def test_a_big_receipt_does_not_call_a_big_misread_rounding(self):
+        items = [line(f"Article {n}", line_total=1.00) for n in range(150)]
+        self.assertFalse(read_receipt_scan(receipt(items, total=151.40))["reconciles"])
 
     def test_the_top_half_of_a_long_receipt_has_no_total_and_is_still_read(self):
         out = read_receipt_scan(receipt([line(), line("Pain", line_total=2.10)]))
@@ -121,6 +135,9 @@ class TheReaderKeepsWhatItReads(unittest.TestCase):
             validate_receipt_scan(receipt([line()]))
         with self.assertRaises(UnsafeRecipe):
             validate_receipt_scan(receipt([line(f"A{n}") for n in range(MAX_RECEIPT_ITEMS + 1)], total=9))
+        # Nor can it say a line was left out: such a receipt stays a document.
+        with self.assertRaises(UnsafeRecipe):
+            validate_receipt_scan(receipt([line(), line("Champignons", line_total="??")], total=2))
         self.assertEqual(validate_receipt_scan(receipt([line()], total=1.15))["total"], 1.15)
 
 
@@ -183,6 +200,33 @@ class TheRoute(unittest.TestCase):
         self.assertEqual([p.inline_data.mime_type for p in call["contents"][1:]], ["image/jpeg"] * 3)
         self.assertIn("SEVERAL photos", call["system"])
         self.assertEqual(self.used(), 1)
+
+    def test_the_rest_of_a_receipt_is_free_with_its_token(self):
+        first = self.scan({"image_base64": photo(1)})
+        self.assertEqual((self.used(), first["max_parts"]), (1, 3))
+        second = self.scan({"images_base64": [photo(1), photo(2)], "read_token": first["read_token"]})
+        third = self.scan({"images_base64": [photo(1), photo(2), photo(3)], "read_token": second["read_token"]})
+        self.assertEqual(third["parts"], 3)
+        self.assertEqual(self.used(), 1)
+
+    def test_the_rest_is_free_even_when_the_month_is_used_up(self):
+        first = self.scan({"image_base64": photo(1)})
+        run(self.db["families"].update_one({"family_id": "fam_1"}, {"$set": {"ai_scans_used": 999}}))
+        self.assertEqual(self.scan({"images_base64": [photo(1), photo(2)],
+                                    "read_token": first["read_token"]})["parts"], 2)
+
+    def test_a_token_does_not_make_other_photos_free(self):
+        first = self.scan({"image_base64": photo(1)})
+        self.scan({"images_base64": [photo(7), photo(2)], "read_token": first["read_token"]})
+        self.assertEqual(self.used(), 2)
+
+    def test_a_token_is_this_households_and_expires(self):
+        parts = [photo(1)]
+        token = server.receipt_read_token("fam_1", parts, now=1000)
+        self.assertTrue(server.receipt_continues(token, "fam_1", parts, now=1000))
+        self.assertFalse(server.receipt_continues(token, "fam_2", parts, now=1000))
+        self.assertFalse(server.receipt_continues(token, "fam_1", parts, now=1000 + server.RECEIPT_CONTINUE_SECONDS + 1))
+        self.assertFalse(server.receipt_continues("forged.abc", "fam_1", parts, now=1000))
 
     def test_four_photos_are_refused_before_anything_is_read(self):
         self.assertEqual(self.refused({"images_base64": [photo(n) for n in range(4)]}), 413)
