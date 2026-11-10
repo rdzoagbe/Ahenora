@@ -79,6 +79,7 @@ import { isSoloHousehold } from '../../src/household';
 import { useStore } from '../../src/store';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { useUI, UIColors } from '../../src/components/Kit';
+import PolicyNotice from '../../src/components/PolicyNotice';
 import { whereItWent } from '../../src/shoppingAisles';
 import { api, logEvent, ActivityEntry, Announcement, Card, CardType, ChatThreadSummary, CustodyConfig, FamilyMember, GiftPot, MealPlan, SantaDraw, HandoffNote, WeeklyReport , Room } from '../../src/api';
 import { syncCardReminderNotifications, syncMorningDigest, syncDinnerReminder, syncSundayRecap, ensureAskedNotificationPermissionOnce } from '../../src/notifications';
@@ -1458,6 +1459,9 @@ export default function Feed() {
               </Text>
               <Text style={styles.tagline} testID="feed-week" numberOfLines={2}>{dayLine}</Text>
             </View>
+
+            {/* A privacy-policy change, said once (the policy promises it). */}
+            <PolicyNotice />
 
             {now ? (
               <HomeWeekStrip

@@ -99,6 +99,27 @@ async def run(r, tok):
         await page.route("**/api/**", route)
 
         await page.add_init_script(f"localStorage.setItem('coo_session_token','{tok}');")
+
+        # The policy change, said once on Home (the policy promises it).
+        await page.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await page.wait_for_selector('[data-testid="policy-notice"]', timeout=20000)
+        await page.wait_for_timeout(400)
+        said = await page.locator('[data-testid="policy-notice"]').inner_text()
+        r["home_says_the_policy_changed"] = "Récemment supprimés" in said and "10 novembre 2026" in said
+        await shot(page, "bin-policy-notice.png")
+        await page.locator('[data-testid="policy-notice-read"]').click()
+        await page.wait_for_timeout(1200)
+        r["it_opens_the_policy"] = "Recently deleted" in await page.locator("body").inner_text()
+        await page.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await page.wait_for_selector('[data-testid="policy-notice"]', timeout=20000)
+        r["reading_is_not_acknowledging"] = await page.locator('[data-testid="policy-notice"]').count() == 1
+        await page.locator('[data-testid="policy-notice-ok"]').click()
+        await page.wait_for_timeout(500)
+        await page.reload(wait_until="domcontentloaded")
+        await page.wait_for_selector('[data-testid="feed-week"]', timeout=20000)
+        await page.wait_for_timeout(1500)
+        r["once_acknowledged_it_is_gone"] = await page.locator('[data-testid="policy-notice"]').count() == 0
+
         await page.goto(f"{WEB}/kitchen?view=shop", wait_until="domcontentloaded")
         await page.wait_for_selector(f'[data-testid="shop-item-{items["Lait"]}"]', timeout=20000)
         await page.wait_for_timeout(500)

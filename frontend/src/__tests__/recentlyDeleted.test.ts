@@ -190,3 +190,26 @@ describe('the screen', () => {
     for (const kind of kinds) expect(read('src', 'i18n.ts')).toContain(`trash_kind_${kind}:`);
   });
 });
+
+describe('the policy change is said in the app', () => {
+  // The policy promises: "We will announce material changes in the app".
+  const notice = read('src', 'components', 'PolicyNotice.tsx');
+
+  it('announces the date the policy was updated', () => {
+    const policy = JSON.parse(read('..', 'legal', 'privacy.json'));
+    expect(policy.updated).toBe('10 November 2026');
+    expect(notice).toContain("export const POLICY_NOTICE_ID = '2026-11-10';");
+    const i18n = read('src', 'i18n.ts');
+    expect(i18n).toContain('policy_notice_body: "Ce que vous supprimez peut désormais être restauré pendant 30 jours au plus, depuis Réglages. Notre politique de confidentialité a été mise à jour le 10 novembre 2026 pour le préciser.",');
+    for (const key of ['policy_notice_title', 'policy_notice_body', 'policy_notice_read', 'policy_notice_ok']) {
+      expect([key, (i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length]).toEqual([key, 4]);
+    }
+  });
+
+  it('stays until acknowledged, links to the policy, and is on Home', () => {
+    expect(notice).toContain('AsyncStorage.setItem(POLICY_NOTICE_KEY, POLICY_NOTICE_ID)');
+    expect(notice).toContain("router.push('/privacy' as never)");
+    expect(read('app', '(tabs)', 'feed.tsx')).toContain('<PolicyNotice />');
+  });
+});
+
