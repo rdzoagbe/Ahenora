@@ -1044,17 +1044,55 @@ async def _gemini_text(prompt: str, system: str = "", temperature: float = None,
     return await _gemini_generate(prompt, system, temperature=temperature, fast=fast)
 
 
-async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast: bool = False) -> str:
+# The longest side a picture is sent to the model at. Google's document guide
+# scales PDF pages to at most 3072 x 3072, and every 768 x 768 tile of an
+# image costs 258 tokens (image-understanding guide), so a 12 MP photo sent
+# whole is about twice the tiles of the same photo at 3072 — read no better,
+# answered slower.
+VISION_MAX_SIDE = 3072
+VISION_JPEG_QUALITY = 85
+
+
+def vision_jpeg(image_base64: str) -> bytes:
+    """A picture as the model should get it: upright, at most VISION_MAX_SIDE
+    on its longest side, as JPEG.
+
+    Handing the SDK a PIL image made it re-encode the picture as PNG
+    (google-genai pil_to_blob keeps JPEG only for an image opened from a
+    named FILE; ours come from memory). A 2 MB phone photo became a 26 MB
+    PNG: 2.3 s of encoding here, an upload of the same to Google, and past
+    the 20 MB inline request limit Google documents for a detailed shot.
+    Reported as "it takes a long time before it adds", 2026-11-10.
+
+    CPU work: callers run it in a worker thread.
+    """
     if "," in image_base64:
         image_base64 = image_base64.split(",")[-1]
-    img_bytes = base64.b64decode(image_base64)
-    img = PIL.Image.open(io.BytesIO(img_bytes))
-    # A photo saved as a file keeps its orientation in an EXIF tag, which is
-    # lost when the picture is re-encoded for the model: turn it upright
-    # first, or a portrait list arrives on its side. (The camera and gallery
-    # pickers already re-encode upright; this is a no-op for them.)
+    img = PIL.Image.open(io.BytesIO(base64.b64decode(image_base64)))
+    # A photo saved as a file keeps its orientation in an EXIF tag, which
+    # re-encoding drops: turn it upright first, or a portrait list arrives on
+    # its side. (The camera and gallery pickers already re-encode upright.)
     img = PIL.ImageOps.exif_transpose(img)
-    return await _gemini_generate([prompt, img], system, fast=fast)
+    if img.mode not in ("RGB", "L"):
+        # JPEG has no transparency: a transparent screenshot goes on white,
+        # which is what it looked like on the screen it was taken from.
+        rgba = img.convert("RGBA")
+        img = PIL.Image.new("RGB", rgba.size, (255, 255, 255))
+        img.paste(rgba, mask=rgba.getchannel("A"))
+    img.thumbnail((VISION_MAX_SIDE, VISION_MAX_SIDE))
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=VISION_JPEG_QUALITY)
+    return out.getvalue()
+
+
+async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast: bool = False) -> str:
+    data = await run_in_threadpool(vision_jpeg, image_base64)
+    if genai_types is None:
+        # No SDK types to wrap bytes in; _gemini_generate will report the
+        # missing client the same way it does for every other call.
+        return await _gemini_generate([prompt, PIL.Image.open(io.BytesIO(data))], system, fast=fast)
+    part = genai_types.Part.from_bytes(data=data, mime_type="image/jpeg")
+    return await _gemini_generate([prompt, part], system, fast=fast)
 
 
 # The two launch tiers. Young people are metered (role-aware: parents/caregivers

@@ -286,7 +286,7 @@ class APdfShoppingList(unittest.TestCase):
         seen = []
 
         async def generate(contents, system="", **kwargs):
-            seen.append(contents[1].size)
+            seen.append(PIL.Image.open(io.BytesIO(contents[1].inline_data.data)).size)
             return ITEMS
         server._gemini_generate = generate
         server._gemini_vision = self._vision
