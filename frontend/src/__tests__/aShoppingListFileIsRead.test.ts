@@ -177,7 +177,12 @@ describe('the scan sheet', () => {
     expect(api).toContain('body: { pdf_base64: pdfBase64 }');
     expect(kitchen).toContain("if (kind === 'pdf') await readScan('pdf', () => api.scanShoppingPdf(base64));");
     expect(kitchen).toContain("else await readScan('image_file', () => api.scanShoppingList(base64));");
-    expect(kitchen).toMatch(/const \{ items \} = await read\(\);\s*setScanItems\(items\.map\(\(i\) => \(\{ \.\.\.i, checked: !i\.unsure \}\)\)\);/);
+    expect(kitchen).toMatch(/const \{ items, left_out: leftOut \} = await read\(\);\s*setScanItems\(items\.map\(\(i\) => \(\{ \.\.\.i, checked: !i\.unsure \}\)\)\);/);
+  });
+
+  it('says when a long list went past the limit, instead of dropping the rest quietly', () => {
+    expect(kitchen).toContain('setScanLeftOut(leftOut ?? 0);');
+    expect(kitchen).toContain("t('scan_left_out', { n: scanLeftOut })");
   });
 
   it('after a file, offers another file rather than another photo, and says "your file"', () => {
@@ -200,7 +205,7 @@ describe('the scan sheet', () => {
 
   it('is worded in all four languages', () => {
     for (const key of ['scan_file', 'scan_file_hint', 'scan_file_too_large', 'scan_file_not_supported', 'scan_file_heic',
-      'scan_file_open_failed', 'scan_file_again', 'scan_pdf_failed', 'scan_note_pdf', 'scan_note_file']) {
+      'scan_file_open_failed', 'scan_file_again', 'scan_pdf_failed', 'scan_note_pdf', 'scan_note_file', 'scan_left_out']) {
       expect((i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length).toBe(4);
     }
     expect(i18n).toContain('scan_file: "Importer un fichier"');

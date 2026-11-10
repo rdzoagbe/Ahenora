@@ -3112,15 +3112,17 @@ export const api = {
     request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
   clearCheckedShopping: () =>
     request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
+  // left_out: items read past the server's limit (100), counted so the
+  // review can say so rather than drop them in silence.
   scanShoppingList: (imageBase64: string) =>
-    request<{ items: { name: string; unsure: boolean }[] }>('/shopping/scan', {
+    request<{ items: { name: string; unsure: boolean }[]; left_out?: number }>('/shopping/scan', {
       method: 'POST',
       body: { image_base64: imageBase64 },
       timeoutMs: VISION_TIMEOUT_MS,
     }),
   // A PDF of a shopping list, read like a photo of one: candidates only.
   scanShoppingPdf: (pdfBase64: string) =>
-    request<{ items: { name: string; unsure: boolean }[] }>('/shopping/scan', {
+    request<{ items: { name: string; unsure: boolean }[]; left_out?: number }>('/shopping/scan', {
       method: 'POST',
       body: { pdf_base64: pdfBase64 },
       timeoutMs: VISION_TIMEOUT_MS,

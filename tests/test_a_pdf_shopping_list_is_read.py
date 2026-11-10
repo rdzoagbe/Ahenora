@@ -131,6 +131,23 @@ class APdfShoppingList(unittest.TestCase):
         out = self.scan({"pdf_base64": "data:application/pdf;base64," + pdf()})
         self.assertEqual(len(out["items"]), 3)
 
+    def test_it_says_how_many_were_left_out_past_the_limit(self):
+        self.assertEqual(self.scan({"pdf_base64": pdf()})["left_out"], 0)
+
+        async def long_list(contents, system="", **kwargs):
+            return '{"items": [' + ",".join('{"name": "Item %d"}' % n for n in range(130)) + "]}"
+        server._gemini_generate = long_list
+        out = self.scan({"pdf_base64": pdf()})
+        self.assertEqual((len(out["items"]), out["left_out"]), (100, 30))
+
+    def test_a_list_that_is_not_read_is_counted_by_why(self):
+        async def refused(contents, system="", **kwargs):
+            return '{"refused": true}'
+        server._gemini_generate = refused
+        self.refused({"pdf_base64": pdf()})
+        row = run(self.db["metrics_daily"].find_one({"name": "shopping_scan_unread_not_a_list"}))
+        self.assertEqual(row["count"], 1)
+
     def test_it_is_charged_once_and_nothing_is_added(self):
         self.scan({"pdf_base64": pdf()})
         self.assertEqual(self.used(), 1)

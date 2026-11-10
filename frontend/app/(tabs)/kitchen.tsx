@@ -413,6 +413,8 @@ export default function Kitchen() {
   // What was read, so the review says "your PDF" rather than "your photo",
   // and offers another file rather than another photo.
   const [scanSource, setScanSource] = useState<'photo' | 'pdf' | 'image_file'>('photo');
+  // Items read past the server's limit: said in the review, never dropped quietly.
+  const [scanLeftOut, setScanLeftOut] = useState(0);
 
   const openScan = useCallback(() => {
     setScanPhase('idle');
@@ -424,12 +426,14 @@ export default function Kitchen() {
   // One way into the review for a photo and a PDF alike.
   const readScan = useCallback(async (
     source: 'photo' | 'pdf' | 'image_file',
-    read: () => Promise<{ items: { name: string; unsure: boolean }[] }>,
+    read: () => Promise<{ items: { name: string; unsure: boolean }[]; left_out?: number }>,
   ) => {
     setScanPhase('reading');
     setScanSource(source);
-    const { items } = await read();
+    setScanLeftOut(0);
+    const { items, left_out: leftOut } = await read();
     setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
+    setScanLeftOut(leftOut ?? 0);
     setScanPhase('review');
   }, []);
 
@@ -3125,6 +3129,9 @@ export default function Kitchen() {
         ) : scanPhase === 'review' ? (
           <>
             <Text style={styles.suggestSub}>{scanItems.length === 1 ? t('scan_sub_one') : t('scan_sub', { n: scanItems.length })}</Text>
+            {scanLeftOut > 0 ? (
+              <Text testID="scan-left-out" style={styles.scanError}>{t('scan_left_out', { n: scanLeftOut })}</Text>
+            ) : null}
             {scanItems.map((item, idx) => (
               <PressScale
                 key={`${item.name}-${idx}`}

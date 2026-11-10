@@ -700,14 +700,25 @@ def validate_document_scan(parsed: dict, members: list) -> dict:
     }
 
 
-MAX_SCAN_ITEMS = 40
+# How many items one read hands to the review. Was 40, and past it the whole
+# read was thrown away: a family's long weekly list, or a two-page PDF, came
+# back as "we could not read a shopping list" (reported from a real phone,
+# 2026-11-10). Now the first MAX_SCAN_ITEMS are kept and the rest are COUNTED
+# and said, never dropped in silence.
+MAX_SCAN_ITEMS = 100
 
 
-def validate_shopping_scan(parsed: dict) -> list:
-    """Check a scanned shopping list before it is shown.
+def read_shopping_scan(parsed: dict) -> tuple:
+    """Check a scanned shopping list before it is shown: (items, left_out).
 
     Names go through the same sanitiser as typed items. Only leakage terms
     are screened — cleaning products are legitimate groceries here.
+
+    One line the model could not make into an item (blank, a stray symbol, a
+    shape that is not an item) is left out; it no longer throws away every
+    good line read with it. The read is refused only when nothing usable is
+    left, when the model itself refused, or on leakage — which says the
+    answer is not a list at all.
     """
     if not isinstance(parsed, dict):
         raise UnsafeRecipe("not an object")
@@ -717,22 +728,27 @@ def validate_shopping_scan(parsed: dict) -> list:
     raw = parsed.get("items")
     if not isinstance(raw, list):
         raise UnsafeRecipe("items not a list")
-    if not (1 <= len(raw) <= MAX_SCAN_ITEMS):
-        raise UnsafeRecipe("item count out of range")
 
     out = []
     for item in raw:
         if not isinstance(item, dict):
-            raise UnsafeRecipe("item not an object")
+            continue
         name = sanitize_user_text(str(item.get("name") or ""), MAX_INGREDIENT_LEN)
         if not name:
-            raise UnsafeRecipe("empty item name")
+            continue
         lowered = name.lower()
         for term in _LEAKAGE_TERMS:
             if term in lowered:
                 raise UnsafeRecipe("blocked content")
         out.append({"name": name, "unsure": bool(item.get("unsure"))})
-    return out
+    if not out:
+        raise UnsafeRecipe("nothing readable")
+    return out[:MAX_SCAN_ITEMS], max(0, len(out) - MAX_SCAN_ITEMS)
+
+
+def validate_shopping_scan(parsed: dict) -> list:
+    """The items alone, for the camera's shopping pass (vision_extract)."""
+    return read_shopping_scan(parsed)[0]
 
 
 MAX_QUESTION_LEN = 120
