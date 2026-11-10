@@ -11,9 +11,11 @@ inline request limit Google documents ("Image understanding" guide). Each
 768x768 tile of a picture also costs the model 258 tokens, so a full-size
 photo was more to read, not more readable.
 
-These pin: JPEG, at most VISION_MAX_SIDE on the longest side, upright, small
-pictures left their size, transparency on white — for every vision route,
-since they all come through _gemini_vision.
+These pin: JPEG, within a pixel budget (VISION_MAX_PIXELS, not a longest-side
+cap, so a long screenshot stays readable), upright, small pictures left their
+size, transparency and 16-bit greyscale flattened the way they looked, and the
+work done once per picture — for every vision route, since they all come
+through _gemini_vision.
 """
 import asyncio
 import base64
@@ -41,9 +43,11 @@ def b64(img, fmt="JPEG", **kw):
     return base64.b64encode(buf.getvalue()).decode()
 
 
-@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+@unittest.skipUnless(HAVE_DEPS and server.genai_types is not None if HAVE_DEPS else False,
+                     "backend dependencies (google-genai) not installed")
 class APhotoGoesToTheModelSmall(unittest.TestCase):
     def setUp(self):
+        server._VISION_CACHE.clear()
         self._generate = server._gemini_generate
         self.sent = []
 
@@ -60,15 +64,48 @@ class APhotoGoesToTheModelSmall(unittest.TestCase):
         part = self.sent[-1][1]
         return part, PIL.Image.open(io.BytesIO(part.inline_data.data))
 
-    def test_a_phone_photo_goes_as_a_jpeg_no_bigger_than_the_cap(self):
+    def test_a_phone_photo_goes_as_a_jpeg_within_the_budget(self):
         part, img = self.read(b64(PIL.Image.new("RGB", (4000, 3000), "white"), quality=55))
         self.assertEqual(part.inline_data.mime_type, "image/jpeg")
         self.assertEqual(img.format, "JPEG")
-        self.assertEqual(max(img.size), server.VISION_MAX_SIDE)
-        self.assertEqual(img.size, (3072, 2304))   # the proportions kept
+        self.assertLessEqual(img.size[0] * img.size[1], 3072 * 3072)
+        self.assertGreater(img.size[0] * img.size[1], 0.95 * 3072 * 3072)
+        self.assertAlmostEqual(img.size[0] / img.size[1], 4 / 3, places=2)   # proportions kept
 
-    def test_the_cap_is_googles_own_page_size(self):
-        self.assertEqual(server.VISION_MAX_SIDE, 3072)
+    def test_a_long_screenshot_of_a_list_stays_readable(self):
+        # 1170 x 12000: capped at 3072 tall it would be 300 px wide.
+        _, img = self.read(b64(PIL.Image.new("RGB", (1170, 12000), "white"), "PNG"))
+        self.assertGreater(img.size[0], 900)
+        self.assertLessEqual(img.size[0] * img.size[1], 3072 * 3072)
+
+    def test_sixteen_bit_greyscale_is_not_a_blank_page(self):
+        import numpy as np
+        grey = np.full((40, 40), 20000, dtype=np.uint16)
+        grey[:, :20] = 1000
+        _, img = self.read(b64(PIL.Image.fromarray(grey), "PNG"))
+        left, right = img.convert("L").getpixel((5, 20)), img.convert("L").getpixel((35, 20))
+        self.assertLess(left, right)
+        self.assertLess(right, 250)   # not clipped to white
+
+    def test_a_png_transparent_colour_lands_on_white(self):
+        pal = PIL.Image.new("L", (40, 40), 0)
+        pal.paste(255, (10, 10, 30, 30))
+        _, img = self.read(b64(pal, "PNG", transparency=0))
+        self.assertGreater(img.convert("L").getpixel((2, 2)), 240)
+
+    def test_the_same_photo_is_prepared_once(self):
+        calls = []
+        real = server._vision_to_rgb
+        server._vision_to_rgb = lambda img: calls.append(1) or real(img)
+        try:
+            photo = b64(PIL.Image.new("RGB", (900, 700), "white"))
+            self.read(photo)
+            self.read(photo)
+            # The shopping scan's opens-check prepares what its read then sends.
+            self.read(b64(PIL.Image.new("RGB", (901, 700), "white")))
+        finally:
+            server._vision_to_rgb = real
+        self.assertEqual(len(calls), 2)
 
     def test_a_small_picture_keeps_its_size(self):
         _, img = self.read(b64(PIL.Image.new("RGB", (800, 600), "white")))
@@ -79,14 +116,17 @@ class APhotoGoesToTheModelSmall(unittest.TestCase):
         rng = np.random.default_rng(0)
         noisy = PIL.Image.fromarray(rng.integers(0, 255, (3000, 4000, 3), dtype=np.uint8))
         part, _ = self.read(b64(noisy, quality=55))
-        self.assertLess(len(part.inline_data.data), 5 * 1024 * 1024)
+        # Pure noise is the worst case a JPEG can meet; real photos are far
+        # smaller. Inline bytes travel base64-encoded, a third larger.
+        self.assertLess(len(part.inline_data.data) * 4 / 3, 20 * 1024 * 1024)
 
-    def test_upright_before_it_is_made_smaller(self):
-        picture = PIL.Image.new("RGB", (4000, 2000), "white")
+    def test_upright_and_within_the_budget(self):
+        picture = PIL.Image.new("RGB", (6000, 3000), "white")
         exif = picture.getexif()
         exif[0x0112] = 6   # "rotate 90° to view"
         _, img = self.read(b64(picture, exif=exif))
-        self.assertEqual(img.size, (1536, 3072))
+        self.assertLess(img.size[0], img.size[1])   # portrait, as it is viewed
+        self.assertLessEqual(img.size[0] * img.size[1], 3072 * 3072)
 
     def test_a_transparent_screenshot_lands_on_white(self):
         _, img = self.read(b64(PIL.Image.new("RGBA", (50, 50), (0, 0, 0, 0)), "PNG"))

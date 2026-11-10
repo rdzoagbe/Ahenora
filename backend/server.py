@@ -9,6 +9,7 @@ import random
 import asyncio
 import math
 import hashlib
+import threading
 import traceback
 import hmac
 import secrets
@@ -1044,18 +1045,55 @@ async def _gemini_text(prompt: str, system: str = "", temperature: float = None,
     return await _gemini_generate(prompt, system, temperature=temperature, fast=fast)
 
 
-# The longest side a picture is sent to the model at. Google's document guide
-# scales PDF pages to at most 3072 x 3072, and every 768 x 768 tile of an
-# image costs 258 tokens (image-understanding guide), so a 12 MP photo sent
-# whole is about twice the tiles of the same photo at 3072 — read no better,
-# answered slower.
-VISION_MAX_SIDE = 3072
+# How big a picture is sent to the model, as a PIXEL budget rather than a
+# longest side: 3072 x 3072, the size Google's document guide scales PDF pages
+# to. Every 768 x 768 tile of an image costs 258 tokens (image-understanding
+# guide), so a 12 MP photo sent whole is more to read, not more readable. A
+# budget, not a side cap, because a long screenshot of a list (1170 x 12000)
+# capped at 3072 tall would be 300 px wide and unreadable; under a budget it
+# keeps most of its width.
+VISION_MAX_PIXELS = 3072 * 3072
 VISION_JPEG_QUALITY = 85
+
+# One request can read the same photo more than once (the document scan's
+# recipe / shopping / receipt passes, the shopping scan's opens-check then its
+# read). The prepared JPEG is kept for the few most recent pictures, keyed by
+# a digest of the upload, so that work is done once.
+_VISION_CACHE: "dict[bytes, bytes]" = {}
+_VISION_CACHE_SIZE = 8
+_VISION_CACHE_LOCK = threading.Lock()
+
+
+def _vision_budget_size(width: int, height: int) -> tuple:
+    if width * height <= VISION_MAX_PIXELS:
+        return width, height
+    scale = math.sqrt(VISION_MAX_PIXELS / (width * height))
+    return max(1, int(width * scale)), max(1, int(height * scale))
+
+
+def _vision_to_rgb(img):
+    """Flatten what JPEG cannot hold, the way the picture looked on screen."""
+    if img.mode in ("I", "F") or img.mode.startswith("I;16"):
+        # 16-bit (or float) greyscale from a scanner app. Converting straight
+        # to 8-bit clips everything past 255 to white, i.e. a blank page.
+        import numpy as np
+        values = np.asarray(img, dtype=np.float64)
+        top = float(values.max()) if values.size else 0.0
+        if top > 255:
+            values = values * (255.0 / (65535.0 if top <= 65535 else top))
+        img = PIL.Image.fromarray(np.clip(values, 0, 255).astype(np.uint8), "L")
+    if img.mode in ("RGB", "L") and "transparency" not in img.info:
+        return img
+    # Transparency, whether as an alpha channel or a PNG tRNS colour: on white.
+    rgba = img.convert("RGBA")
+    flat = PIL.Image.new("RGB", rgba.size, (255, 255, 255))
+    flat.paste(rgba, mask=rgba.getchannel("A"))
+    return flat
 
 
 def vision_jpeg(image_base64: str) -> bytes:
-    """A picture as the model should get it: upright, at most VISION_MAX_SIDE
-    on its longest side, as JPEG.
+    """A picture as the model should get it: upright, within VISION_MAX_PIXELS,
+    as JPEG. Raises on a picture that cannot be decoded, truncated included.
 
     Handing the SDK a PIL image made it re-encode the picture as PNG
     (google-genai pil_to_blob keeps JPEG only for an image opened from a
@@ -1068,29 +1106,43 @@ def vision_jpeg(image_base64: str) -> bytes:
     """
     if "," in image_base64:
         image_base64 = image_base64.split(",")[-1]
+    key = hashlib.sha256(image_base64.encode("ascii", "ignore")).digest()
+    with _VISION_CACHE_LOCK:
+        cached = _VISION_CACHE.get(key)
+    if cached is not None:
+        return cached
+
     img = PIL.Image.open(io.BytesIO(base64.b64decode(image_base64)))
+    # Shrink while decoding where the format allows it (JPEG's draft mode
+    # decodes at 1/2, 1/4 or 1/8 scale): far less memory and time than
+    # decoding 12 MP and throwing most of it away. The budget is an area, so
+    # it holds whichever way up the picture turns out to be.
+    target = _vision_budget_size(*img.size)
+    if target != img.size:
+        img.draft("RGB", target)
     # A photo saved as a file keeps its orientation in an EXIF tag, which
-    # re-encoding drops: turn it upright first, or a portrait list arrives on
-    # its side. (The camera and gallery pickers already re-encode upright.)
+    # re-encoding drops: turn it upright, or a portrait list arrives on its
+    # side. (The camera and gallery pickers already re-encode upright.)
     img = PIL.ImageOps.exif_transpose(img)
-    if img.mode not in ("RGB", "L"):
-        # JPEG has no transparency: a transparent screenshot goes on white,
-        # which is what it looked like on the screen it was taken from.
-        rgba = img.convert("RGBA")
-        img = PIL.Image.new("RGB", rgba.size, (255, 255, 255))
-        img.paste(rgba, mask=rgba.getchannel("A"))
-    img.thumbnail((VISION_MAX_SIDE, VISION_MAX_SIDE))
+    img = _vision_to_rgb(img)
+    size = _vision_budget_size(*img.size)
+    if size != img.size:
+        img = img.resize(size, PIL.Image.LANCZOS)
     out = io.BytesIO()
     img.save(out, "JPEG", quality=VISION_JPEG_QUALITY)
-    return out.getvalue()
+    data = out.getvalue()
+
+    with _VISION_CACHE_LOCK:
+        _VISION_CACHE[key] = data
+        while len(_VISION_CACHE) > _VISION_CACHE_SIZE:
+            _VISION_CACHE.pop(next(iter(_VISION_CACHE)))
+    return data
 
 
 async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast: bool = False) -> str:
-    data = await run_in_threadpool(vision_jpeg, image_base64)
     if genai_types is None:
-        # No SDK types to wrap bytes in; _gemini_generate will report the
-        # missing client the same way it does for every other call.
-        return await _gemini_generate([prompt, PIL.Image.open(io.BytesIO(data))], system, fast=fast)
+        raise RuntimeError("google-genai is not installed")
+    data = await run_in_threadpool(vision_jpeg, image_base64)
     part = genai_types.Part.from_bytes(data=data, mime_type="image/jpeg")
     return await _gemini_generate([prompt, part], system, fast=fast)
 
@@ -17627,15 +17679,13 @@ def shopping_picture_opens(image_b64: str) -> None:
     downloaded from iCloud: the file's problem, said as a free 400, not a 502
     the app tells as an outage.
 
-    The pixels are decoded (load), not just the header, because a truncated
-    file has a perfect header. Called in a worker thread: decoding a 10 MB
-    picture must not hold up every other request. The base64 is decoded the
-    same lenient way _gemini_vision decodes it, so what passes here is what
-    the model call will read.
+    It prepares the very JPEG the read will send (vision_jpeg, which decodes
+    every pixel, so a truncated file with a perfect header is caught too); the
+    read then finds it in vision_jpeg's cache instead of doing it again. Run
+    in a worker thread.
     """
     try:
-        with PIL.Image.open(io.BytesIO(base64.b64decode(image_b64))) as img:
-            img.load()
+        vision_jpeg(image_b64)
     except Exception:  # noqa: BLE001 — any way of not opening is "not readable"
         # Pillow says it several ways: UnidentifiedImageError for an unknown
         # format, a bare OSError for a PNG broken after its signature or a
