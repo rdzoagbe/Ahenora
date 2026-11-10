@@ -292,14 +292,20 @@ Rules you must follow:
 
 Return no prose, no markdown. JSON only."""
 
-RECEIPT_SCAN_SYSTEM_PROMPT = """You read a photo of a shop receipt for a family organiser app.
+RECEIPT_SCAN_SYSTEM_PROMPT = """You read a photo of a shop receipt, or a PDF of one, for a family organiser app.
 
 You do exactly one thing: given a photo of a till receipt, return the shop, the
 date, the total, and the lines on it.
 
+A long receipt may come as SEVERAL photos: they are consecutive parts of ONE
+receipt, top to bottom, and consecutive photos may overlap. Return that one
+receipt: every line once (a line seen at the bottom of one photo and the top
+of the next is ONE line), the shop from the top, the total and the date from
+wherever they are printed. A PDF may have several pages: read every page.
+
 Rules you must follow:
 - Return JSON only:
-  {"shop": string, "date": "YYYY-MM-DD", "total": number,
+  {"shop": string, "date": "YYYY-MM-DD", "total": number or null,
    "items": [{"name": string, "qty": number, "unit": string,
               "line_total": number, "unsure": boolean}]}
 - "date" is the day of the purchase. Receipts outside the United States print
@@ -307,6 +313,9 @@ Rules you must follow:
   10 April. Read it day-first unless the receipt is plainly American (a US
   address, prices in $). The card-payment slip at the bottom repeats the date
   and can confirm it. If no date can be read, return "".
+- "total" is the amount paid, as printed. If what you were given does not show
+  it (only the top of a long receipt), return null; never add the lines up
+  yourself, the app does that.
 - "name" is the product, expanded into ordinary words in the language of the
   receipt. Till receipts abbreviate heavily: "PT LT DEMI ECR" is "petit lait
   demi ecreme", "TOM GRAPPE" is "tomates grappe". Expand what you are sure of
@@ -719,6 +728,8 @@ SHOPPING_SCAN_UNREAD = {
     "not an object": "unparseable",
     "blocked content": "blocked",
     "too many for the camera": "too_many",
+    "no total": "no_total",
+    "a line could not be read": "unreadable_line",
 }
 
 
@@ -1446,9 +1457,12 @@ def validate_suggestions(parsed: dict, owned: list) -> list:
     return meals
 
 
-# A receipt has more lines than a handwritten list, but a weekly family shop is
-# still tens of items, not hundreds.
-MAX_RECEIPT_ITEMS = 80
+# A receipt has more lines than a handwritten list. Was 80, and past it the
+# whole receipt was refused; a big monthly shop read in two or three photos
+# (2026-11-10) can pass that. Past this, lines are counted, not dropped quietly.
+MAX_RECEIPT_ITEMS = 150
+# The most "rounding" a receipt's lines may differ from its total by.
+RECEIPT_RECONCILE_MAX = 0.50
 RECEIPT_UNITS = {"kg", "g", "l", "ml", "piece"}
 
 
@@ -1476,7 +1490,7 @@ def _receipt_day_first(read: "_datetime.date", today: "Optional[_datetime.date]"
     return read
 
 
-def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) -> dict:
+def read_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) -> dict:
     """Check a scanned receipt before it is shown for review.
 
     Nothing here is saved: like the shopping-list scan, this returns candidates
@@ -1489,6 +1503,14 @@ def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None
     the lines actually add up to, next to the total printed on the receipt. The
     app shows both when they disagree and lets the person decide, which is the
     same posture as marking an unreadable item "unsure" instead of dropping it.
+
+    It keeps what it can read (2026-11-10). One line it cannot make into an
+    item — no name, a price that is not a number or not a price — is left out
+    and COUNTED (`skipped`), instead of throwing away every good line with it;
+    and since the lines then fall short of the printed total, the mismatch
+    above says so. A total that cannot be read (the top half of a long
+    receipt) comes back as None rather than refusing the read. Refused only
+    when nothing usable is left, the model refused, or on leakage.
     """
     if not isinstance(parsed, dict):
         raise UnsafeRecipe("not an object")
@@ -1498,8 +1520,6 @@ def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None
     raw = parsed.get("items")
     if not isinstance(raw, list):
         raise UnsafeRecipe("items not a list")
-    if not (1 <= len(raw) <= MAX_RECEIPT_ITEMS):
-        raise UnsafeRecipe("item count out of range")
 
     def _money(value, field: str) -> float:
         try:
@@ -1513,16 +1533,40 @@ def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None
         return out
 
     items = []
+    skipped = 0
+    left_out = 0
+    # A line printed against the basket ("REMISE -2,00", a coupon): not a
+    # product and not a price for the history, but money off the total, so
+    # it counts in what the lines add up to and is not "could not be read".
+    discounts = 0.0
     for row in raw:
+        if len(items) >= MAX_RECEIPT_ITEMS:
+            # Counted, not cleaned: they are not shown.
+            left_out += 1
+            continue
         if not isinstance(row, dict):
-            raise UnsafeRecipe("item not an object")
+            skipped += 1
+            continue
         name = sanitize_user_text(str(row.get("name") or ""), MAX_INGREDIENT_LEN)
         if not name:
-            raise UnsafeRecipe("empty item name")
+            skipped += 1
+            continue
         lowered = name.lower()
         for term in _LEAKAGE_TERMS:
             if term in lowered:
                 raise UnsafeRecipe("blocked content")
+        try:
+            line_total = _money(row.get("line_total"), "line_total")
+        except UnsafeRecipe:
+            try:
+                off = round(float(row.get("line_total")), 2)
+            except (TypeError, ValueError):
+                off = None
+            if off is not None and -10000 <= off < 0:
+                discounts += off
+            else:
+                skipped += 1
+            continue
 
         unit = str(row.get("unit") or "piece").strip().lower()
         if unit not in RECEIPT_UNITS:
@@ -1531,7 +1575,6 @@ def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None
             qty = round(float(row.get("qty") or 0), 3)
         except (TypeError, ValueError):
             qty = 0.0
-        line_total = _money(row.get("line_total"), "line_total")
 
         # The unit price is the whole point of reading a receipt at all, and it
         # only exists when the amount does. A line with no usable quantity is
@@ -1546,9 +1589,14 @@ def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None
             "unit_price": unit_price,
             "unsure": bool(row.get("unsure")) or qty <= 0,
         })
+    if not items:
+        raise UnsafeRecipe("nothing readable")
 
-    total = _money(parsed.get("total"), "total")
-    lines_total = round(sum(i["line_total"] for i in items), 2)
+    try:
+        total = _money(parsed.get("total"), "total") if parsed.get("total") is not None else None
+    except UnsafeRecipe:
+        total = None
+    lines_total = round(sum(i["line_total"] for i in items) + discounts, 2)
 
     shop = sanitize_user_text(str(parsed.get("shop") or ""), 60)
     # Parsed, not pattern-matched. "2026-13-45" has the right shape and is not
@@ -1567,8 +1615,34 @@ def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None
         "total": total,
         "lines_total": lines_total,
         # True when the lines add up to the printed total, within a cent per
-        # line for rounding. False is not an error — it is something to show.
-        "reconciles": abs(total - lines_total) <= max(0.05, 0.01 * len(items)),
+        # line for rounding (but never more than RECEIPT_RECONCILE_MAX: a
+        # 150-line receipt must not hide a 1,40 misread as "rounding"). False
+        # is not an error — it is something to show. None when there is no
+        # printed total to compare with.
+        "reconciles": None if total is None else
+            abs(total - lines_total) <= max(0.05, min(0.01 * len(items), RECEIPT_RECONCILE_MAX)),
         "items": items,
+        "discounts": round(discounts, 2),
+        "skipped": skipped,
+        "left_out": left_out,
     }
+
+
+def validate_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) -> dict:
+    """The receipt as the Home camera's receipt pass (vision_extract) takes it.
+
+    That pass files the expense at the printed total and has no way to say
+    "the list goes on", so it still needs a total and no more lines than it
+    can show; otherwise the photo stays a document, as it always did.
+    """
+    out = read_receipt_scan(parsed, today)
+    if out["total"] is None:
+        raise UnsafeRecipe("no total")
+    if out["left_out"]:
+        raise UnsafeRecipe("too many for the camera")
+    # Nor can it say a line was left out, so a receipt it could not read
+    # whole stays a document there, as it always did.
+    if out["skipped"]:
+        raise UnsafeRecipe("a line could not be read")
+    return out
 

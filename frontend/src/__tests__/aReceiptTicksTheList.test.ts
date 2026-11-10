@@ -79,7 +79,7 @@ describe('the note after saving', () => {
     expect(src).toContain('setTicked(failed.length > 0 ? { ...ticked, items: failed } : null);');
   });
   it('is only replaced once a new receipt has been read', () => {
-    const read = src.indexOf('const read = await api.scanReceipt(base64);');
+    const read = src.indexOf('const result = await read();');
     const clear = src.indexOf('setTicked(null);', read);
     expect(read).toBeGreaterThan(0);
     expect(clear).toBeGreaterThan(read);

@@ -1501,15 +1501,32 @@ export interface ScannedReceiptItem {
   unsure: boolean;
 }
 
+/** A receipt read by the Home camera: always with its printed total. */
+export type CameraReceipt = ScannedReceipt & { total: number; reconciles: boolean };
+
 export interface ScannedReceipt {
   shop: string;
   /** Empty when the date could not be read — the app asks rather than guessing. */
   date: string;
-  total: number;
+  /** null when no total could be read (the top of a long receipt). */
+  total: number | null;
   lines_total: number;
-  /** False means the lines disagree with the printed total: show both, fix neither. */
-  reconciles: boolean;
+  /** False means the lines disagree with the printed total: show both, fix
+   *  neither. null when there is no printed total to compare with. */
+  reconciles: boolean | null;
   items: ScannedReceiptItem[];
+  /** Lines the reader could not make into an item, left out and counted. */
+  skipped?: number;
+  /** Lines past the reader's limit, counted. */
+  left_out?: number;
+  /** How many photos the receipt was read from. */
+  parts?: number;
+  /** How many it may be read from (the server's limit). */
+  max_parts?: number;
+  /** Sent with the next part so it is not charged as another scan. */
+  read_token?: string;
+  /** Money off printed against the basket, counted in lines_total. */
+  discounts?: number;
 }
 
 /** The last price this household paid for one thing, for the shopping list. */
@@ -1829,7 +1846,9 @@ export interface CapturedRecipe {
 export interface ScanResult {
   kind: 'document' | 'recipe' | 'shopping' | 'receipt';
   /** A till receipt, read line by line — on its way to the expenses. */
-  receipt?: ScannedReceipt;
+  // The Home camera's receipt pass only ever returns a receipt with a printed
+  // total (backend validate_receipt_scan), since it files the expense at it.
+  receipt?: CameraReceipt;
   /** A photographed shopping list, read item by item. Unsure reads come unticked. */
   shopping_items?: { name: string; unsure?: boolean }[];
   type: CardType;
@@ -3158,10 +3177,23 @@ export const api = {
     request<{ ok: boolean; deleted: number }>('/shopping/history', { method: 'DELETE' }),
 
   // Expenses
-  scanReceipt: (imageBase64: string) =>
+  // One photo, or a long receipt in up to three photos top to bottom, read
+  // as ONE receipt in one request (the server joins the overlap).
+  // readToken: from the read of the earlier parts, so the rest is not charged
+  // as a second scan.
+  scanReceipt: (imagesBase64: string[], readToken?: string) =>
     request<ScannedReceipt>('/expenses/scan-receipt', {
       method: 'POST',
-      body: { image_base64: imageBase64 },
+      body: imagesBase64.length === 1
+        ? { image_base64: imagesBase64[0] }
+        : { images_base64: imagesBase64, ...(readToken ? { read_token: readToken } : {}) },
+      timeoutMs: VISION_TIMEOUT_MS,
+    }),
+  // A digital receipt: a PDF from an email or the shop's app.
+  scanReceiptPdf: (pdfBase64: string) =>
+    request<ScannedReceipt>('/expenses/scan-receipt', {
+      method: 'POST',
+      body: { pdf_base64: pdfBase64 },
       timeoutMs: VISION_TIMEOUT_MS,
     }),
   getShopPrices: () => request<ShopPrices>('/shopping/prices'),
