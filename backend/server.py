@@ -59,6 +59,7 @@ except ImportError:
     genai = None
     genai_types = None
 import PIL.Image
+import PIL.ImageOps
 
 from ai_models import model_candidates, should_try_next_model, summarize_ai_error
 from document_crop import crop_to_document
@@ -1046,6 +1047,11 @@ async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast:
         image_base64 = image_base64.split(",")[-1]
     img_bytes = base64.b64decode(image_base64)
     img = PIL.Image.open(io.BytesIO(img_bytes))
+    # A photo saved as a file keeps its orientation in an EXIF tag, which is
+    # lost when the picture is re-encoded for the model: turn it upright
+    # first, or a portrait list arrives on its side. (The camera and gallery
+    # pickers already re-encode upright; this is a no-op for them.)
+    img = PIL.ImageOps.exif_transpose(img)
     return await _gemini_generate([prompt, img], system, fast=fast)
 
 
@@ -17574,6 +17580,29 @@ def shopping_pdf_bytes(pdf_b64: str) -> bytes:
     return data
 
 
+def shopping_picture_opens(image_b64: str) -> None:
+    """Refuse, before any allowance or model, a picture this server cannot
+    open. A picture imported from Files can be a format Pillow does not read
+    (HEIC without its plugin), a renamed document, or a JPG only half
+    downloaded from iCloud: the file's problem, said as a free 400, not a 502
+    the app tells as an outage.
+
+    The pixels are decoded (load), not just the header, because a truncated
+    file has a perfect header. Called in a worker thread: decoding a 10 MB
+    picture must not hold up every other request. The base64 is decoded the
+    same lenient way _gemini_vision decodes it, so what passes here is what
+    the model call will read.
+    """
+    try:
+        with PIL.Image.open(io.BytesIO(base64.b64decode(image_b64))) as img:
+            img.load()
+    except Exception:  # noqa: BLE001 — any way of not opening is "not readable"
+        # Pillow says it several ways: UnidentifiedImageError for an unknown
+        # format, a bare OSError for a PNG broken after its signature or a
+        # truncated JPEG, binascii.Error for base64 with bad padding.
+        raise HTTPException(400, "That file is not a picture we can read.")
+
+
 @app.post("/api/shopping/scan")
 async def scan_shopping_list(
     payload: dict = Body(...),
@@ -17604,6 +17633,7 @@ async def scan_shopping_list(
             raise HTTPException(400, "No photo attached.")
         if len(image_b64) > MAX_IMAGE_B64_CHARS:
             raise HTTPException(413, "That photo is too large.")
+        await run_in_threadpool(shopping_picture_opens, image_b64)
 
     kind = "PDF" if pdf_bytes is not None else "photo"
     if not GOOGLE_API_KEY or (pdf_bytes is not None and genai_types is None):

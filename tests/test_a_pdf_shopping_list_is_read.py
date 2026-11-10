@@ -53,6 +53,15 @@ def pdf(pages: int = 1, pad: int = 400) -> str:
     return base64.b64encode(body).decode()
 
 
+def png() -> str:
+    """A real (tiny) picture, padded past the route's 100-character floor."""
+    import io
+    import PIL.Image
+    buf = io.BytesIO()
+    PIL.Image.new("RGB", (64, 64), "white").save(buf, "PNG", compress_level=0)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class APdfShoppingList(unittest.TestCase):
     def setUp(self):
@@ -219,9 +228,68 @@ class APdfShoppingList(unittest.TestCase):
     # --- the photo path -------------------------------------------------
 
     def test_a_photo_still_goes_the_photo_way(self):
-        out = self.scan({"image_base64": "data:image/jpeg;base64," + "A" * 200})
+        out = self.scan({"image_base64": "data:image/png;base64," + png()})
         self.assertEqual(len(out["items"]), 3)
         self.assertEqual(self.calls, [{"vision": True}])
+
+    def test_a_picture_the_server_cannot_open_is_the_files_problem(self):
+        # Imported from Files: a HEIC without the plugin, or a renamed
+        # document. Said as a 400 about the file, free, never a 502.
+        not_a_picture = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 400).decode()
+        self.assertEqual(self.refused({"image_base64": not_a_picture}), 400)
+        # Refused before the model and before any allowance: free.
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.used(), 0)
+
+    def test_it_is_refused_even_when_the_month_is_used_up(self):
+        # The file's problem is said first, not "no scans left".
+        run(self.db["families"].update_one({"family_id": "fam_1"}, {"$set": {"ai_scans_used": 999}}))
+        not_a_picture = base64.b64encode(b"%PDF-1.4 renamed" * 20).decode()
+        self.assertEqual(self.refused({"image_base64": not_a_picture}), 400)
+
+    def test_a_half_downloaded_picture_is_the_files_problem_too(self):
+        # A JPG cut short (iCloud not finished): perfect header, missing
+        # pixels. Caught before the model, not as a 502 after it.
+        import io
+        import PIL.Image
+        buf = io.BytesIO()
+        PIL.Image.new("RGB", (400, 400), "white").save(buf, "JPEG")
+        cut = base64.b64encode(buf.getvalue()[:-600]).decode()
+        self.assertEqual(self.refused({"image_base64": cut}), 400)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.used(), 0)
+
+    def test_a_photo_saved_on_its_side_reaches_the_model_upright(self):
+        # A portrait photo saved as a file keeps its orientation in EXIF,
+        # which re-encoding drops; it is turned upright first.
+        import io
+        import PIL.Image
+        seen = []
+
+        async def generate(contents, system="", **kwargs):
+            seen.append(contents[1].size)
+            return ITEMS
+        server._gemini_generate = generate
+        server._gemini_vision = self._vision
+        picture = PIL.Image.new("RGB", (80, 40), "white")
+        exif = picture.getexif()
+        exif[0x0112] = 6   # "rotate 90° to view"
+        buf = io.BytesIO()
+        picture.save(buf, "JPEG", exif=exif)
+        self.scan({"image_base64": base64.b64encode(buf.getvalue()).decode()})
+        self.assertEqual(seen, [(40, 80)])
+
+    def test_a_real_picture_still_reaches_the_model(self):
+        seen = []
+
+        async def generate(contents, system="", **kwargs):
+            seen.append(contents)
+            return ITEMS
+        server._gemini_generate = generate
+        server._gemini_vision = self._vision
+        out = self.scan({"image_base64": png()})
+        self.assertEqual(len(out["items"]), 3)
+        self.assertEqual(len(seen), 1)
 
     def test_no_photo_and_no_pdf_is_still_a_400(self):
         self.assertEqual(self.refused({}), 400)

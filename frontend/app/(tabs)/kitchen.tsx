@@ -38,7 +38,7 @@ import { recipeMethod } from '../../src/recipeSteps';
 import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '../../src/kitchenWeek';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
-import { pickPdf } from '../../src/pickPdf';
+import { pickListFile } from '../../src/pickListFile';
 import { SECTION_ART } from '../../src/sectionArt';
 
 type KitchenView = 'shop' | 'meal' | 'spend';
@@ -410,8 +410,9 @@ export default function Kitchen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanItems, setScanItems] = useState<{ name: string; unsure: boolean; checked: boolean }[]>([]);
   const [scanAdding, setScanAdding] = useState(false);
-  // What was read, so the review says "your PDF" rather than "your photo".
-  const [scanSource, setScanSource] = useState<'photo' | 'pdf'>('photo');
+  // What was read, so the review says "your PDF" rather than "your photo",
+  // and offers another file rather than another photo.
+  const [scanSource, setScanSource] = useState<'photo' | 'pdf' | 'image_file'>('photo');
 
   const openScan = useCallback(() => {
     setScanPhase('idle');
@@ -422,7 +423,7 @@ export default function Kitchen() {
 
   // One way into the review for a photo and a PDF alike.
   const readScan = useCallback(async (
-    source: 'photo' | 'pdf',
+    source: 'photo' | 'pdf' | 'image_file',
     read: () => Promise<{ items: { name: string; unsure: boolean }[] }>,
   ) => {
     setScanPhase('reading');
@@ -474,39 +475,46 @@ export default function Kitchen() {
     }
   }, [t, readScan, scanFailed]);
 
-  // A list that arrived as a PDF (an email, a school or club list, one typed
-  // on a computer): read the same way, into the same ticked review.
-  const pickScanPdf = useCallback(async () => {
+  // A list that arrived as a FILE: a PDF (an email, a school or club list,
+  // one typed on a computer) or a picture that is not in the gallery (saved
+  // from an email, in Files, in Drive). Read the same way, into the same
+  // ticked review; which reader is decided by what the file is.
+  const pickScanFile = useCallback(async () => {
     setScanError(null);
-    let picked: Awaited<ReturnType<typeof pickPdf>>;
+    let picked: Awaited<ReturnType<typeof pickListFile>>;
     try {
-      picked = await pickPdf();
+      picked = await pickListFile();
     } catch (e: any) {
       // Opening the file failed on this phone (an iCloud file not downloaded,
       // a provider that went away): nothing was sent, so it is not the
       // network's fault and must not be told as "no connection".
-      logger.warn('pickPdf failed:', e?.message || e);
-      setScanError(t('scan_pdf_open_failed'));
+      logger.warn('pickListFile failed:', e?.message || e);
+      setScanError(t('scan_file_open_failed'));
       return;
     }
     if (!picked) return;
     if ('problem' in picked) {
-      setScanError(t(picked.problem === 'too_large' ? 'scan_pdf_too_large'
-        : picked.problem === 'not_pdf' ? 'scan_pdf_not_pdf' : 'vault_files_update_needed'));
+      setScanError(t({
+        too_large: 'scan_file_too_large',
+        not_supported: 'scan_file_not_supported',
+        heic: 'scan_file_heic',
+        update_needed: 'vault_files_update_needed',
+      }[picked.problem]));
       return;
     }
-    const { base64 } = picked;
+    const { kind, base64 } = picked;
     try {
-      await readScan('pdf', () => api.scanShoppingPdf(base64));
+      if (kind === 'pdf') await readScan('pdf', () => api.scanShoppingPdf(base64));
+      else await readScan('image_file', () => api.scanShoppingList(base64));
     } catch (e: any) {
-      // The server's own reasons, said in the sheet's words: too big or too
-      // many pages; not a PDF after all (its header says otherwise).
+      // The server's own reasons, said in the sheet's words: too big (or too
+      // many pages); not something it can open after all.
       if (e?.status === 413 || e?.status === 400) {
         setScanPhase('idle');
-        setScanError(t(e.status === 413 ? 'scan_pdf_too_large' : 'scan_pdf_not_pdf'));
+        setScanError(t(e.status === 413 ? 'scan_file_too_large' : 'scan_file_not_supported'));
         return;
       }
-      scanFailed(e, 'scan_pdf_failed');
+      scanFailed(e, kind === 'pdf' ? 'scan_pdf_failed' : 'scan_failed');
     }
   }, [t, readScan, scanFailed]);
 
@@ -3160,11 +3168,11 @@ export default function Kitchen() {
               onPress={() => { setScanPhase('idle'); setScanItems([]); }}
               style={styles.scanRetake}
             >
-              <Text style={styles.scanRetakeText}>{t(scanSource === 'pdf' ? 'scan_pdf_again' : 'scan_retake')}</Text>
+              <Text style={styles.scanRetakeText}>{t(scanSource === 'photo' ? 'scan_retake' : 'scan_file_again')}</Text>
             </PressScale>
             <View style={styles.cookAllergen}>
               <AlertTriangle color={ui.muted} size={14} />
-              <Text style={styles.cookAllergenText}>{t(scanSource === 'pdf' ? 'scan_note_pdf' : 'scan_note')}</Text>
+              <Text style={styles.cookAllergenText}>{t(scanSource === 'pdf' ? 'scan_note_pdf' : scanSource === 'image_file' ? 'scan_note_file' : 'scan_note')}</Text>
             </View>
           </>
         ) : (
@@ -3179,10 +3187,11 @@ export default function Kitchen() {
               <ImageIcon color={ui.orange} size={18} />
               <Text style={styles.scanSourceText}>{t('scan_gallery')}</Text>
             </PressScale>
-            <PressScale testID="scan-pdf" accessibilityRole="button" onPress={pickScanPdf} style={styles.scanSourceBtn}>
+            <PressScale testID="scan-file" accessibilityRole="button" onPress={pickScanFile} style={styles.scanSourceBtn}>
               <FileText color={ui.orange} size={18} />
-              <Text style={styles.scanSourceText}>{t('scan_pdf')}</Text>
+              <Text style={styles.scanSourceText}>{t('scan_file')}</Text>
             </PressScale>
+            <Text style={styles.scanFileHint}>{t('scan_file_hint')}</Text>
           </>
         )}
       </KeyboardAwareBottomSheet>
@@ -3534,6 +3543,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   scanError: { color: ui.danger, fontFamily: 'Figtree_500Medium', fontSize: 13, marginBottom: 10 },
   scanSourceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: ui.orange, borderRadius: 999, paddingVertical: 13, marginTop: 10 },
   scanSourceText: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
+  scanFileHint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 8 },
   captureTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 22, letterSpacing: -0.4, lineHeight: 27 },
   shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Figtree_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
   // Same 42/14 as shopScanBtn beside it: they were 38/12 vs 42/14, so the two
