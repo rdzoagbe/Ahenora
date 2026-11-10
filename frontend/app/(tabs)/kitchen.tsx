@@ -456,7 +456,9 @@ export default function Kitchen() {
     setScanError(null);
     // Getting the picture and reading it fail for different reasons and are
     // told differently (pickPicture.ts says why).
-    const picked = await pickPicture(source, { where: '/shopping/scan' });
+    // The camera is the phone's document scanner, as on Home: it frames the
+    // list itself and straightens it.
+    const picked = await pickPicture(source, { where: '/shopping/scan', scanner: { maxPages: 1 } });
     if (!picked) return;
     if ('problem' in picked) {
       setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
@@ -577,7 +579,7 @@ export default function Kitchen() {
 
   const pickCapture = useCallback(async (source: PictureSource) => {
     setCaptureError(null);
-    const picked = await pickPicture(source, { where: '/meals/capture' });
+    const picked = await pickPicture(source, { where: '/meals/capture', scanner: { maxPages: 1 } });
     if (!picked) return;
     if ('problem' in picked) {
       setCaptureError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));

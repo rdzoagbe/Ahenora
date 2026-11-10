@@ -19,7 +19,7 @@ describe('a receipt in parts', () => {
   });
 
   it('reads the parts so far together with the new one', () => {
-    expect(SPENDING).toContain('const pictures = [...parts, base64];');
+    expect(SPENDING).toContain('const pictures = [...parts, ...added];');
     expect(SPENDING).toContain("await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous);");
   });
 
@@ -54,6 +54,21 @@ describe('a receipt in parts', () => {
   it('forgets the parts when the receipt is saved or put away', () => {
     expect(SPENDING).toContain('setScan(null); setKeep([]); setParts([]);');
     expect(SPENDING).toMatch(/setScan\(null\);\s*setParts\(\[\]\);/);
+  });
+});
+
+describe('the scanner', () => {
+  it('shoots a long receipt in pages, up to what one receipt can be read from', () => {
+    expect(SPENDING).toContain("where: '/expenses/scan-receipt', allowsEditing: true, scanner: { maxPages: room },");
+    expect(SPENDING).toContain('const pages = await pickReceiptPages(source, RECEIPT_MAX_PARTS);');
+    expect(SPENDING).toContain('await readReceipt(() => api.scanReceipt(pages), pages, \'photo\');');
+  });
+
+  it('adds only as many pages as there is room for, and says when an iPhone gave more', () => {
+    expect(SPENDING).toContain('const room = (scan?.max_parts ?? RECEIPT_MAX_PARTS) - parts.length;');
+    expect(SPENDING).toContain('setPagesCapped(picked.pages.length > room ? room : 0);');
+    expect(SPENDING).toContain('return picked.pages.slice(0, room);');
+    expect((I18N.match(/^\s*exp_scan_pages_capped:/gm) || []).length).toBe(4);
   });
 });
 

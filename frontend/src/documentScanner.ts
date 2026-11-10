@@ -82,6 +82,45 @@ export function hasDocumentScanner(): boolean {
   return plugin() !== null;
 }
 
+/** Several pages from one scanner session (a long receipt, top to bottom). */
+export type ScanPagesResult =
+  | { kind: 'scanned'; uris: string[] }
+  | { kind: 'cancelled' }
+  | { kind: 'unavailable' };
+
+/**
+ * Open the OS document scanner for up to `maxPages` pages, in one session.
+ *
+ * Both scanners have their own "take another page" and "done" buttons, so a
+ * long receipt is shot top to bottom without leaving the camera, then sent
+ * as one. `maxNumDocuments` caps it on Android only (the plugin's own
+ * documentation: "This only works on Android"); VisionKit lets an iPhone
+ * user keep shooting, so the CALLER keeps the first pages it can use and
+ * says so. Returns file URIs, for the reason given on scanDocument.
+ */
+export async function scanDocumentPages(maxPages: number): Promise<ScanPagesResult> {
+  const scanner = plugin();
+  if (!scanner) return { kind: 'unavailable' };
+  try {
+    const res = (await scanner.scanDocument({
+      maxNumDocuments: Math.max(1, maxPages),
+      // 85 rather than 100: the page is already cropped and deskewed by then,
+      // so the remaining size is all JPEG quality, and the model reads an 85
+      // exactly as well while the upload is a fraction of the size.
+      croppedImageQuality: 85,
+    })) as { scannedImages?: string[]; status?: string } | undefined;
+
+    const uris = (res?.scannedImages ?? []).filter((u) => typeof u === 'string' && u.length > 0);
+    if (uris.length === 0) return { kind: 'cancelled' };
+    return { kind: 'scanned', uris };
+  } catch {
+    // The scanner was there and something went wrong inside it. Treated as
+    // unavailable so the caller falls back rather than showing an error for a
+    // scan the picker could still do.
+    return { kind: 'unavailable' };
+  }
+}
+
 /**
  * Open the OS document scanner for a single page.
  *
@@ -90,24 +129,6 @@ export function hasDocumentScanner(): boolean {
  * string in memory for no reason. The caller reads the file when it needs it.
  */
 export async function scanDocument(): Promise<ScanResult> {
-  const scanner = plugin();
-  if (!scanner) return { kind: 'unavailable' };
-  try {
-    const res = (await scanner.scanDocument({
-      maxNumDocuments: 1,
-      // 85 rather than 100: the page is already cropped and deskewed by then,
-      // so the remaining size is all JPEG quality, and the model reads an 85
-      // exactly as well while the upload is a fraction of the size.
-      croppedImageQuality: 85,
-    })) as { scannedImages?: string[]; status?: string } | undefined;
-
-    const uri = res?.scannedImages?.[0];
-    if (!uri) return { kind: 'cancelled' };
-    return { kind: 'scanned', uri };
-  } catch {
-    // The scanner was there and something went wrong inside it. Treated as
-    // unavailable so the caller falls back rather than showing an error for a
-    // scan the picker could still do.
-    return { kind: 'unavailable' };
-  }
+  const pages = await scanDocumentPages(1);
+  return pages.kind === 'scanned' ? { kind: 'scanned', uri: pages.uris[0] } : pages;
 }

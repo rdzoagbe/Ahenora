@@ -141,7 +141,7 @@ describe('the photo is cropped before it is uploaded', () => {
   it('offers it on the receipt scanner too', () => {
     // Same round trip, same megabytes, same 30-second abort.
     // One call now covers camera and gallery (pickPicture.ts).
-    expect(SPENDING).toContain("pickPicture(source, { where: '/expenses/scan-receipt', allowsEditing: true })");
+    expect(SPENDING).toContain("where: '/expenses/scan-receipt', allowsEditing: true, scanner: { maxPages: room },");
   });
 
   it('keeps one set of capture options for camera and library', () => {
