@@ -1,64 +1,117 @@
 /**
- * Choosing a picture from the gallery asks for no permission.
- *
- * expo-image-picker documents launchImageLibraryAsync as requiring
- * MEDIA_LIBRARY "on iOS 10 only"; on Android it opens the system photo
- * picker (PickVisualMedia), which needs none. Asking anyway was not harmless:
- * on Android 12 and older requestMediaLibraryPermissionsAsync asks for
- * READ_EXTERNAL_STORAGE, which this app removes on purpose (app.json
- * blockedPermissions), so it could never be granted and every gallery button
- * stopped there — shown as "no connection", because the thrown permission
- * message carried no HTTP status. Reported from a real phone, 2026-11-10:
- * "when I choose from gallery it doesn't upload the images".
+ * Every picture in the app comes through pickPicture, and the gallery asks
+ * for no permission. Why, and what went wrong before: see pickPicture.ts.
+ * Reported from a real phone, 2026-11-10: "when I choose from gallery it
+ * doesn't upload the images".
  */
 import fs from 'fs';
 import path from 'path';
 
-const root = path.join(__dirname, '..', '..');
-const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), 'utf8');
+let mockOS = 'android';
+const mockCameraPermission = jest.fn();
+const mockLibraryPermission = jest.fn();
+const mockLaunchCamera = jest.fn();
+const mockLaunchLibrary = jest.fn();
+const mockReadAsString = jest.fn();
+const mockReport = jest.fn();
 
-function sources(dir: string): string[] {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
-    const full = path.join(dir, d.name);
-    if (d.isDirectory()) return d.name === '__tests__' || d.name === 'node_modules' ? [] : sources(full);
-    return /\.(ts|tsx)$/.test(d.name) ? [full] : [];
-  });
-}
+jest.mock('react-native', () => ({ Platform: { get OS() { return mockOS; } } }));
+jest.mock('expo-image-picker', () => ({
+  requestCameraPermissionsAsync: (...a: unknown[]) => mockCameraPermission(...a),
+  requestMediaLibraryPermissionsAsync: (...a: unknown[]) => mockLibraryPermission(...a),
+  launchCameraAsync: (...a: unknown[]) => mockLaunchCamera(...a),
+  launchImageLibraryAsync: (...a: unknown[]) => mockLaunchLibrary(...a),
+  MediaTypeOptions: { Images: 'Images' },
+}));
+jest.mock('expo-file-system/legacy', () => ({
+  readAsStringAsync: (...a: unknown[]) => mockReadAsString(...a),
+  EncodingType: { Base64: 'base64' },
+}), { virtual: true });
+jest.mock('../api', () => ({ reportPictureProblem: (...a: unknown[]) => mockReport(...a) }));
+
+import { pickPicture } from '../pickPicture';
+
+const chosen = (asset: Record<string, unknown>) => ({ canceled: false, assets: [{ uri: 'file:///cache/p.jpg', ...asset }] });
+
+beforeEach(() => {
+  mockOS = 'android';
+  [mockCameraPermission, mockLibraryPermission, mockLaunchCamera, mockLaunchLibrary, mockReadAsString, mockReport]
+    .forEach((m) => m.mockReset());
+  mockCameraPermission.mockResolvedValue({ granted: true });
+});
 
 describe('the gallery', () => {
-  it('is never gated on a media-library permission, anywhere in the app', () => {
-    const offenders = [...sources(path.join(root, 'src')), ...sources(path.join(root, 'app'))]
-      .filter((f) => fs.readFileSync(f, 'utf8').includes('requestMediaLibraryPermissionsAsync'));
-    expect(offenders).toEqual([]);
+  it('opens without asking for any permission', async () => {
+    mockLaunchLibrary.mockResolvedValue(chosen({ base64: 'AAAA', fileName: 'liste.jpg' }));
+    await expect(pickPicture('library', { where: '/shopping/scan' }))
+      .resolves.toEqual({ base64: 'AAAA', fileName: 'liste.jpg' });
+    expect(mockLibraryPermission).not.toHaveBeenCalled();
+    expect(mockCameraPermission).not.toHaveBeenCalled();
   });
 
-  it('is right to: the app removes the storage permission that request would need', () => {
-    const app = JSON.parse(read('app.json'));
-    expect(app.expo.android.blockedPermissions).toEqual(expect.arrayContaining([
-      'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.READ_MEDIA_IMAGES']));
-    const picker = read('node_modules', 'expo-image-picker', 'build', 'ImagePicker.d.ts');
-    expect(picker).toContain('Requires `Permissions.MEDIA_LIBRARY` on iOS 10 only.');
+  it('reads the picker\'s cached copy when no contents came back with the picture', async () => {
+    mockLaunchLibrary.mockResolvedValue(chosen({ base64: null }));
+    mockReadAsString.mockResolvedValue('BBBB');
+    await expect(pickPicture('library', { where: '/shopping/scan' })).resolves.toMatchObject({ base64: 'BBBB' });
+    expect(mockReadAsString).toHaveBeenCalledWith('file:///cache/p.jpg', { encoding: 'base64' });
+  });
+
+  it('never sends a file path up as if it were the picture: no contents is "unreadable", and reported', async () => {
+    mockLaunchLibrary.mockResolvedValue(chosen({ base64: null }));
+    mockReadAsString.mockRejectedValue(new Error('ENOENT'));
+    await expect(pickPicture('library', { where: '/vision/extract' })).resolves.toEqual({ problem: 'unreadable' });
+    expect(mockReport).toHaveBeenCalledWith('/vision/extract', 'library: ENOENT');
+  });
+
+  it('a picker that fails is "unreadable", reported, never thrown as a network error', async () => {
+    mockLaunchLibrary.mockRejectedValue(new Error('picker crashed'));
+    await expect(pickPicture('library', { where: '/vault' })).resolves.toEqual({ problem: 'unreadable' });
+    expect(mockReport).toHaveBeenCalledWith('/vault', 'library: picker crashed');
+  });
+
+  it('a cancelled pick is nothing, and nothing is reported', async () => {
+    mockLaunchLibrary.mockResolvedValue({ canceled: true, assets: null });
+    await expect(pickPicture('library', { where: '/vault' })).resolves.toBeNull();
+    expect(mockReport).not.toHaveBeenCalled();
+  });
+
+  it('on the web, takes the data URL the browser hands back', async () => {
+    mockOS = 'web';
+    mockLaunchLibrary.mockResolvedValue(chosen({ base64: null, uri: 'data:image/png;base64,CCCC' }));
+    await expect(pickPicture('library', { where: '/shopping/scan' })).resolves.toMatchObject({ base64: 'CCCC' });
+    expect(mockReadAsString).not.toHaveBeenCalled();
   });
 });
 
-describe('the shopping-list photo', () => {
-  const kitchen = read('app', '(tabs)', 'kitchen.tsx');
-
-  it('never gives up in silence when no picture data came back', () => {
-    expect(kitchen).toContain("if (!base64) throw new Error('no picture data');");
-    expect(kitchen).toContain("setScanError(t('scan_photo_open_failed'));");
+describe('the camera', () => {
+  it('asks for the camera, and a refusal is a named problem, not a thrown error', async () => {
+    mockCameraPermission.mockResolvedValue({ granted: false });
+    await expect(pickPicture('camera', { where: '/shopping/scan' })).resolves.toEqual({ problem: 'camera_denied' });
+    expect(mockLaunchCamera).not.toHaveBeenCalled();
   });
 
-  it('reads the cached copy when the picker returned none', () => {
-    expect(kitchen).toMatch(/if \(!base64 && asset\.uri && Platform\.OS !== 'web'\) \{[\s\S]{0,300}readAsStringAsync\(asset\.uri/);
+  it('passes the crop step and quality through', async () => {
+    mockLaunchCamera.mockResolvedValue(chosen({ base64: 'DDDD' }));
+    await pickPicture('camera', { where: '/expenses/scan-receipt', allowsEditing: true, quality: 0.6 });
+    expect(mockLaunchCamera.mock.calls[0][0]).toMatchObject({ base64: true, allowsEditing: true, quality: 0.6 });
+  });
+});
+
+describe('the app', () => {
+  const root = path.join(__dirname, '..', '..');
+  const sources = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+    const full = path.join(dir, d.name);
+    if (d.isDirectory()) return d.name === '__tests__' ? [] : sources(full);
+    return /\.(ts|tsx)$/.test(d.name) ? [full] : [];
+  });
+  const files = [...sources(path.join(root, 'src')), ...sources(path.join(root, 'app'))];
+
+  it('never gates a picture on a media-library permission', () => {
+    expect(files.filter((f) => fs.readFileSync(f, 'utf8').includes('requestMediaLibraryPermissionsAsync('))).toEqual([]);
   });
 
-  it('says a refused camera permission as such, not as "no connection"', () => {
-    expect(kitchen).toMatch(/if \(!p\.granted\) \{\s*setScanError\(t\('cam_camera_permission_denied'\)\);\s*return;/);
-  });
-
-  it('leaves a trace in the admin panel when a photo could not be got or read', () => {
-    expect(kitchen).toContain('reportScanProblem(source, e?.message || String(e));');
-    expect(kitchen).toContain("if (e?.status && e.status !== 402) reportScanProblem(`${source} read`, `status ${e.status}`);");
+  it('opens the camera and the gallery in one place only', () => {
+    const openers = files.filter((f) => /launch(Camera|ImageLibrary)Async\(/.test(fs.readFileSync(f, 'utf8')));
+    expect(openers.map((f) => path.basename(f))).toEqual(['pickPicture.ts']);
   });
 });

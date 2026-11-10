@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal, Platform } from 'react-native';
+import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useClientValue } from '../../src/hooks/useClientValue';
@@ -22,7 +21,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, reportScanProblem, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
+import { api, reportPictureProblem, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices, ShopDue } from '../../src/api';
 import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed, findNameMatch, fold } from '../../src/shopPrices';
 import { formatMoney } from '../../src/money';
@@ -39,6 +38,7 @@ import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
 import { pickListFile } from '../../src/pickListFile';
+import { pickPicture, type PictureSource } from '../../src/pickPicture';
 import { SECTION_ART } from '../../src/sectionArt';
 
 type KitchenView = 'shop' | 'meal' | 'spend';
@@ -452,50 +452,24 @@ export default function Kitchen() {
     setScanError(apiErrorText(e, t, fallbackKey));
   }, [t, showToast]);
 
-  const pickScan = useCallback(async (source: 'camera' | 'library') => {
+  const pickScan = useCallback(async (source: PictureSource) => {
     setScanError(null);
-    // Getting the picture, and reading it, fail for different reasons and are
-    // told differently. Every way of getting no picture used to end in a
-    // bare `return` (nothing on screen) or in "no connection" (a thrown
-    // permission message read as a network failure); reported from a real
-    // phone as "choose from gallery doesn't upload the images".
-    let base64: string | null = null;
-    try {
-      // The gallery asks for no permission (galleryNeedsNoPermission.test.ts).
-      if (Platform.OS !== 'web' && source === 'camera') {
-        const p = await ImagePicker.requestCameraPermissionsAsync();
-        if (!p.granted) {
-          setScanError(t('cam_camera_permission_denied'));
-          return;
-        }
-      }
-      const res = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (res.canceled || !res.assets?.[0]) return;
-      // Native supplies base64 directly; web supplies a data URL instead.
-      const asset = res.assets[0];
-      base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64 && asset.uri && Platform.OS !== 'web') {
-        // No contents came back with the picture: read the copy the picker
-        // left in the cache, as the file import does.
-        const FS = require('expo-file-system/legacy');
-        base64 = await FS.readAsStringAsync(asset.uri, { encoding: FS.EncodingType.Base64 });
-      }
-      if (!base64) throw new Error('no picture data');
-    } catch (e: any) {
-      reportScanProblem(source, e?.message || String(e));
-      setScanError(t('scan_photo_open_failed'));
+    // Getting the picture and reading it fail for different reasons and are
+    // told differently (pickPicture.ts says why).
+    const picked = await pickPicture(source, { where: '/shopping/scan' });
+    if (!picked) return;
+    if ('problem' in picked) {
+      setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
       return;
     }
-    const picture = base64;
     try {
-      await readScan('photo', () => api.scanShoppingList(picture));
+      await readScan('photo', () => api.scanShoppingList(picked.base64));
     } catch (e: any) {
-      // The server's answer, kept for the admin panel: a 422 is not an
-      // error the server logs, and a photo that "does nothing" on one phone
-      // otherwise leaves no trace at all.
-      if (e?.status && e.status !== 402) reportScanProblem(`${source} read`, `status ${e.status}`);
+      // A 4xx answer, kept for the admin panel: the server does not log it as
+      // an error, and request() already reports a 5xx.
+      if (e?.status >= 400 && e.status < 500 && e.status !== 402) {
+        reportPictureProblem('/shopping/scan', `${source} read: status ${e.status}`);
+      }
       scanFailed(e, 'scan_failed');
     }
   }, [t, readScan, scanFailed]);
@@ -601,24 +575,17 @@ export default function Kitchen() {
     setShowCapture(true);
   }, []);
 
-  const pickCapture = useCallback(async (source: 'camera' | 'library') => {
+  const pickCapture = useCallback(async (source: PictureSource) => {
     setCaptureError(null);
+    const picked = await pickPicture(source, { where: '/meals/capture' });
+    if (!picked) return;
+    if ('problem' in picked) {
+      setCaptureError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
+      return;
+    }
     try {
-      // The gallery asks for no permission (galleryNeedsNoPermission.test.ts).
-      if (Platform.OS !== 'web' && source === 'camera') {
-        const p = await ImagePicker.requestCameraPermissionsAsync();
-        if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-      }
-      const res = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (res.canceled || !res.assets?.[0]) return;
-      const asset = res.assets[0];
-      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64) return;
-
       setCapturePhase('reading');
-      const { captured: recipe } = await api.captureRecipe(base64);
+      const { captured: recipe } = await api.captureRecipe(picked.base64);
       setCaptured(recipe);
       setCapturePhase('review');
     } catch (e: any) {

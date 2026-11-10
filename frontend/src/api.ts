@@ -236,6 +236,16 @@ export function reportCrash(message: string, componentStack?: string | null) {
 }
 
 /**
+ * A picture that could not be got (the picker failing on a phone, no data
+ * coming back) or that the server would not read (a 4xx, which it does not
+ * log as an error), to the admin panel under the route it was for. Without
+ * it a scan that "does nothing" on one person's phone leaves no trace.
+ */
+export function reportPictureProblem(where: string, message: string) {
+  reportClientError(where, 'PICTURE', undefined, String(message || 'unknown').slice(0, 240));
+}
+
+/**
  * A phone that could not get a push token says why, to the admin panel.
  *
  * On 2026-09-08 every Android install had been failing this call since
@@ -243,14 +253,6 @@ export function reportCrash(message: string, componentStack?: string | null) {
  * logger.warn on the phone. Reported under a path of its own so it stands
  * out from API errors.
  */
-export function reportScanProblem(stage: string, message: string) {
-  // A shopping-list photo that could not be got or read, to the admin panel:
-  // the picker failing on a phone, or the server answering 4xx (which it does
-  // not log as an error). Without it a scan that "does nothing" on one
-  // person's phone leaves no trace anywhere.
-  reportClientError('/shopping/scan', 'SCAN', undefined, `${stage}: ${String(message || 'unknown')}`.slice(0, 240));
-}
-
 export function reportPushFailure(message: string) {
   reportClientError('/push-register', 'PUSH', undefined, String(message || 'unknown').slice(0, 240));
 }

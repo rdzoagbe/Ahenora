@@ -40,6 +40,7 @@ const API_ERROR = readFileSync(join(__dirname, '..', 'apiError.ts'), 'utf8');
 const I18N = readFileSync(join(__dirname, '..', 'i18n.ts'), 'utf8');
 const CAMERA = readFileSync(
   join(__dirname, '..', 'components', 'CameraCaptureModal.tsx'), 'utf8');
+const PICKER = readFileSync(join(__dirname, '..', 'pickPicture.ts'), 'utf8');
 const SPENDING = readFileSync(
   join(__dirname, '..', 'components', 'SpendingView.tsx'), 'utf8');
 
@@ -139,13 +140,16 @@ describe('the photo is cropped before it is uploaded', () => {
 
   it('offers it on the receipt scanner too', () => {
     // Same round trip, same megabytes, same 30-second abort.
-    expect(SPENDING.match(/allowsEditing: true/g) || []).toHaveLength(2);
+    // One call now covers camera and gallery (pickPicture.ts).
+    expect(SPENDING).toContain("pickPicture(source, { where: '/expenses/scan-receipt', allowsEditing: true })");
   });
 
   it('keeps one set of capture options for camera and library', () => {
     // They drifted apart once already; a shared object is why they cannot.
-    expect(CAMERA).toContain('launchCameraAsync(shot)');
-    expect(CAMERA).toContain('launchImageLibraryAsync(shot)');
+    // Every picture in the app now comes through pickPicture.ts.
+    expect(PICKER).toContain('launchCameraAsync(shot)');
+    expect(PICKER).toContain('launchImageLibraryAsync(shot)');
+    expect(CAMERA).toContain("pickPicture(source, { where: '/vision/extract', allowsEditing: true })");
   });
 
   it('tries the OS document scanner first, and only for the camera', () => {
@@ -155,7 +159,7 @@ describe('the photo is cropped before it is uploaded', () => {
     expect(CAMERA).toContain("from '../documentScanner'");
     expect(CAMERA).toContain("if (source === 'camera') {");
     expect(CAMERA.indexOf('await scanDocument()')).toBeLessThan(
-      CAMERA.indexOf('launchCameraAsync(shot)'));
+      CAMERA.indexOf('await pickPicture(source'));
   });
 
   it('is gated by the runtime version, not by a JavaScript guard', () => {
