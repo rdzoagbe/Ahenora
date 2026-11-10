@@ -200,14 +200,10 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const captureReceipt = useCallback(async (source: 'camera' | 'library') => {
     setScanError(null);
     try {
-      if (Platform.OS !== 'web') {
-        const perm = source === 'camera'
-          ? await ImagePicker.requestCameraPermissionsAsync()
-          : await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) {
-          throw new Error(t(source === 'camera'
-            ? 'cam_camera_permission_denied' : 'cam_gallery_permission_denied'));
-        }
+      // The gallery asks for no permission (galleryNeedsNoPermission.test.ts).
+      if (Platform.OS !== 'web' && source === 'camera') {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) throw new Error(t('cam_camera_permission_denied'));
       }
       const res = source === 'camera'
         // allowsEditing for the same reason as the document scanner: a

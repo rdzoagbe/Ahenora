@@ -296,13 +296,7 @@ export default function Vault() {
 
   const pickImage = async () => {
     try {
-      if (Platform.OS !== 'web') {
-        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) {
-          Alert.alert(t('vault_permission_needed'), t('vault_gallery_access_required'));
-          return;
-        }
-      }
+      // The gallery asks for no permission (galleryNeedsNoPermission.test.ts).
       const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, base64: true, quality: 0.6 });
       if (!res.canceled && res.assets?.[0]) {
         const asset = res.assets[0];

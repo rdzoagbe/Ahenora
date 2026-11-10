@@ -243,6 +243,14 @@ export function reportCrash(message: string, componentStack?: string | null) {
  * logger.warn on the phone. Reported under a path of its own so it stands
  * out from API errors.
  */
+export function reportScanProblem(stage: string, message: string) {
+  // A shopping-list photo that could not be got or read, to the admin panel:
+  // the picker failing on a phone, or the server answering 4xx (which it does
+  // not log as an error). Without it a scan that "does nothing" on one
+  // person's phone leaves no trace anywhere.
+  reportClientError('/shopping/scan', 'SCAN', undefined, `${stage}: ${String(message || 'unknown')}`.slice(0, 240));
+}
+
 export function reportPushFailure(message: string) {
   reportClientError('/push-register', 'PUSH', undefined, String(message || 'unknown').slice(0, 240));
 }

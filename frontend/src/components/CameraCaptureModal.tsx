@@ -105,14 +105,10 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
     setErr(null);
 
     try {
-      if (Platform.OS !== 'web') {
-        if (source === 'camera') {
-          const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-        } else {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
-        }
+      // The gallery asks for no permission (galleryNeedsNoPermission.test.ts).
+      if (Platform.OS !== 'web' && source === 'camera') {
+        const p = await ImagePicker.requestCameraPermissionsAsync();
+        if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
       }
 
       // The OS document scanner first, when this binary has it: ML Kit on

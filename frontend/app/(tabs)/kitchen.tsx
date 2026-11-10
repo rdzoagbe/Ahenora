@@ -22,7 +22,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
+import { api, reportScanProblem, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices, ShopDue } from '../../src/api';
 import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed, findNameMatch, fold } from '../../src/shopPrices';
 import { formatMoney } from '../../src/money';
@@ -454,14 +454,19 @@ export default function Kitchen() {
 
   const pickScan = useCallback(async (source: 'camera' | 'library') => {
     setScanError(null);
+    // Getting the picture, and reading it, fail for different reasons and are
+    // told differently. Every way of getting no picture used to end in a
+    // bare `return` (nothing on screen) or in "no connection" (a thrown
+    // permission message read as a network failure); reported from a real
+    // phone as "choose from gallery doesn't upload the images".
+    let base64: string | null = null;
     try {
-      if (Platform.OS !== 'web') {
-        if (source === 'camera') {
-          const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-        } else {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
+      // The gallery asks for no permission (galleryNeedsNoPermission.test.ts).
+      if (Platform.OS !== 'web' && source === 'camera') {
+        const p = await ImagePicker.requestCameraPermissionsAsync();
+        if (!p.granted) {
+          setScanError(t('cam_camera_permission_denied'));
+          return;
         }
       }
       const res = source === 'camera'
@@ -470,11 +475,27 @@ export default function Kitchen() {
       if (res.canceled || !res.assets?.[0]) return;
       // Native supplies base64 directly; web supplies a data URL instead.
       const asset = res.assets[0];
-      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64) return;
-
-      await readScan('photo', () => api.scanShoppingList(base64));
+      base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
+      if (!base64 && asset.uri && Platform.OS !== 'web') {
+        // No contents came back with the picture: read the copy the picker
+        // left in the cache, as the file import does.
+        const FS = require('expo-file-system/legacy');
+        base64 = await FS.readAsStringAsync(asset.uri, { encoding: FS.EncodingType.Base64 });
+      }
+      if (!base64) throw new Error('no picture data');
     } catch (e: any) {
+      reportScanProblem(source, e?.message || String(e));
+      setScanError(t('scan_photo_open_failed'));
+      return;
+    }
+    const picture = base64;
+    try {
+      await readScan('photo', () => api.scanShoppingList(picture));
+    } catch (e: any) {
+      // The server's answer, kept for the admin panel: a 422 is not an
+      // error the server logs, and a photo that "does nothing" on one phone
+      // otherwise leaves no trace at all.
+      if (e?.status && e.status !== 402) reportScanProblem(`${source} read`, `status ${e.status}`);
       scanFailed(e, 'scan_failed');
     }
   }, [t, readScan, scanFailed]);
@@ -583,14 +604,10 @@ export default function Kitchen() {
   const pickCapture = useCallback(async (source: 'camera' | 'library') => {
     setCaptureError(null);
     try {
-      if (Platform.OS !== 'web') {
-        if (source === 'camera') {
-          const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-        } else {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
-        }
+      // The gallery asks for no permission (galleryNeedsNoPermission.test.ts).
+      if (Platform.OS !== 'web' && source === 'camera') {
+        const p = await ImagePicker.requestCameraPermissionsAsync();
+        if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
       }
       const res = source === 'camera'
         ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
