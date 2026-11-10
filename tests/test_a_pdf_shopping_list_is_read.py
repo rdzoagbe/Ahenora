@@ -278,6 +278,8 @@ class APdfShoppingList(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.used(), 0)
 
+    @unittest.skipUnless(HAVE_DEPS and server.genai_types is not None if HAVE_DEPS else False,
+                         "google-genai not installed")
     def test_a_photo_saved_on_its_side_reaches_the_model_upright(self):
         # A portrait photo saved as a file keeps its orientation in EXIF,
         # which re-encoding drops; it is turned upright first.
@@ -286,7 +288,7 @@ class APdfShoppingList(unittest.TestCase):
         seen = []
 
         async def generate(contents, system="", **kwargs):
-            seen.append(contents[1].size)
+            seen.append(PIL.Image.open(io.BytesIO(contents[1].inline_data.data)).size)
             return ITEMS
         server._gemini_generate = generate
         server._gemini_vision = self._vision
