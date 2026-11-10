@@ -1,0 +1,195 @@
+"""A shopping list sent as a PDF is read like a photographed one.
+
+Asked for on 2026-11-10: "Can I import a pdf shopping list in the app?" Until
+now the scan sheet took photos only, so a list that arrived as a PDF had to be
+copied by hand or screenshotted first.
+
+Gemini reads PDFs natively, sent inline as application/pdf (Google's
+"Document understanding" guide: up to 50 MB or 1000 pages, 258 tokens a page).
+These pin:
+  * the PDF reaches the model as a PDF, read with the same rules (the same
+    system prompt, the same validator) as a photo, and charged once;
+  * the result is candidates only, exactly like a photo: nothing is added;
+  * a file that is not a PDF, or is far bigger than a shopping list, is turned
+    away BEFORE the model is called and before anything is charged;
+  * a PDF the model cannot read as a list costs nothing;
+  * the photo path is untouched.
+"""
+import asyncio
+import base64
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+
+try:
+    import fastapi  # noqa: F401
+    HAVE_DEPS = True
+except ImportError:
+    HAVE_DEPS = False
+
+if HAVE_DEPS:
+    from fastapi import HTTPException
+    import server
+    from ai_safety import SHOPPING_SCAN_SYSTEM_PROMPT
+    from fake_mongo import FakeDatabase
+
+USER = {"user_id": "u_1", "family_id": "fam_1", "email": "a@example.com", "name": "Ana"}
+ITEMS = '{"items":[{"name":"Lait 1 L"},{"name":"Pain"},{"name":"Oeufs x12","unsure":true}]}'
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def pdf(pages: int = 1, pad: int = 400) -> str:
+    """A small PDF-shaped file: the header, `pages` page objects, some bulk."""
+    body = b"%PDF-1.7\n" + b"".join(
+        b"%d 0 obj << /Type /Page /Parent 2 0 R >> endobj\n" % (i + 3) for i in range(pages))
+    body += b"2 0 obj << /Type /Pages /Count %d >> endobj\n" % pages
+    body += b"%" + b"x" * pad + b"\n%%EOF\n"
+    return base64.b64encode(body).decode()
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class APdfShoppingList(unittest.TestCase):
+    def setUp(self):
+        self._get_db = server.get_db
+        self._generate = server._gemini_generate
+        self._vision = server._gemini_vision
+        self._admin = server.is_admin_user
+        self._key = server.GOOGLE_API_KEY
+        self.db = FakeDatabase()
+        server.get_db = lambda: self.db
+        server.is_admin_user = lambda u: False
+        server.GOOGLE_API_KEY = "test-key"
+        run(self.db["families"].insert_one({
+            "family_id": "fam_1", "name": "Test", "plan": "village",
+            "billing_cycle": "monthly", "ai_scans_used": 0,
+            "created_at": server.utcnow()}))
+        self.calls = []
+
+        async def generate(contents, system="", **kwargs):
+            self.calls.append({"contents": contents, "system": system, **kwargs})
+            return ITEMS
+        server._gemini_generate = generate
+
+        async def vision(*a, **k):
+            self.calls.append({"vision": True})
+            return ITEMS
+        server._gemini_vision = vision
+
+    def tearDown(self):
+        server.get_db = self._get_db
+        server._gemini_generate = self._generate
+        server._gemini_vision = self._vision
+        server.is_admin_user = self._admin
+        server.GOOGLE_API_KEY = self._key
+
+    def scan(self, payload):
+        return run(server.scan_shopping_list(payload, user=USER, database=self.db))
+
+    def used(self):
+        return run(self.db["families"].find_one({"family_id": "fam_1"})).get("ai_scans_used", 0)
+
+    def refused(self, payload):
+        with self.assertRaises(HTTPException) as caught:
+            self.scan(payload)
+        return caught.exception.status_code
+
+    # --- it is read -----------------------------------------------------
+
+    def test_the_pdf_reaches_the_model_as_a_pdf(self):
+        out = self.scan({"pdf_base64": pdf()})
+        self.assertEqual([i["name"] for i in out["items"]], ["Lait 1 L", "Pain", "Oeufs x12"])
+        self.assertEqual([i["unsure"] for i in out["items"]], [False, False, True])
+        (call,) = self.calls
+        part = call["contents"][1]
+        self.assertEqual(part.inline_data.mime_type, "application/pdf")
+        self.assertTrue(part.inline_data.data.startswith(b"%PDF-"))
+        self.assertIn("PDF", call["contents"][0])
+
+    def test_it_is_read_with_the_shopping_rules_and_the_quick_model(self):
+        self.scan({"pdf_base64": pdf()})
+        self.assertEqual(self.calls[0]["system"], SHOPPING_SCAN_SYSTEM_PROMPT)
+        self.assertTrue(self.calls[0].get("fast"))
+        self.assertIn("PDF", SHOPPING_SCAN_SYSTEM_PROMPT)
+        self.assertIn("read every page", SHOPPING_SCAN_SYSTEM_PROMPT)
+
+    def test_a_data_url_is_accepted_as_well(self):
+        out = self.scan({"pdf_base64": "data:application/pdf;base64," + pdf()})
+        self.assertEqual(len(out["items"]), 3)
+
+    def test_it_is_charged_once_and_nothing_is_added(self):
+        self.scan({"pdf_base64": pdf()})
+        self.assertEqual(self.used(), 1)
+        self.assertEqual(run(self.db["shopping_list"].count_documents({})), 0)
+
+    def test_a_two_page_list_is_fine(self):
+        self.assertEqual(len(self.scan({"pdf_base64": pdf(pages=2)})["items"]), 3)
+
+    # --- turned away before the model, and free -------------------------
+
+    def test_a_file_that_is_not_a_pdf_is_turned_away(self):
+        png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 400).decode()
+        self.assertEqual(self.refused({"pdf_base64": png}), 400)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.used(), 0)
+
+    def test_text_that_is_not_base64_is_turned_away(self):
+        self.assertEqual(self.refused({"pdf_base64": "%PDF-" + "!" * 400}), 400)
+        self.assertEqual(self.calls, [])
+
+    def test_an_empty_pdf_is_turned_away(self):
+        self.assertEqual(self.refused({"pdf_base64": "JVBERi0="}), 400)
+
+    def test_a_long_document_is_not_a_shopping_list(self):
+        self.assertEqual(self.refused({"pdf_base64": pdf(pages=server.SHOPPING_PDF_MAX_PAGES + 1)}), 413)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.used(), 0)
+
+    def test_ten_pages_is_still_allowed(self):
+        self.assertEqual(len(self.scan({"pdf_base64": pdf(pages=server.SHOPPING_PDF_MAX_PAGES)})["items"]), 3)
+
+    def test_a_heavy_file_is_turned_away(self):
+        heavy = pdf(pad=server.SHOPPING_PDF_MAX_BYTES + 10)
+        self.assertEqual(self.refused({"pdf_base64": heavy}), 413)
+        self.assertEqual(self.calls, [])
+
+    def test_the_largest_allowed_file_goes_through(self):
+        # Just under the limit, header and all: the size check is on the
+        # file, not a guess that rounds a legitimate PDF away.
+        near = pdf(pad=server.SHOPPING_PDF_MAX_BYTES - 1000)
+        self.assertEqual(len(self.scan({"pdf_base64": near})["items"]), 3)
+
+    # --- unread costs nothing -------------------------------------------
+
+    def test_a_pdf_that_is_not_a_list_costs_nothing(self):
+        async def refused(contents, system="", **kwargs):
+            return '{"refused": true}'
+        server._gemini_generate = refused
+        self.assertEqual(self.refused({"pdf_base64": pdf()}), 422)
+        self.assertEqual(self.used(), 0)
+
+    def test_a_model_failure_costs_nothing(self):
+        async def broken(contents, system="", **kwargs):
+            raise RuntimeError("unavailable")
+        server._gemini_generate = broken
+        self.assertEqual(self.refused({"pdf_base64": pdf()}), 502)
+        self.assertEqual(self.used(), 0)
+
+    # --- the photo path -------------------------------------------------
+
+    def test_a_photo_still_goes_the_photo_way(self):
+        out = self.scan({"image_base64": "data:image/jpeg;base64," + "A" * 200})
+        self.assertEqual(len(out["items"]), 3)
+        self.assertEqual(self.calls, [{"vision": True}])
+
+    def test_no_photo_and_no_pdf_is_still_a_400(self):
+        self.assertEqual(self.refused({}), 400)
+
+
+if __name__ == "__main__":
+    unittest.main()

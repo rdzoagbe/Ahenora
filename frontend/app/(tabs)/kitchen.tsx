@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useClientValue } from '../../src/hooks/useClientValue';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ReceiptText, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , FileText, ListChecks, Leaf, Shuffle, Tag, ReceiptText, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
@@ -38,6 +38,7 @@ import { recipeMethod } from '../../src/recipeSteps';
 import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '../../src/kitchenWeek';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
+import { pickPdf } from '../../src/pickPdf';
 import { SECTION_ART } from '../../src/sectionArt';
 
 type KitchenView = 'shop' | 'meal' | 'spend';
@@ -409,6 +410,8 @@ export default function Kitchen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanItems, setScanItems] = useState<{ name: string; unsure: boolean; checked: boolean }[]>([]);
   const [scanAdding, setScanAdding] = useState(false);
+  // What was read, so the review says "your PDF" rather than "your photo".
+  const [scanSource, setScanSource] = useState<'photo' | 'pdf'>('photo');
 
   const openScan = useCallback(() => {
     setScanPhase('idle');
@@ -416,6 +419,21 @@ export default function Kitchen() {
     setScanItems([]);
     setShowScan(true);
   }, []);
+
+  const scanFailed = useCallback((e: any, fallbackKey: string) => {
+    setScanPhase('idle');
+    // Out of AI allowance is not a failure of the app, and it must not be a
+    // dead end: the sheet closes and the manual add takes over, because the
+    // allowance buys the SORTING, never the doing. Same decision the document
+    // scan already makes when it runs out.
+    if (isAiAllowanceError(e)) {
+      setShowScan(false);
+      setScanError(null);
+      showToast(t('err_ai_allowance'), 'info');
+      return;
+    }
+    setScanError(apiErrorText(e, t, fallbackKey));
+  }, [t, showToast]);
 
   const pickScan = useCallback(async (source: 'camera' | 'library') => {
     setScanError(null);
@@ -439,24 +457,42 @@ export default function Kitchen() {
       if (!base64) return;
 
       setScanPhase('reading');
+      setScanSource('photo');
       const { items } = await api.scanShoppingList(base64);
       setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
       setScanPhase('review');
     } catch (e: any) {
-      setScanPhase('idle');
-      // Out of AI allowance is not a failure of the app, and it must not be a
-      // dead end: the sheet closes and the manual add takes over, because the
-      // allowance buys the SORTING, never the doing. Same decision the document
-      // scan already makes when it runs out.
-      if (isAiAllowanceError(e)) {
-        setShowScan(false);
-        setScanError(null);
-        showToast(t('err_ai_allowance'), 'info');
+      scanFailed(e, 'scan_failed');
+    }
+  }, [t, scanFailed]);
+
+  // A list that arrived as a PDF (an email, a school or club list, one typed
+  // on a computer): read the same way, into the same ticked review.
+  const pickScanPdf = useCallback(async () => {
+    setScanError(null);
+    try {
+      const picked = await pickPdf();
+      if (!picked) return;
+      if ('problem' in picked) {
+        setScanError(t(picked.problem === 'too_large' ? 'scan_pdf_too_large'
+          : picked.problem === 'not_pdf' ? 'scan_pdf_not_pdf' : 'vault_files_update_needed'));
         return;
       }
-      setScanError(apiErrorText(e, t, 'scan_failed'));
+      setScanPhase('reading');
+      setScanSource('pdf');
+      const { items } = await api.scanShoppingPdf(picked.base64);
+      setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
+      setScanPhase('review');
+    } catch (e: any) {
+      // Too big or too many pages, said in the sheet's own words.
+      if (e?.status === 413) {
+        setScanPhase('idle');
+        setScanError(t('scan_pdf_too_large'));
+        return;
+      }
+      scanFailed(e, 'scan_pdf_failed');
     }
-  }, [t, showToast]);
+  }, [t, scanFailed]);
 
   const toggleScanItem = useCallback((idx: number) => {
     setScanItems((prev) => prev.map((it, i) => (i === idx ? { ...it, checked: !it.checked } : it)));
@@ -3108,11 +3144,11 @@ export default function Kitchen() {
               onPress={() => { setScanPhase('idle'); setScanItems([]); }}
               style={styles.scanRetake}
             >
-              <Text style={styles.scanRetakeText}>{t('scan_retake')}</Text>
+              <Text style={styles.scanRetakeText}>{t(scanSource === 'pdf' ? 'scan_pdf_again' : 'scan_retake')}</Text>
             </PressScale>
             <View style={styles.cookAllergen}>
               <AlertTriangle color={ui.muted} size={14} />
-              <Text style={styles.cookAllergenText}>{t('scan_note')}</Text>
+              <Text style={styles.cookAllergenText}>{t(scanSource === 'pdf' ? 'scan_note_pdf' : 'scan_note')}</Text>
             </View>
           </>
         ) : (
@@ -3126,6 +3162,10 @@ export default function Kitchen() {
             <PressScale testID="scan-gallery" accessibilityRole="button" onPress={() => pickScan('library')} style={styles.scanSourceBtn}>
               <ImageIcon color={ui.orange} size={18} />
               <Text style={styles.scanSourceText}>{t('scan_gallery')}</Text>
+            </PressScale>
+            <PressScale testID="scan-pdf" accessibilityRole="button" onPress={pickScanPdf} style={styles.scanSourceBtn}>
+              <FileText color={ui.orange} size={18} />
+              <Text style={styles.scanSourceText}>{t('scan_pdf')}</Text>
             </PressScale>
           </>
         )}

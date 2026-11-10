@@ -4,6 +4,7 @@ import unicodedata
 import re
 import json
 import base64
+import binascii
 import random
 import asyncio
 import math
@@ -17496,27 +17497,72 @@ async def delete_shopping_history(history_id: str, user=Depends(require_user)):
     return {"ok": True}
 
 
+# A PDF shopping list: what a printed or exported list weighs, with room for
+# a phone scanner app's one-page scan. Gemini would take far more; nothing on
+# a shopping list needs it.
+SHOPPING_PDF_MAX_BYTES = 5 * 1024 * 1024
+SHOPPING_PDF_MAX_PAGES = 10
+_PDF_PAGE_OBJECT = re.compile(rb"/Type[ \t\r\n]{0,8}/Page(?![a-zA-Z])")
+
+
+def shopping_pdf_bytes(pdf_b64: str) -> bytes:
+    """Decode and check a PDF sent for a shopping-list read.
+
+    The page count is read from the page objects the file shows in the clear.
+    A PDF that packs them into compressed object streams shows none, so this
+    is a ceiling that catches the ordinary long document, not a guarantee;
+    the byte limit is the hard bound.
+    """
+    if "," in pdf_b64:
+        pdf_b64 = pdf_b64.split(",")[-1]
+    if len(pdf_b64) < 100:
+        raise HTTPException(400, "No PDF attached.")
+    if len(pdf_b64) > (SHOPPING_PDF_MAX_BYTES * 4) // 3 + 4:
+        raise HTTPException(413, "That PDF is too large.")
+    try:
+        data = base64.b64decode(pdf_b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(400, "That file is not a PDF.")
+    # The header may sit after a little junk (the spec allows 1024 bytes).
+    if b"%PDF-" not in data[:1024]:
+        raise HTTPException(400, "That file is not a PDF.")
+    if len(_PDF_PAGE_OBJECT.findall(data)) > SHOPPING_PDF_MAX_PAGES:
+        raise HTTPException(413, "That PDF has too many pages.")
+    return data
+
+
 @app.post("/api/shopping/scan")
 async def scan_shopping_list(
     payload: dict = Body(...),
     user: dict = Depends(require_user),
     database=Depends(get_db),
 ):
-    """Read a photo of a paper shopping list into items.
+    """Read a photo of a paper shopping list, or a PDF of one, into items.
 
     Returns candidates only — nothing is added here. The app shows them in a
     ticked preview (unsure reads come unticked) and commits the selection
     through the ordinary bulk add, so a misread never lands silently.
-    """
-    image_b64 = str(payload.get("image_base64") or "")
-    if "," in image_b64:
-        image_b64 = image_b64.split(",")[-1]
-    if len(image_b64) < 100:
-        raise HTTPException(400, "No photo attached.")
-    if len(image_b64) > MAX_IMAGE_B64_CHARS:
-        raise HTTPException(413, "That photo is too large.")
 
-    if not GOOGLE_API_KEY:
+    A PDF (``pdf_base64``) goes to the model as the document itself: Gemini
+    reads PDFs natively, text and scanned pages alike (up to 50 MB / 1000
+    pages per Google's document-understanding guide). Ours is far tighter —
+    a shopping list is a page or two — so a stray manual or bank statement
+    costs one refusal, not a thousand pages of tokens.
+    """
+    pdf_bytes = None
+    if payload.get("pdf_base64"):
+        pdf_bytes = shopping_pdf_bytes(str(payload.get("pdf_base64")))
+        image_b64 = ""
+    else:
+        image_b64 = str(payload.get("image_base64") or "")
+        if "," in image_b64:
+            image_b64 = image_b64.split(",")[-1]
+        if len(image_b64) < 100:
+            raise HTTPException(400, "No photo attached.")
+        if len(image_b64) > MAX_IMAGE_B64_CHARS:
+            raise HTTPException(413, "That photo is too large.")
+
+    if not GOOGLE_API_KEY or (pdf_bytes is not None and genai_types is None):
         raise HTTPException(503, "Photo scanning is unavailable right now.")
 
     sub = await build_subscription(user["family_id"])
@@ -17532,12 +17578,20 @@ async def scan_shopping_list(
         )
 
     try:
-        text = await _gemini_vision(
-            "Read the shopping list in this photo.",
-            image_b64,
-            system=SHOPPING_SCAN_SYSTEM_PROMPT,
-            fast=True,
-        )
+        if pdf_bytes is not None:
+            text = await _gemini_generate(
+                ["Read the shopping list in this PDF.",
+                 genai_types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")],
+                SHOPPING_SCAN_SYSTEM_PROMPT,
+                fast=True,
+            )
+        else:
+            text = await _gemini_vision(
+                "Read the shopping list in this photo.",
+                image_b64,
+                system=SHOPPING_SCAN_SYSTEM_PROMPT,
+                fast=True,
+            )
         parsed = extract_json(text)
         if parsed is None:
             raise UnsafeRecipe("unparseable")
