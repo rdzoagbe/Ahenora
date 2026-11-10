@@ -20,7 +20,7 @@ import { useStore } from '../store';
 import { apiErrorText } from '../apiError';
 import { ScansLeft } from './ScansLeft';
 import { localeFor } from '../utils/date';
-import { api, CardType, CapturedRecipe, ScanResult, ScannedReceipt } from '../api';
+import { api, CardType, CapturedRecipe, ScanResult, CameraReceipt } from '../api';
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
 import { scanDocument } from '../documentScanner';
 import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
@@ -76,7 +76,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
   const [mealDay, setMealDay] = useState<string | null>(null);
   const mealsLocked = subscription?.limits?.meal_planner === false && !subscription?.admin_unlocked;
   // A till receipt, read line by line, on its way to the expenses.
-  const [receipt, setReceipt] = useState<ScannedReceipt | null>(null);
+  const [receipt, setReceipt] = useState<CameraReceipt | null>(null);
   // What was just done, said back before the sheet closes.
   const [doneText, setDoneText] = useState('');
 

@@ -129,6 +129,10 @@ HARNESSES = [
     # files said so, the last by the real server. The read is stubbed; the
     # server's tests hold Gemini's side. ~20s.
     "e2e_shopping_file.py",
+    # A receipt too long for one photo: the top read alone (no total, said so),
+    # then the rest added and both read as ONE receipt; and a receipt as a PDF
+    # file. The read is stubbed; the server's tests hold Gemini's side. ~20s.
+    "e2e_long_receipt.py",
     # The meal planner and the claim it is sold on: "plan dinners, share the
     # list". Buys the plan through a real RevenueCat webhook rather than
     # granting itself entitlements, then checks the shopping list actually
