@@ -13441,8 +13441,9 @@ async def delete_vault_doc(doc_id: str, user=Depends(require_full_member)):
     if doc:
         # Into Recently deleted, where it no longer counts toward the storage
         # (Roland, 2026-11-10); restoring counts it again.
-        (trash_id,) = await move_to_trash(database, user, "vault_doc", [doc])
         size = len(doc["image_base64"].encode("utf-8"))
+        await make_room_in_trash_for_vault(database, user, size)
+        (trash_id,) = await move_to_trash(database, user, "vault_doc", [doc])
         await database["vault"].delete_one({"doc_id": doc_id})
         await database["families"].update_one(
             {"family_id": user["family_id"]},
@@ -17475,7 +17476,10 @@ async def clear_all_shopping(user=Depends(require_user)):
     batch_id = new_id("tbatch")
     full = [d async for d in database["shopping_list"].find({"family_id": user["family_id"]}, {"_id": 0})]
     await move_to_trash(database, user, "shopping_item", full, batch_id=batch_id)
-    result = await database["shopping_list"].delete_many({"family_id": user["family_id"]})
+    # Only what went into the bin: a line added meanwhile on the other phone
+    # stays on the list rather than vanish without a copy.
+    result = await database["shopping_list"].delete_many(
+        {"family_id": user["family_id"], "item_id": {"$in": [d["item_id"] for d in full]}})
     if names:
         await log_activity(database, user, "list_cleared", "", len(names))
     return {"deleted": result.deleted_count, "batch_id": batch_id if full else None}
@@ -17518,8 +17522,9 @@ async def clear_checked_shopping(user=Depends(require_user)):
     full = [d async for d in database["shopping_list"].find(
         {"family_id": user["family_id"], "checked": True}, {"_id": 0})]
     await move_to_trash(database, user, "shopping_item", full, batch_id=batch_id)
+    # Only what went into the bin (a line ticked meanwhile stays).
     result = await database["shopping_list"].delete_many(
-        {"family_id": user["family_id"], "checked": True}
+        {"family_id": user["family_id"], "item_id": {"$in": [d["item_id"] for d in full]}}
     )
     # The shop is over: tell the other parent, once, how much was bought.
     await notify_shop_done(database, user, user["family_id"], len(names))
@@ -20092,7 +20097,9 @@ async def clear_all_meals(user: dict = Depends(require_user), database=Depends(g
     batch_id = new_id("tbatch")
     full = [m async for m in database["meals"].find({"family_id": user["family_id"]}, {"_id": 0})]
     await move_to_trash(database, user, "meal", full, batch_id=batch_id)
-    result = await database["meals"].delete_many({"family_id": user["family_id"]})
+    # Only what went into the bin (a meal added meanwhile stays).
+    result = await database["meals"].delete_many(
+        {"family_id": user["family_id"], "meal_id": {"$in": [m["meal_id"] for m in full]}})
     return {"deleted": result.deleted_count, "batch_id": batch_id if full else None}
 
 
@@ -23191,6 +23198,20 @@ TRASH_KINDS = {
 }
 
 
+# The fields each kind's own visibility rule reads, kept beside the entry so
+# the bin asks the same question the list did: _card_visible_to for a card
+# (an assigned task is its parents' and assignee's, a private card its
+# author's), _may_see_vault_doc for a Coffre document (shared by name, or
+# its owner's).
+_TRASH_SIGHT_FIELDS = ("created_by_user_id", "shared", "visible_to", "owner_user_id", "visibility")
+
+
+def _trash_sight(kind: str, doc: dict) -> Optional[dict]:
+    if kind not in ("card", "vault_doc"):
+        return None
+    return {k: doc[k] for k in _TRASH_SIGHT_FIELDS if k in doc}
+
+
 def _trash_private_to(kind: str, doc: dict) -> Optional[str]:
     """Whose eyes only, in the bin as before: a Coffre document is its owner's
     (only the owner may delete it); a card is its author's when not shared."""
@@ -23207,7 +23228,7 @@ async def move_to_trash(database, user: dict, kind: str, docs: list, *,
     trash ids. The caller deletes them from their own collection after."""
     now = utcnow()
     spec = TRASH_KINDS[kind]
-    ids = []
+    entries = []
     for doc in docs:
         row = {k: v for k, v in doc.items() if k != "_id"}
         entry = {
@@ -23219,22 +23240,55 @@ async def move_to_trash(database, user: dict, kind: str, docs: list, *,
             "doc": row,
             "extra": (extra or {}).get(row.get(spec["id"])) if extra else None,
             "private_to": _trash_private_to(kind, row),
+            "sight": _trash_sight(kind, row),
+            "bytes": len((row.get("image_base64") or "").encode("utf-8")) if kind == "vault_doc" else 0,
             "deleted_by": user["user_id"],
             "deleted_by_name": user.get("name", ""),
             "deleted_at": now,
             "expires_at": now + timedelta(days=TRASH_DAYS),
             "batch_id": batch_id,
         }
-        await database["trash"].insert_one(entry)
-        ids.append(entry["trash_id"])
-    return ids
+        entries.append(entry)
+    if entries:
+        await database["trash"].insert_many(entries)
+    return [e["trash_id"] for e in entries]
+
+
+async def make_room_in_trash_for_vault(database, user: dict, size: int) -> None:
+    """A document in the bin no longer counts toward the Coffre's storage, but
+    it is still held. So the bin holds at most as much as the plan's Coffre
+    does: past that, the oldest deleted documents are erased first, earlier
+    than 30 days. Without it, uploading and deleting in turn would store
+    without limit."""
+    sub = await build_subscription(user["family_id"])
+    limit = sub["limits"]["vault_bytes"]
+    rows = [e async for e in database["trash"].find(
+        {"family_id": user["family_id"], "kind": "vault_doc"},
+        {"_id": 0, "trash_id": 1, "bytes": 1, "deleted_at": 1}).sort("deleted_at", 1)]
+    held = sum(int(e.get("bytes") or 0) for e in rows)
+    evict = []
+    for e in rows:
+        if held + size <= limit:
+            break
+        evict.append(e["trash_id"])
+        held -= int(e.get("bytes") or 0)
+    if evict:
+        await database["trash"].delete_many({"trash_id": {"$in": evict}})
 
 
 def _trash_visible(entry: dict, user: dict) -> bool:
+    """The one rule for listing, restoring, erasing and the data copy: the
+    people who could see it before it was deleted, and nobody else."""
     if entry.get("private_to") and entry["private_to"] != user["user_id"]:
         return False
     if TRASH_KINDS.get(entry.get("kind"), {}).get("full_member") and bool(user.get("is_helper")):
         return False
+    sight = entry.get("sight")
+    if sight is not None:
+        if entry["kind"] == "card" and not _card_visible_to(sight, user["user_id"]):
+            return False
+        if entry["kind"] == "vault_doc" and not _may_see_vault_doc(sight, user):
+            return False
     # Never a bare compare: a date read back from Mongo can be naive.
     return not _expired(entry.get("expires_at"))
 
@@ -23263,17 +23317,12 @@ async def _restore_entry(database, entry: dict, user: dict) -> dict:
     kind = entry["kind"]
     spec = TRASH_KINDS[kind]
     doc = dict(entry["doc"])
-    # Never a second copy: something already back (restored twice, from two
-    # phones at once) only leaves the bin.
-    already_back = await database[spec["collection"]].find_one(
-        {spec["id"]: doc.get(spec["id"]), "family_id": user["family_id"]}, {"_id": 0, spec["id"]: 1})
-    if already_back:
-        await database["trash"].delete_one({"trash_id": entry["trash_id"]})
-        return {"kind": kind, "ref": doc.get(spec["id"]), "label": entry.get("label", "")}
+    done = {"kind": kind, "ref": doc.get(spec["id"]), "label": entry.get("label", "")}
+    size = len((doc.get("image_base64") or "").encode("utf-8")) if kind == "vault_doc" else 0
     if kind == "vault_doc":
         # Back on the storage it left: refused, as a new upload would be, if
-        # it no longer fits the plan.
-        size = len((doc.get("image_base64") or "").encode("utf-8"))
+        # it no longer fits the plan. Checked before the row is claimed, so a
+        # refusal leaves it in the bin.
         sub = await build_subscription(user["family_id"])
         family = await get_family_doc(user["family_id"])
         if not is_admin_user(user) and family.get("vault_bytes_used", 0) + size > sub["limits"]["vault_bytes"]:
@@ -23281,20 +23330,29 @@ async def _restore_entry(database, entry: dict, user: dict) -> dict:
                 family_id=user["family_id"], feature="vault_storage", current_plan=sub["plan"],
                 limit=sub["limits"]["vault_bytes"], used=family.get("vault_bytes_used", 0),
                 message="Not enough Coffre storage to restore this document.")
+    # Claim the row: of two restores at once (a double tap, two phones) only
+    # the one that removes it goes on, so nothing comes back twice.
+    if (await database["trash"].delete_one({"trash_id": entry["trash_id"]})).deleted_count == 0:
+        return done
+    # Already back by another way: leaving the bin is all there is to do.
+    if await database[spec["collection"]].find_one(
+            {spec["id"]: doc.get(spec["id"]), "family_id": user["family_id"]}, {"_id": 0, spec["id"]: 1}):
+        return done
+    try:
+        await database[spec["collection"]].insert_one(doc)
+        lines = [dict(line) for line in ((entry.get("extra") or {}).get("expense_items") or [])] \
+            if kind == "expense" else []
+        if lines:
+            await database["expense_items"].insert_many(lines)
+    except Exception:
+        # Not back, so not lost either: into the bin again.
+        await database["trash"].insert_one({k: v for k, v in entry.items() if k != "_id"})
+        raise
+    if size:
         await database["families"].update_one(
             {"family_id": user["family_id"]},
             {"$inc": {"vault_bytes_used": size}, "$set": {"updated_at": utcnow()}})
-    await database[spec["collection"]].insert_one(doc)
-    if kind == "expense":
-        for line in (entry.get("extra") or {}).get("expense_items", []) or []:
-            await database["expense_items"].insert_one(dict(line))
-    await database["trash"].delete_one({"trash_id": entry["trash_id"]})
-    return {"kind": kind, "ref": doc.get(spec["id"]), "label": entry.get("label", "")}
-
-
-def _require_restorer(entry: dict, user: dict) -> None:
-    if TRASH_KINDS[entry["kind"]]["full_member"] and bool(user.get("is_helper")):
-        raise HTTPException(403, "Only a parent can restore this")
+    return done
 
 
 @app.get("/api/trash")
@@ -23310,7 +23368,6 @@ async def list_trash(user=Depends(require_user)):
 async def restore_trash(trash_id: str, user=Depends(require_user)):
     database = get_db()
     entry = await _trash_entry_for(database, trash_id, user)
-    _require_restorer(entry, user)
     return await _restore_entry(database, entry, user)
 
 
@@ -23328,7 +23385,6 @@ async def restore_trash_batch(body: TrashBatchIn, user=Depends(require_user)):
     for entry in entries:
         if not _trash_visible(entry, user):
             continue
-        _require_restorer(entry, user)
         restored.append(await _restore_entry(database, entry, user))
     return {"restored": len(restored)}
 
@@ -23337,8 +23393,7 @@ async def restore_trash_batch(body: TrashBatchIn, user=Depends(require_user)):
 async def purge_trash(trash_id: str, user=Depends(require_user)):
     """Erase one thing now instead of in 30 days."""
     database = get_db()
-    entry = await _trash_entry_for(database, trash_id, user)
-    _require_restorer(entry, user)
+    await _trash_entry_for(database, trash_id, user)
     await database["trash"].delete_one({"trash_id": trash_id})
     return {"ok": True}
 
@@ -23347,13 +23402,11 @@ async def purge_trash(trash_id: str, user=Depends(require_user)):
 async def empty_trash(user=Depends(require_user)):
     """Erase now everything this person sees in the bin (nobody else's)."""
     database = get_db()
-    gone = 0
-    async for entry in database["trash"].find({"family_id": user["family_id"]}, {"_id": 0, "doc": 0, "extra": 0}):
-        if _trash_visible(entry, user) and not (
-                TRASH_KINDS[entry["kind"]]["full_member"] and bool(user.get("is_helper"))):
-            await database["trash"].delete_one({"trash_id": entry["trash_id"]})
-            gone += 1
-    return {"deleted": gone}
+    mine = [e["trash_id"] async for e in database["trash"].find(
+        {"family_id": user["family_id"]}, {"_id": 0, "doc": 0, "extra": 0}) if _trash_visible(e, user)]
+    if mine:
+        await database["trash"].delete_many({"trash_id": {"$in": mine}})
+    return {"deleted": len(mine)}
 
 
 if __name__ == "__main__":

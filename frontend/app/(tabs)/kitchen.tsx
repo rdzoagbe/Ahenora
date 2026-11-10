@@ -811,6 +811,7 @@ export default function Kitchen() {
               const cleared = await api.clearAllShopping();
               let mealsBatch: string | null | undefined = null;
               let planSaved = false;
+              let snapshotId: string | null = null;
               if (hasPlan) {
                 // Snapshot the current plan under a dated name, then clear it.
                 // saveMealPlan reads the live meals server-side, so save before
@@ -820,7 +821,7 @@ export default function Kitchen() {
                 });
                 planSaved = await api
                   .saveMealPlan(dated)
-                  .then(() => true)
+                  .then((plan) => { snapshotId = plan?.plan_id ?? null; return true; })
                   .catch(() => false);
                 // Only clear the planner if the plan was safely saved. If the
                 // save failed, keep the meals rather than deleting them unsaved.
@@ -843,7 +844,15 @@ export default function Kitchen() {
                   : hasPlan
                     ? t('kitchen_shop_cleared_plan_kept')
                     : t('kitchen_cleared'),
-                { batchIds: [cleared?.batch_id, mealsBatch] }, load);
+                { batchIds: [cleared?.batch_id, mealsBatch] }, load,
+                // The plan is back on the planner, so its dated copy goes:
+                // erased, not filed, as it was never anything but a copy.
+                snapshotId
+                  ? async () => {
+                    const gone = await api.deleteSavedPlan(snapshotId as string);
+                    if (gone?.trash_id) await api.purgeTrash(gone.trash_id);
+                  }
+                  : undefined);
             } catch {
               showToast(t('vault_could_not_update'), 'error');
               if (hasPlan) setMeals(clearedMeals);
@@ -1645,7 +1654,7 @@ export default function Kitchen() {
 
         {/* SHOPPING LIST */}
         {view === 'spend' ? (
-          <SpendingView embedded />
+          <SpendingView embedded showToast={showToast} />
         ) : view === 'shop' ? (
           <>
             <View style={styles.secHead}>

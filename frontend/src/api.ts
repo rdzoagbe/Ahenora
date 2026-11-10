@@ -3332,9 +3332,11 @@ export const api = {
   listTrash: () => request<TrashEntry[]>('/trash'),
   restoreTrash: (trashId: string) => {
     // A restored card or document is new to the lists that hold them.
+    // Before and after: a list read while the request is in flight would
+    // otherwise be cached without it (see settleVault).
     cache.invalidatePrefix('listCards');
     return request<{ kind: string; ref: string; label: string }>(`/trash/${trashId}/restore`, { method: 'POST' })
-      .then(settleVault);
+      .then((r) => { cache.invalidatePrefix('listCards'); return settleVault(r); });
   },
   restoreTrashBatch: (batchId: string) =>
     request<{ restored: number }>('/trash/restore-batch', { method: 'POST', body: { batch_id: batchId } }),

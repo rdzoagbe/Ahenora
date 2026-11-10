@@ -68,6 +68,39 @@ describe('"Annuler" after a delete', () => {
     expect(onRestored).toHaveBeenCalled();
   });
 
+  it('undoes once however often it is tapped', async () => {
+    const showToast = jest.fn();
+    offerUndo(showToast, t, 'Deleted', { trashIds: ['t1'] }, jest.fn());
+    const { onPress } = showToast.mock.calls[0][2];
+    await Promise.all([onPress(), onPress()]);
+    expect(mockRestore).toHaveBeenCalledTimes(1);
+  });
+
+  it('undoes what the delete did besides only once everything is back', async () => {
+    const onUndone = jest.fn();
+    const showToast = jest.fn();
+    offerUndo(showToast, t, 'Cleared', { batchIds: ['B'] }, jest.fn(), onUndone);
+    await showToast.mock.calls[0][2].onPress();
+    expect(onUndone).toHaveBeenCalledTimes(1);
+
+    mockRestoreBatch.mockRejectedValue({ status: 500 });
+    const failed = jest.fn();
+    const showToast2 = jest.fn();
+    offerUndo(showToast2, t, 'Cleared', { batchIds: ['B'] }, jest.fn(), failed);
+    await showToast2.mock.calls[0][2].onPress();
+    expect(failed).not.toHaveBeenCalled();
+  });
+
+  it('takes the dated copy of the plan away when "Tout retirer" is undone', () => {
+    const kitchen = read('app', '(tabs)', 'kitchen.tsx');
+    expect(kitchen).toContain('const gone = await api.deleteSavedPlan(snapshotId as string);');
+    expect(kitchen).toContain('if (gone?.trash_id) await api.purgeTrash(gone.trash_id);');
+  });
+
+  it('shows the expense toast on screen inside Cuisine', () => {
+    expect(read('app', '(tabs)', 'kitchen.tsx')).toContain('<SpendingView embedded showToast={showToast} />');
+  });
+
   it('is a plain confirmation when there is nothing to undo', () => {
     const showToast = jest.fn();
     offerUndo(showToast, t, 'Deleted', { trashIds: [undefined] }, jest.fn());
@@ -140,7 +173,7 @@ describe('the screen', () => {
     const i18n = read('src', 'i18n.ts');
     const keys = ['trash_title', 'trash_sub', 'trash_empty', 'trash_restore', 'trash_erase', 'trash_erase_q',
       'trash_erase_body', 'trash_empty_all', 'trash_empty_all_q', 'trash_empty_all_body', 'trash_restored',
-      'trash_restore_failed', 'trash_no_space', 'trash_undo', 'trash_moved_one', 'trash_moved_n', 'trash_by',
+      'trash_restore_failed', 'trash_erase_failed', 'trash_no_space', 'trash_undo', 'trash_moved_one', 'trash_moved_n', 'trash_by',
       'trash_days_left', 'trash_day_left', 'trash_batch', 'trash_batch_meal', 'trash_settings_row',
       'trash_kind_shopping_item', 'trash_kind_card', 'trash_kind_vault_doc', 'trash_kind_expense',
       'trash_kind_meal', 'trash_kind_saved_plan'];

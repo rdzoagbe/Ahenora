@@ -87,7 +87,7 @@ export default function PrivacyScreen() {
           body: [
             'All traffic is encrypted in transit. Passwords are stored as salted hashes and session tokens only as hashes, so a copy of our database does not hand anyone your password or your session. Tokens on your device are kept in the platform\'s secure storage where it is available.',
             'We keep your data while your account and household are active. When you delete your account we delete your profile, sessions, push tokens and memberships, your private cards and private documents, and a household that no longer has anyone in it. If you were the last person in a household paying by card, the card subscription is cancelled first. Some records may persist briefly in routine backups, and we keep what the law requires us to keep — billing records, for example.',
-            'When you delete something in the app — an item on a list, a card, a document, an expense, a meal — it goes to Recently deleted, where the people who could see it before can bring it back for 30 days. After 30 days it is erased. You can erase it from there sooner, one item at a time or all at once. Health details are never kept there: deleting them erases them straight away.',
+            'When you delete something in the app — an item on a list, a card, a document, an expense, a meal — it goes to Recently deleted, where the people who could see it before can bring it back for 30 days. After 30 days it is erased. Deleted documents are erased sooner, oldest first, once together they would take up more than your plan\'s storage. You can erase anything there yourself sooner, one item at a time or all at once. Health details are never kept there: deleting them erases them straight away.',
             'You can end sessions on devices you no longer hold from Settings, without changing your password.',
           ],
         },
@@ -106,7 +106,7 @@ export default function PrivacyScreen() {
             'Sign out, or sign out everywhere, from Settings.',
             'Turn notification categories on or off in Settings.',
             'Delete cards, vault documents, rewards, messages, invitations, member profiles and any health detail where the app offers the control.',
-            'Bring back something you deleted, or erase it for good, from Recently deleted in Settings, for 30 days after you delete it.',
+            'Bring back something you deleted, or erase it for good, from Recently deleted in Settings, for up to 30 days after you delete it.',
             'Delete your account and your household data from the Account deletion screen, or by emailing us.',
           ],
         },

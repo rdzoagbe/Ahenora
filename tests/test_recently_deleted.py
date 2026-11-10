@@ -121,7 +121,63 @@ class RecentlyDeleted(unittest.TestCase):
         self.assertEqual(self._names(), ["Lait"])
         self.assertEqual(self.db["trash"].rows, [])
 
+    def test_two_restores_at_once_bring_back_one(self):
+        milk = self._item("Lait")
+        out = run(server.delete_shopping_item(milk["item_id"], user=dict(ROLAND)))
+        entry = dict(next(d for d in self.db["trash"].rows if d["trash_id"] == out["trash_id"]))
+
+        async def both():
+            return await asyncio.gather(server._restore_entry(self.db, dict(entry), dict(ROLAND)),
+                                        server._restore_entry(self.db, dict(entry), dict(KEIGH)))
+        run(both())
+        self.assertEqual(self._names(), ["Lait"])
+
+    def test_two_restores_of_a_document_count_its_storage_once(self):
+        doc = self._upload(ROLAND, "Passport")
+        used = self._vault_used()
+        out = run(server.delete_vault_doc(doc["doc_id"], user=dict(ROLAND)))
+        entry = dict(next(d for d in self.db["trash"].rows if d["trash_id"] == out["trash_id"]))
+
+        async def both():
+            return await asyncio.gather(server._restore_entry(self.db, dict(entry), dict(ROLAND)),
+                                        server._restore_entry(self.db, dict(entry), dict(ROLAND)))
+        run(both())
+        self.assertEqual(self._vault_used(), used)
+        self.assertEqual(len(self.db["vault"].rows), 1)
+
+    def test_a_restore_that_fails_puts_it_back_in_the_bin(self):
+        milk = self._item("Lait")
+        out = run(server.delete_shopping_item(milk["item_id"], user=dict(ROLAND)))
+        broken = self.db["shopping_list"].insert_one
+
+        async def fail(doc):
+            raise RuntimeError("database went away")
+        self.db["shopping_list"].insert_one = fail
+        try:
+            with self.assertRaises(RuntimeError):
+                run(server.restore_trash(out["trash_id"], user=dict(ROLAND)))
+        finally:
+            self.db["shopping_list"].insert_one = broken
+        self.assertEqual([r["label"] for r in self._bin(ROLAND)], ["Lait"])
+
     # -- a cleared list ----------------------------------------------------
+    def test_a_line_added_while_the_list_is_cleared_is_not_lost(self):
+        self._item("Lait")
+        filed = server.move_to_trash
+
+        async def meanwhile(*a, **k):
+            ids = await filed(*a, **k)
+            await self.db["shopping_list"].insert_one({
+                "item_id": "item_late", "family_id": "fam1", "name": "Ajouté sur l'autre téléphone",
+                "category": "Other", "checked": False, "created_at": server.utcnow()})
+            return ids
+        server.move_to_trash = meanwhile
+        try:
+            run(server.clear_all_shopping(user=dict(ROLAND)))
+        finally:
+            server.move_to_trash = filed
+        self.assertEqual(self._names(), ["Ajouté sur l'autre téléphone"])
+
     def test_a_cleared_list_is_one_batch_and_any_line_comes_back_alone(self):
         for n in ("Lait", "Pain", "Oeufs"):
             self._item(n, checked=True)
@@ -192,6 +248,27 @@ class RecentlyDeleted(unittest.TestCase):
         self.assertEqual([r["label"] for r in self._bin(ROLAND)], ["Surprise"])
         self.assertEqual(self._bin(KEIGH), [])
 
+    def test_an_assigned_task_stays_with_the_people_it_was_assigned_to(self):
+        run(self.db["cards"].insert_one({"card_id": "card_a", "family_id": "fam1", "title": "Dentist forms",
+                                         "shared": True, "created_by_user_id": "u_r",
+                                         "visible_to": ["u_r", "u_k"], "created_at": server.utcnow()}))
+        out = run(server.delete_card("card_a", user=dict(ROLAND)))
+        self.assertEqual([r["label"] for r in self._bin(KEIGH)], ["Dentist forms"])
+        self.assertEqual(self._bin(NANA), [])
+        with self.assertRaises(HTTPException):
+            run(server.restore_trash(out["trash_id"], user=dict(NANA)))
+        run(server.empty_trash(user=dict(NANA)))
+        self.assertEqual(len(self.db["trash"].rows), 1)
+
+    def test_a_document_shared_by_name_stays_with_those_named(self):
+        doc = self._upload(ROLAND, "School letter")
+        vault = next(d for d in self.db["vault"].rows if d["doc_id"] == doc["doc_id"])
+        vault["visible_to"] = ["u_r"]
+        vault["owner_user_id"] = None
+        run(server.delete_vault_doc(doc["doc_id"], user=dict(ROLAND)))
+        self.assertEqual([r["label"] for r in self._bin(ROLAND)], ["School letter"])
+        self.assertEqual(self._bin(KEIGH), [])
+
     def test_a_helper_sees_no_documents_or_money_in_the_bin(self):
         doc = self._upload(ROLAND, "House insurance", visibility="shared")
         run(server.delete_vault_doc(doc["doc_id"], user=dict(ROLAND)))
@@ -244,6 +321,16 @@ class RecentlyDeleted(unittest.TestCase):
         run(server.restore_trash(out["trash_id"], user=dict(ROLAND)))
         self.assertEqual(self._vault_used(), used)
         self.assertEqual(len(self.db["vault"].rows), 1)
+
+    def test_the_bin_holds_no_more_documents_than_the_coffre_itself(self):
+        limit = run(server.build_subscription("fam1"))["limits"]["vault_bytes"]
+        old = self._upload(ROLAND, "Old scan")
+        run(server.delete_vault_doc(old["doc_id"], user=dict(ROLAND)))
+        (row,) = self.db["trash"].rows
+        row["bytes"] = limit  # as if it had filled the plan
+        new = self._upload(ROLAND, "New scan")
+        run(server.delete_vault_doc(new["doc_id"], user=dict(ROLAND)))
+        self.assertEqual([r["label"] for r in self._bin(ROLAND)], ["New scan"])
 
     # -- an expense --------------------------------------------------------
     def test_an_expense_comes_back_with_its_receipt_lines(self):

@@ -46,16 +46,23 @@ export function offerUndo(
   message: string,
   refs: UndoRefs,
   onRestored: () => void,
+  /** Only when everything came back: undo what the delete did besides. */
+  onUndone?: () => Promise<unknown> | void,
 ): void {
   if (!hasUndo(refs)) {
     showToast(message, 'success');
     return;
   }
+  let pressed = false;
   showToast(message, 'success', {
     label: t('trash_undo'),
     onPress: async () => {
+      // One tap is one undo; the toast stays a few seconds more.
+      if (pressed) return;
+      pressed = true;
       try {
         await restoreRefs(refs);
+        await Promise.resolve(onUndone?.()).catch(() => undefined);
         showToast(t('trash_restored'), 'success');
       } catch (e) {
         showToast(restoreErrorText(e, t), 'error');

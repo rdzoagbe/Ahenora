@@ -87,7 +87,7 @@ export default function TrashRoute() {
             await api.purgeTrash(entry.trash_id);
           } catch (e) {
             logger.warn('trash purge failed', e);
-            showToast(t('trash_restore_failed'), 'error');
+            showToast(t('trash_erase_failed'), 'error');
             load();
           }
         },
@@ -107,7 +107,7 @@ export default function TrashRoute() {
             await api.emptyTrash();
           } catch (e) {
             logger.warn('trash empty failed', e);
-            showToast(t('trash_restore_failed'), 'error');
+            showToast(t('trash_erase_failed'), 'error');
             load();
           }
         },
