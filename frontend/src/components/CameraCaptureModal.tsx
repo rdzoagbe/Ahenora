@@ -5,12 +5,10 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  Platform,
   Image,
   ScrollView,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import * as ImagePicker from 'expo-image-picker';
 import { pickPicture } from '../pickPicture';
 import {
   X, Sparkles, Camera, Image as ImageIcon, FileScan, Check, ChefHat, ShoppingCart, Receipt, Lock,
@@ -22,7 +20,6 @@ import { ScansLeft } from './ScansLeft';
 import { localeFor } from '../utils/date';
 import { api, CardType, CapturedRecipe, ScanResult, CameraReceipt } from '../api';
 import { DOCUMENT_CATEGORIES, CATEGORY_STYLE } from '../documentCategories';
-import { scanDocument } from '../documentScanner';
 import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
 import { whereItWent } from '../shoppingAisles';
 import { logger } from '../logger';
@@ -106,53 +103,19 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
     setErr(null);
 
     try {
-      // The camera's permission is asked here, before the OS scanner, which
-      // drives the camera too; pickPicture asks again only as a no-op.
-      if (Platform.OS !== 'web' && source === 'camera') {
-        const p = await ImagePicker.requestCameraPermissionsAsync();
-        if (!p.granted) {
-          setErr(t('cam_camera_permission_denied'));
-          setPhase('error');
-          return;
-        }
-      }
-
-      // The OS document scanner first, when this binary has it: ML Kit on
-      // Android, VisionKit on iOS. It finds the page edges live, shoots when
-      // the frame is steady and corrects the perspective, so what goes up is
-      // the document at its true rectangle. That is the "capture space"
-      // Roland asked for, and the manual crop below only approximates it.
+      // The phone's document scanner first, through the same picker as every
+      // other camera in the app (pickPicture.ts): ML Kit on Android, VisionKit
+      // on iOS. It finds the page edges live, shoots when the frame is steady
+      // and corrects the perspective, so what goes up is the document at its
+      // true rectangle — the "capture space" Roland asked for. Where there is
+      // no scanner (the web), the plain camera with its crop step (the server
+      // crops to the document after this too). Camera only: neither scanner
+      // works on a photo already in the gallery.
       //
-      // Camera only. Neither platform's scanner works on a photo already in
-      // the gallery — they drive the camera.
-      //
-      // runtimeVersion went 2.0.0 -> 3.0.0 with this feature, so JavaScript
-      // built for the scanner can never reach a binary without it. The
-      // 'unavailable' branch below is web and belt-and-braces, not the
-      // safety mechanism: 2026-09-15 proved a JS guard cannot be that.
-      if (source === 'camera') {
-        const scan = await scanDocument();
-        if (scan.kind === 'cancelled') return;
-        if (scan.kind === 'scanned') {
-          // /legacy on purpose: SDK 57's default expo-file-system export is
-          // the new File API; readAsStringAsync lives here, as vault.tsx does.
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const FS = require('expo-file-system/legacy');
-          const b64 = await FS.readAsStringAsync(scan.uri, { encoding: FS.EncodingType.Base64 });
-          await runScan(`data:image/jpeg;base64,${b64}`);
-          return;
-        }
-      }
-
-      // allowsEditing: the system crop step, before anything is uploaded.
-      //
-      // A phone shoots 12MP; at quality 0.55 that is still megabytes, and
-      // base64 adds a third on top — so the scan was pushing 3-5 MB up
-      // before the model had seen anything. That is the slowness, and it is
-      // also why extraction was mediocre: the model was reading a photo of a
-      // TABLE with a letter on it. The server crops to the document after
-      // this, so the gallery path and web still end up with the page.
-      const picked = await pickPicture(source, { where: '/vision/extract', allowsEditing: true });
+      // runtimeVersion went 2.0.0 -> 3.0.0 with the scanner, so JavaScript
+      // built for it can never reach a binary without it; 2026-09-15 proved a
+      // JS guard cannot be that safety mechanism.
+      const picked = await pickPicture(source, { where: '/vision/extract', allowsEditing: true, scanner: { maxPages: 1 } });
       if (!picked) return;
       if ('problem' in picked) {
         setErr(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));

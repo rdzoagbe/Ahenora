@@ -456,12 +456,16 @@ export default function Kitchen() {
     setScanError(null);
     // Getting the picture and reading it fail for different reasons and are
     // told differently (pickPicture.ts says why).
-    const picked = await pickPicture(source, { where: '/shopping/scan' });
+    // The camera is the phone's document scanner, as on Home: it frames the
+    // list itself and straightens it.
+    const picked = await pickPicture(source, { where: '/shopping/scan', scanner: { maxPages: 1 } });
     if (!picked) return;
     if ('problem' in picked) {
       setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
       return;
     }
+    // An iPhone's scanner lets more pages be shot than are read here.
+    if (picked.dropped > 0) showToast(t('scan_first_page_only'), 'info');
     try {
       await readScan('photo', () => api.scanShoppingList(picked.base64));
     } catch (e: any) {
@@ -472,7 +476,7 @@ export default function Kitchen() {
       }
       scanFailed(e, 'scan_failed');
     }
-  }, [t, readScan, scanFailed]);
+  }, [t, readScan, scanFailed, showToast]);
 
   // A list that arrived as a FILE: a PDF (an email, a school or club list,
   // one typed on a computer) or a picture that is not in the gallery (saved
@@ -577,12 +581,13 @@ export default function Kitchen() {
 
   const pickCapture = useCallback(async (source: PictureSource) => {
     setCaptureError(null);
-    const picked = await pickPicture(source, { where: '/meals/capture' });
+    const picked = await pickPicture(source, { where: '/meals/capture', scanner: { maxPages: 1 } });
     if (!picked) return;
     if ('problem' in picked) {
       setCaptureError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
       return;
     }
+    if (picked.dropped > 0) showToast(t('scan_first_page_only'), 'info');
     try {
       setCapturePhase('reading');
       const { captured: recipe } = await api.captureRecipe(picked.base64);
@@ -592,7 +597,7 @@ export default function Kitchen() {
       setCapturePhase('idle');
       setCaptureError(apiErrorText(e, t, 'capture_failed'));
     }
-  }, [t]);
+  }, [t, showToast]);
 
   const addCapturedMeal = useCallback(async () => {
     if (!captured || captureAdding) return;
