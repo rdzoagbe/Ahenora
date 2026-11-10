@@ -222,6 +222,8 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     // The review this read continues ("Ajouter la suite"): what the person
     // already decided there is kept, not thrown away by the new read.
     previous?: { scan: ScannedReceipt; keep: boolean[]; shop: string; amount: string; when: string },
+    // Pages an iPhone's scanner shot past what one receipt is read from.
+    dropped = 0,
   ) => {
     try {
       setScanning(true);
@@ -231,6 +233,9 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setTicked(null);
       setScan(result);
       setParts(pictures);
+      // Said about THIS read only: how many pages it was read from, when more
+      // were shot. Any other read (a file, a part that fitted) clears it.
+      setPagesCapped(dropped > 0 ? pictures.length : 0);
       setUntick(new Set());
       // Only for the review: without the list, nothing is offered to tick.
       api.listShopping().then(setListItems).catch(() => setListItems([]));
@@ -276,7 +281,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   // plain camera (web, a build without the scanner) keeps the system crop
   // step for the same reason: a receipt cropped to the receipt is a
   // fraction of the bytes and a far easier read than a photo of a worktop.
-  const pickReceiptPages = useCallback(async (source: PictureSource, room: number): Promise<string[] | null> => {
+  const pickReceiptPages = useCallback(async (source: PictureSource, room: number): Promise<{ pages: string[]; dropped: number } | null> => {
     const picked = await pickPicture(source, {
       where: '/expenses/scan-receipt', allowsEditing: true, scanner: { maxPages: room },
     });
@@ -285,17 +290,17 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
       return null;
     }
-    // An iPhone's scanner has no page cap (Android's has): the first pages
-    // that fit are read, and the review says so.
-    setPagesCapped(picked.pages.length > room ? room : 0);
-    return picked.pages.slice(0, room);
+    // pickPicture keeps at most `room` pages (an iPhone's scanner has no cap)
+    // and counts the rest; the review says so once the read has worked.
+    return { pages: picked.pages, dropped: picked.dropped };
   }, [t]);
 
   const captureReceipt = useCallback(async (source: PictureSource) => {
     setScanError(null);
-    const pages = await pickReceiptPages(source, RECEIPT_MAX_PARTS);
-    if (!pages) return;
-    await readReceipt(() => api.scanReceipt(pages), pages, 'photo');
+    const got = await pickReceiptPages(source, RECEIPT_MAX_PARTS);
+    if (!got) return;
+    const { pages, dropped } = got;
+    await readReceipt(() => api.scanReceipt(pages), pages, 'photo', undefined, dropped);
   }, [pickReceiptPages, readReceipt]);
 
   /**
@@ -306,11 +311,11 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   const addReceiptPart = useCallback(async () => {
     setScanError(null);
     const room = (scan?.max_parts ?? RECEIPT_MAX_PARTS) - parts.length;
-    const added = await pickReceiptPages('camera', room);
-    if (!added) return;
-    const pictures = [...parts, ...added];
+    const got = await pickReceiptPages('camera', room);
+    if (!got) return;
+    const pictures = [...parts, ...got.pages];
     const previous = scan ? { scan, keep, shop, amount, when } : undefined;
-    await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous);
+    await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous, got.dropped);
   }, [parts, scan, keep, shop, amount, when, pickReceiptPages, readReceipt]);
 
   /** A digital receipt (PDF), or a picture of one that is not in the gallery. */

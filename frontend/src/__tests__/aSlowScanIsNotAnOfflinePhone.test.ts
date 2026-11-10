@@ -149,17 +149,20 @@ describe('the photo is cropped before it is uploaded', () => {
     // Every picture in the app now comes through pickPicture.ts.
     expect(PICKER).toContain('launchCameraAsync(shot)');
     expect(PICKER).toContain('launchImageLibraryAsync(shot)');
-    expect(CAMERA).toContain("pickPicture(source, { where: '/vision/extract', allowsEditing: true })");
+    expect(CAMERA).toContain("pickPicture(source, { where: '/vision/extract', allowsEditing: true, scanner: { maxPages: 1 } })");
   });
 
   it('tries the OS document scanner first, and only for the camera', () => {
     // The automatic framing that was asked for. It is reached through the
     // wrapper, never the plugin, and only on the camera path: neither
     // platform's scanner works on a photo already in the gallery.
-    expect(CAMERA).toContain("from '../documentScanner'");
-    expect(CAMERA).toContain("if (source === 'camera') {");
-    expect(CAMERA.indexOf('await scanDocument()')).toBeLessThan(
-      CAMERA.indexOf('await pickPicture(source'));
+    // Through the shared picker now (pickPicture.ts), which opens the scanner
+    // before the plain camera, and only when the source is the camera.
+    expect(CAMERA).toContain('scanner: { maxPages: 1 }');
+    expect(PICKER).toContain("from './documentScanner'");
+    expect(PICKER).toContain("if (native && source === 'camera' && options.scanner) {");
+    expect(PICKER.indexOf('await scanDocumentPages(max)')).toBeLessThan(
+      PICKER.indexOf('launchCameraAsync(shot)'));
   });
 
   it('is gated by the runtime version, not by a JavaScript guard', () => {
