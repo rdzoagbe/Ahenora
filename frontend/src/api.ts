@@ -1138,6 +1138,8 @@ export interface Medicine {
   starts_on: string;
   ends_on: string;
   note: string;
+  /** The day it stopped ("Arrêté"), or '' while it is taken. */
+  stopped_on: string;
 }
 
 export interface MemberRecord {
@@ -3118,12 +3120,17 @@ export const api = {
                       data: Partial<Omit<Vaccination, 'vax_id'>>) =>
     request<MemberRecord>(`/family/members/${memberId}/vaccinations/${vaxId}`,
       { method: 'PATCH', body: data }),
+  /** Erased on the server at once; `erased` is the row as it was stored,
+   *  handed back only to this phone so "Annuler" can put it back exactly. */
   deleteVaccination: (memberId: string, vaxId: string) =>
-    request<MemberRecord>(`/family/members/${memberId}/vaccinations/${vaxId}`,
-      { method: 'DELETE' }),
+    request<MemberRecord & { erased?: Record<string, unknown> }>(
+      `/family/members/${memberId}/vaccinations/${vaxId}`, { method: 'DELETE' }),
+  putBackVaccination: (memberId: string, row: Record<string, unknown>) =>
+    request<MemberRecord>(`/family/members/${memberId}/vaccinations/put-back`,
+      { method: 'POST', body: { row } }),
   addMedicine: (memberId: string,
                 data: { name: string; dose?: string; times?: string[];
-                        starts_on?: string; ends_on?: string; note?: string }) =>
+                        starts_on?: string; ends_on?: string; note?: string; stopped_on?: string }) =>
     request<MemberRecord>(`/family/members/${memberId}/medicines`,
       { method: 'POST', body: data }),
   updateMedicine: (memberId: string, medId: string,
@@ -3131,8 +3138,11 @@ export const api = {
     request<MemberRecord>(`/family/members/${memberId}/medicines/${medId}`,
       { method: 'PATCH', body: data }),
   deleteMedicine: (memberId: string, medId: string) =>
-    request<MemberRecord>(`/family/members/${memberId}/medicines/${medId}`,
-      { method: 'DELETE' }),
+    request<MemberRecord & { erased?: Record<string, unknown> }>(
+      `/family/members/${memberId}/medicines/${medId}`, { method: 'DELETE' }),
+  putBackMedicine: (memberId: string, row: Record<string, unknown>) =>
+    request<MemberRecord>(`/family/members/${memberId}/medicines/put-back`,
+      { method: 'POST', body: { row } }),
   listHandoffNotes: () => request<HandoffNote[]>('/handoff-notes'),
   createHandoffNote: (data: { member_id?: string; text: string }) =>
     request<HandoffNote>('/handoff-notes', { method: 'POST', body: data }),
