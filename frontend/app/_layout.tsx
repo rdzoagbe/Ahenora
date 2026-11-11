@@ -76,6 +76,10 @@ function RootNavigator() {
   // card. Found in review, and it is the original complaint reintroduced by
   // the check meant to confirm the fix.
   const currentParams = useGlobalSearchParams();
+  // The tap waiting to be honoured, with how many times we have tried. A ref
+  // rather than state so the applier below never sets state from an effect
+  // body; `targetTick` is what actually re-runs it.
+  const heldTarget = useRef<{ target: { pathname: string; params?: Record<string, string> }; attempts: number; seen?: boolean } | null>(null);
   // Where we are right now, readable without making the applier below re-run.
   //
   // This ref is the fix for a regression I shipped. The applier listed
@@ -105,10 +109,6 @@ function RootNavigator() {
       held.seen = true;
     }
   });
-  // The tap waiting to be honoured, with how many times we have tried. A ref
-  // rather than state so the applier below never sets state from an effect
-  // body; `targetTick` is what actually re-runs it.
-  const heldTarget = useRef<{ target: { pathname: string; params?: Record<string, string> }; attempts: number; seen?: boolean } | null>(null);
   const [targetTick, setTargetTick] = useState(0);
 
   useEffect(() => {
