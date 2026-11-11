@@ -61,6 +61,12 @@ def real_indexes() -> int:
     raise AssertionError("INDEXES is no longer a plain literal this can read")
 
 
+def real_collections() -> int:
+    """Every collection the server reads or writes by name. The appendix said
+    35 for months while the code grew to 51; nothing counted it."""
+    return len(set(re.findall(r'(?:database|db|database_)\[\s*"([a-z_]+)"\s*\]', source())))
+
+
 def real_functions() -> int:
     return len(re.findall(r"^(?:async )?def ", source(), re.M))
 
@@ -106,6 +112,10 @@ class TheNumbersAreNotInflated(unittest.TestCase):
         # A countable literal, so there is no excuse for it to drift.
         stated = claimed(doc("TECHNOLOGY_APPENDIX.md"), r"([\d,]+) indexes")
         self.assertEqual(stated, real_indexes())
+
+    def test_it_states_the_collections_exactly(self):
+        stated = claimed(doc("TECHNOLOGY_APPENDIX.md"), r"([\d,]+) collections")
+        self.assertEqual(stated, real_collections())
 
     def test_the_risk_register_agrees_with_the_baseline(self):
         # Two documents quoting different test counts is the version of this
