@@ -65,10 +65,15 @@ export function targetForNotification(data: unknown): { pathname: string; params
     // worked was indistinguishable from launching the app — and a backlog item
     // from last week is not on a Feed showing today, so the one notification
     // that named a single thing led to a screen without it.
+    //
+    // And when it counts several ("2 choses encore en attente", reported a
+    // third time on 2026-11-11 with a screenshot), there is still a place that
+    // lists exactly them: "À traiter", the list behind the bell, overdue
+    // first. The tap opens it, rather than a Feed that leads with today.
     case 'morning_digest':
       return d.card_id
         ? { pathname: '/(tabs)/feed', params: { cardId: String(d.card_id) } }
-        : { pathname: '/(tabs)/feed' };
+        : { pathname: '/(tabs)/feed', params: { open: 'attention' } };
     // The weekly recap really is about everything, and the quiet-day tip is
     // about nothing in particular.
     case 'daily_tip':

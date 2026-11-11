@@ -138,6 +138,10 @@ HARNESSES = [
     # erasing / emptying each asked first. The server's tests hold who may see
     # what and the Coffre's storage. ~20s.
     "e2e_recently_deleted.py",
+    # A morning summary that counts several things ("2 choses encore en
+    # attente") opens "À traiter", the list of exactly them, not a Feed that
+    # leads with today; a normal launch does not. ~15s.
+    "e2e_digest_tap.py",
     # Health details kept, not lost by mistake: a medicine no longer taken is
     # stopped and kept among the past ones; erasing asks first, is done on the
     # server at once (the law), and "Annuler" writes it back for 10 s. ~25s.
