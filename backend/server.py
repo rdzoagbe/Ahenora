@@ -4342,8 +4342,8 @@ async def _build_morning_digest(database, user, local, L):
         # routing was never the fault: the digest lands on the Feed, which is
         # the screen the app already opens on, so a tap that worked perfectly
         # was indistinguishable from launching the app. Naming the card is
-        # what makes the difference visible. With several, there is no single
-        # right place and the Feed, which lists them, is the honest answer.
+        # what makes the difference visible. With several, the app opens "À
+        # traiter", the list of exactly them (src/notificationRouting.ts).
         return (L["digest_title"], body, None, None, {"card_id": _only(today_ids)})
 
     # Nothing due in the window, but the house is not actually clear: there is

@@ -93,11 +93,22 @@ function RootNavigator() {
   });
   useEffect(() => {
     routeNow.current = { pathname, params: currentParams };
+    // Seen arriving counts as arrived. A screen may read its parameter and
+    // clear it at once (the Feed's `open`, the Kitchen's `mealId`, the
+    // Coffre's `docId`), so by the applier's next check it can be gone, and
+    // the tap was pushed again, up to four times: the "À traiter" list
+    // reopening, a recipe generated twice. Found in review, 2026-11-11.
+    const held = heldTarget.current;
+    if (held && held.attempts > 0
+        && routeMatchesTarget(pathname, held.target.pathname)
+        && paramsMatchTarget(currentParams, held.target.params)) {
+      held.seen = true;
+    }
   });
   // The tap waiting to be honoured, with how many times we have tried. A ref
   // rather than state so the applier below never sets state from an effect
   // body; `targetTick` is what actually re-runs it.
-  const heldTarget = useRef<{ target: { pathname: string; params?: Record<string, string> }; attempts: number } | null>(null);
+  const heldTarget = useRef<{ target: { pathname: string; params?: Record<string, string> }; attempts: number; seen?: boolean } | null>(null);
   const [targetTick, setTargetTick] = useState(0);
 
   useEffect(() => {
@@ -148,9 +159,9 @@ function RootNavigator() {
     // Read, never depended on: the retry clock is the tick below and nothing
     // else. A render is not a reason to navigate again.
     const { pathname: arrivedAt, params: arrivedWith } = routeNow.current;
-    if (held.attempts > 0
+    if (held.seen || (held.attempts > 0
         && routeMatchesTarget(arrivedAt, held.target.pathname)
-        && paramsMatchTarget(arrivedWith, held.target.params)) {
+        && paramsMatchTarget(arrivedWith, held.target.params))) {
       heldTarget.current = null;
       // Honoured, so the durable copy is spent too. Leaving it would re-route
       // on the next launch, long after the notification stopped mattering.

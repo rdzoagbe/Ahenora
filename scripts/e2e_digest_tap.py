@@ -6,9 +6,9 @@ today, so two jobs from a fortnight ago were nowhere in sight and the tap
 looked like it did nothing. The tap now opens "À traiter", the list
 behind the bell, overdue first.
 
-A notification cannot be tapped in a browser, so this opens the Feed exactly
-as the tap does (src/notificationRouting.ts sends `open=attention`; its unit
-test holds that half) and checks what is on screen.
+The tap is delivered the way the browser's notification worker delivers it
+(public/sw.js posts "push-notification-tap"), so the layout's held target and
+its retries run as they do for a real tap.
 """
 import asyncio, json, os, sys, traceback, urllib.request, uuid
 from datetime import datetime, timedelta, timezone
@@ -76,21 +76,50 @@ async def run(r, tok):
             f"localStorage.setItem('coo_session_token','{tok}');"
             "localStorage.setItem('coo_policy_notice_seen','2026-11-10');")
 
-        # As the tap opens it.
-        await page.goto(f"{WEB}/feed?open=attention", wait_until="domcontentloaded")
-        await page.wait_for_selector(f'[data-testid="feed-alert-{a["card_id"]}"]', timeout=20000)
+        await page.goto(f"{WEB}/feed", wait_until="domcontentloaded")
+        await page.wait_for_selector('[data-testid="feed-week"]', timeout=20000)
+        await page.wait_for_timeout(1500)
+
+        async def tap():
+            # Exactly what the browser's notification worker posts on a tap
+            # (public/sw.js), so the layout's held-target and retry run too.
+            await page.evaluate("""() => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'push-notification-tap', data: { type: 'morning_digest' } } }))""")
+
+        # A task sheet already open when the tap arrives: it gives way.
+        # (These two are a fortnight old: they are not in the Feed's day list,
+        # which is the whole complaint. They are in "À traiter", behind the bell.)
+        await page.locator('[data-testid="feed-bell"]').click()
+        await page.locator(f'[data-testid="feed-alert-{b["card_id"]}"]').click()
+        await page.wait_for_selector('[data-testid="feed-detail-close"]', timeout=10000)
+        await page.wait_for_timeout(400)
+        await tap()
+        await page.wait_for_selector(f'[data-testid="feed-alert-{b["card_id"]}"]', timeout=20000)
         await page.wait_for_timeout(600)
         r["the_tap_opens_the_list_of_them"] = await page.locator(
-            f'[data-testid="feed-alert-{b["card_id"]}"]').count() == 1
+            f'[data-testid="feed-alert-{a["card_id"]}"]').count() == 1
         r["named_on_screen"] = "Appeler le plombier" in await page.locator(
             f'[data-testid="feed-alert-{b["card_id"]}"]').inner_text()
+        r["no_task_sheet_underneath"] = await page.locator('[data-testid="feed-detail-close"]').count() == 0
         if SHOTS:
             await page.screenshot(path=os.path.join(SHOTS, "digest-tap-list.png"))
-        # Tapping one opens it.
+
+        # Closed, it stays closed: the tap is not pushed again behind it.
+        await page.locator('[data-testid="feed-alerts-close"]').click()
+        await page.wait_for_timeout(3500)
+        r["a_closed_list_stays_closed"] = await page.locator('[data-testid="feed-alerts-close"]').count() == 0
+
+        # The next such tap opens it again.
+        await tap()
+        await page.wait_for_selector('[data-testid="feed-alerts-close"]', timeout=15000)
+        r["the_next_tap_opens_it_again"] = True
+
+        # Tapping one opens THAT task's own sheet.
         await page.locator(f'[data-testid="feed-alert-{a["card_id"]}"]').click()
-        await page.wait_for_timeout(1000)
-        r["tapping_one_opens_it"] = await page.locator('[data-testid="feed-alerts-close"]').count() == 0 \
-            and "Renvoyer le formulaire de la cantine" in await page.locator("body").inner_text()
+        await page.wait_for_selector('[data-testid="feed-detail-close"]', timeout=10000)
+        await page.wait_for_timeout(2500)
+        r["tapping_one_opens_its_sheet"] = await page.locator('[data-testid="feed-alerts-close"]').count() == 0 \
+            and await page.locator('[data-testid="feed-detail-close"]').count() == 1
 
         # Opening the app normally does not pop the list open.
         await page.goto(f"{WEB}/feed", wait_until="domcontentloaded")

@@ -1137,15 +1137,47 @@ export default function Feed() {
   }, [dashboard.priority]);
 
   // A notification that counted several things ("2 choses encore en
-  // attente") opens the list of exactly them: "À traiter". Once the cards
-  // are in, so the list is not shown empty; then the parameter is cleared, so
-  // the next such tap opens it again and leaving it closed stays closed.
+  // attente") opens the list of exactly them: "À traiter". The cards are read
+  // again first (an app left open since last night would otherwise show last
+  // night's list), and any card sheet already open is closed, so two sheets
+  // never stack.
+  //
+  // The parameter stays while the list is open and is cleared when it
+  // closes. Clearing it at once looked tidier and broke the tap: the layout
+  // counts a tap as arrived only when it sees the parameter on screen, never
+  // saw it, and pushed the tap again four times, reopening a list the reader
+  // had just closed (found in review and traced in the browser, 2026-11-11).
+  const attentionHandled = useRef(false);
+  const attentionShown = useRef(false);
+  const feedMounted = useRef(true);
+  useEffect(() => () => { feedMounted.current = false; }, []);
   useEffect(() => {
-    if (openFromNotification !== 'attention' || loading) return;
-    setShowAlerts(true);
-    markAlertsSeen();
-    router.setParams({ open: undefined } as never);
-  }, [openFromNotification, loading, markAlertsSeen, router]);
+    if (openFromNotification !== 'attention') {
+      attentionHandled.current = false;
+      attentionShown.current = false;
+      return;
+    }
+    if (attentionHandled.current) return;
+    attentionHandled.current = true;
+    load().finally(() => {
+      if (!feedMounted.current) return;
+      setSelectedCard(null);
+      setShowAlerts(true);
+      attentionShown.current = true;
+    });
+  }, [openFromNotification, load]);
+  // Closed: the parameter goes, so the next such tap opens it again.
+  useEffect(() => {
+    if (!showAlerts && attentionShown.current && openFromNotification === 'attention') {
+      router.setParams({ open: undefined } as never);
+    }
+  }, [showAlerts, openFromNotification, router]);
+
+  // What the open list shows is what has been seen, including cards that
+  // arrive after it opened (the tasks handed to you load on their own).
+  useEffect(() => {
+    if (showAlerts) markAlertsSeen();
+  }, [showAlerts, markAlertsSeen]);
 
   const alertText = alertCount > 0
     ? `${alertCount} ${alertCount === 1 ? t('feed_thing_needs') : t('feed_things_need')} — ${dashboard.priority[0]?.title || t('feed_review_list')}.`
