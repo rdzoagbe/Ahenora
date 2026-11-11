@@ -138,6 +138,10 @@ HARNESSES = [
     # erasing / emptying each asked first. The server's tests hold who may see
     # what and the Coffre's storage. ~20s.
     "e2e_recently_deleted.py",
+    # A morning summary that counts several things ("2 choses encore en
+    # attente") opens "À traiter", the list of exactly them, not a Feed that
+    # leads with today; a normal launch does not. ~15s.
+    "e2e_digest_tap.py",
     # The meal planner and the claim it is sold on: "plan dinners, share the
     # list". Buys the plan through a real RevenueCat webhook rather than
     # granting itself entitlements, then checks the shopping list actually

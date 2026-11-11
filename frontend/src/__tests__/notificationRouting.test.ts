@@ -88,9 +88,18 @@ describe('targetForNotification', () => {
   });
 
   it('keeps the round-ups on the Feed, which is the screen about everything', () => {
-    ['morning_digest', 'daily_tip', 'sunday_recap'].forEach((type) => {
+    ['daily_tip', 'sunday_recap'].forEach((type) => {
       expect(targetForNotification({ type })).toEqual({ pathname: '/(tabs)/feed' });
     });
+  });
+
+  it('opens the list of exactly the things a morning summary counted', () => {
+    // "2 choses encore en attente", reported 2026-11-11: the Feed leads with
+    // today, so the tap looked like it went nowhere.
+    expect(targetForNotification({ type: 'morning_digest' }))
+      .toEqual({ pathname: '/(tabs)/feed', params: { open: 'attention' } });
+    expect(targetForNotification({ type: 'morning_digest', card_id: 'card_1' }))
+      .toEqual({ pathname: '/(tabs)/feed', params: { cardId: 'card_1' } });
   });
 });
 
@@ -165,7 +174,7 @@ describe('a notification that reports something must not then hide it', () => {
     // them; they are named here so the check cannot be satisfied by widening.
     expect(landsOnFallback.sort()).toEqual([
       'announcement', 'card_reminder', 'daily_tip', 'handoff_note',
-      'morning_digest', 'new_card', 'shared_card', 'sunday_recap',
+      'new_card', 'shared_card', 'sunday_recap',
       'task_assigned', 'task_done',
     ]);
   });

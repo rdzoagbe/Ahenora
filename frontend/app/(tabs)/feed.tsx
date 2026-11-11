@@ -423,8 +423,8 @@ export default function Feed() {
   const pendingDismissRef = useRef<Set<string>>(new Set());
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   // Set when a tapped notification named the card it was about.
-  const { cardId: notifiedCardId, noteId: notifiedNoteId } =
-    useLocalSearchParams<{ cardId?: string; noteId?: string }>();
+  const { cardId: notifiedCardId, noteId: notifiedNoteId, open: openFromNotification } =
+    useLocalSearchParams<{ cardId?: string; noteId?: string; open?: string }>();
   const openedFromNotification = useRef<string | null>(null);
   const { toast, showToast } = useToast(3200);
   const [captureText, setCaptureText] = useState('');
@@ -1135,6 +1135,17 @@ export default function Feed() {
     setSeenAlertIds(ids);
     AsyncStorage.setItem(SEEN_ALERTS_KEY, JSON.stringify(ids)).catch(() => undefined);
   }, [dashboard.priority]);
+
+  // A notification that counted several things ("2 choses encore en
+  // attente") opens the list of exactly them: "À traiter". Once the cards
+  // are in, so the list is not shown empty; then the parameter is cleared, so
+  // the next such tap opens it again and leaving it closed stays closed.
+  useEffect(() => {
+    if (openFromNotification !== 'attention' || loading) return;
+    setShowAlerts(true);
+    markAlertsSeen();
+    router.setParams({ open: undefined } as never);
+  }, [openFromNotification, loading, markAlertsSeen, router]);
 
   const alertText = alertCount > 0
     ? `${alertCount} ${alertCount === 1 ? t('feed_thing_needs') : t('feed_things_need')} — ${dashboard.priority[0]?.title || t('feed_review_list')}.`
