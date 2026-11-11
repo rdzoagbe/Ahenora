@@ -21,7 +21,7 @@ describe('a medicine no longer taken', () => {
   it('can be stopped instead of erased, and taken again', () => {
     expect(MEMBER).toContain('onPress={() => stopMedicine(m, true)}');
     expect(MEMBER).toContain('onPress={() => stopMedicine(m, false)}');
-    expect(MEMBER).toContain("saveMedicine(m.med_id, { stopped_on: stop ? today : '' });");
+    expect(MEMBER).toContain("saveMedicine(m.med_id, { stopped_on: stop ? localDayIso(new Date()) : '' });");
   });
 
   it('is kept under "Médicaments passés", apart from what is taken now', () => {
@@ -49,9 +49,19 @@ describe('erasing a health detail', () => {
     expect(TOAST).toContain('export const HEALTH_UNDO_MS = 10000;');
   });
 
-  it('"Annuler" writes back everything that was erased, stopped day included', () => {
-    expect(MEMBER).toContain('ends_on: m.ends_on, note: m.note, stopped_on: m.stopped_on,');
-    expect(MEMBER).toContain('name: v.name, given_on: v.given_on, next_due: v.next_due, note: v.note,');
+  it('"Annuler" writes back the row exactly as it was stored', () => {
+    expect(MEMBER).toContain('? api.putBackMedicine(id, row)');
+    expect(MEMBER).toContain('? api.putBackVaccination(id, row)');
+    expect(SERVER).toContain('return {**public_member_record(member, full_member=True), "erased": erased}');
+  });
+
+  it('brings back everything erased in the last 10 seconds, not only the last one', () => {
+    expect(MEMBER).toContain('...pendingHealth.current.filter((p) => now - p.at < HEALTH_UNDO_MS),');
+    expect(MEMBER).toContain("t('rec_health_erased_n', { n: many })");
+  });
+
+  it('offers it again if putting it back fails, rather than losing it', () => {
+    expect(MEMBER).toContain("offer(t('rec_health_undo_failed'), 'error', t('rec_health_retry'));");
   });
 
   it('undoes once however often it is tapped', () => {
@@ -65,7 +75,8 @@ describe('erasing a health detail', () => {
 
   it('is worded in all four languages', () => {
     for (const key of ['rec_med_stop', 'rec_med_resume', 'rec_med_past', 'rec_med_stopped_on',
-      'rec_med_none_now', 'rec_health_erase_body', 'rec_health_erased', 'rec_vax_remove_q']) {
+      'rec_med_none_now', 'rec_health_erase_body', 'rec_health_erased', 'rec_vax_remove_q',
+      'rec_health_erased_n', 'rec_health_undo_failed', 'rec_health_retry']) {
       expect([key, (I18N.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length]).toEqual([key, 4]);
     }
   });

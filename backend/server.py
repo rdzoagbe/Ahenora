@@ -5461,6 +5461,35 @@ def _clean_date(value: Optional[str], field: str) -> str:
 
 
 MEDICINE_MAX = 40
+# Stopped medicines are kept (Roland, 2026-11-11), so they do not count
+# toward the 40 taken at once; this bounds the whole list, past included.
+MEDICINE_TOTAL_MAX = 200
+
+
+def _check_stopped_on(row: dict) -> None:
+    """A medicine cannot stop before it started, nor on a day still to come
+    (a day of slack: the phone sends its own calendar's today, which can be
+    a day ahead of UTC)."""
+    stopped = row.get("stopped_on") or ""
+    if not stopped:
+        return
+    if row.get("starts_on") and stopped < row["starts_on"]:
+        raise HTTPException(status_code=400, detail="A medicine cannot stop before it starts")
+    if stopped > (utcnow() + timedelta(days=1)).date().isoformat():
+        raise HTTPException(status_code=400, detail="A medicine cannot stop on a day still to come")
+
+
+def _medicine_room(existing: list, *, stopped: bool) -> None:
+    """At most MEDICINE_MAX taken at once, and MEDICINE_TOTAL_MAX in all."""
+    rows = [r for r in existing if isinstance(r, dict)]
+    if len(rows) >= MEDICINE_TOTAL_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A record holds at most {MEDICINE_TOTAL_MAX} medicines, past ones included")
+    if not stopped and sum(1 for r in rows if not r.get("stopped_on")) >= MEDICINE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A record holds at most {MEDICINE_MAX} medicines")
 MEDICINE_NAME_MAX = 120
 MEDICINE_DOSE_MAX = 80
 MEDICINE_NOTE_MAX = 200
@@ -5640,9 +5669,10 @@ def public_medicines(member: dict) -> list:
     # has no end, which is not the same as ending long ago.
     current = sorted((m for m in out if not m["stopped_on"]),
                      key=lambda m: (m["ends_on"] == "", m["ends_on"], m["name"].lower()))
-    # Stopped ones after, the most recently stopped first.
-    past = sorted((m for m in out if m["stopped_on"]),
-                  key=lambda m: (m["stopped_on"], m["name"].lower()), reverse=True)
+    # Stopped ones after, the most recently stopped first; on the same day,
+    # A to Z, as everywhere else (two stable sorts, like public_vaccinations).
+    past = sorted((m for m in out if m["stopped_on"]), key=lambda m: m["name"].lower())
+    past.sort(key=lambda m: m["stopped_on"], reverse=True)
     return current + past
 
 
@@ -8792,10 +8822,7 @@ async def add_member_medicine(member_id: str, payload: MedicineIn,
     database = get_db()
     member = await _load_member_for_record(database, user, member_id)
     existing = ((member.get("record") or {}).get("medicines")) or []
-    if len(existing) >= MEDICINE_MAX:
-        raise HTTPException(
-            status_code=400,
-            detail=f"A record holds at most {MEDICINE_MAX} medicines")
+    _medicine_room(existing, stopped=bool((payload.stopped_on or "").strip()))
     starts_on = _clean_date(payload.starts_on, "starts_on")
     ends_on = _clean_date(payload.ends_on, "ends_on")
     if starts_on and ends_on and ends_on < starts_on:
@@ -8812,6 +8839,7 @@ async def add_member_medicine(member_id: str, payload: MedicineIn,
         "note": (payload.note or "").strip(),
         "stopped_on": _clean_date(payload.stopped_on, "stopped_on"),
     }
+    _check_stopped_on(row)
     # $push rather than rewriting the array: the other parent's row, added
     # between our read and our write, survives.
     await database["family_members"].update_one(
@@ -8852,7 +8880,12 @@ async def update_member_medicine(member_id: str, med_id: str,
     if "note" in sent:
         hit["note"] = (sent["note"] or "").strip()
     if "stopped_on" in sent:
+        was_stopped = bool(hit.get("stopped_on"))
         hit["stopped_on"] = _clean_date(sent["stopped_on"], "stopped_on")
+        if was_stopped and not hit["stopped_on"]:
+            # Taken again: it counts among the ones taken at once.
+            _medicine_room([r for r in rows if r is not hit], stopped=False)
+    _check_stopped_on(hit)
     # Checked on the MERGED row, not on what was sent: a patch that moves only
     # the start date can still invert a course whose end was set weeks ago.
     if hit.get("starts_on") and hit.get("ends_on") and hit["ends_on"] < hit["starts_on"]:
@@ -8876,7 +8909,8 @@ async def delete_member_medicine(member_id: str, med_id: str,
     database = get_db()
     member = await _load_member_for_record(database, user, member_id)
     rows = ((member.get("record") or {}).get("medicines")) or []
-    if not any(isinstance(r, dict) and r.get("med_id") == med_id for r in rows):
+    erased = next((r for r in rows if isinstance(r, dict) and r.get("med_id") == med_id), None)
+    if erased is None:
         raise HTTPException(status_code=404, detail="No such medicine")
     await database["family_members"].update_one(
         {"family_id": user["family_id"], "member_id": member_id},
@@ -8884,7 +8918,9 @@ async def delete_member_medicine(member_id: str, med_id: str,
          "$set": {"updated_at": utcnow()}})
     member.setdefault("record", {})["medicines"] = [
         r for r in rows if not (isinstance(r, dict) and r.get("med_id") == med_id)]
-    return public_member_record(member, full_member=True)
+    # Erased here and now. The row goes back to the phone that erased it, and
+    # only there, so "Annuler" can put back exactly what was stored.
+    return {**public_member_record(member, full_member=True), "erased": erased}
 
 
 @app.post("/api/family/members/{member_id}/vaccinations")
@@ -8958,7 +8994,8 @@ async def delete_member_vaccination(member_id: str, vax_id: str,
     database = get_db()
     member = await _load_member_for_record(database, user, member_id)
     rows = ((member.get("record") or {}).get("vaccinations")) or []
-    if not any(isinstance(r, dict) and r.get("vax_id") == vax_id for r in rows):
+    erased = next((r for r in rows if isinstance(r, dict) and r.get("vax_id") == vax_id), None)
+    if erased is None:
         raise HTTPException(status_code=404, detail="No such vaccination")
     await database["family_members"].update_one(
         {"family_id": user["family_id"], "member_id": member_id},
@@ -8966,7 +9003,78 @@ async def delete_member_vaccination(member_id: str, vax_id: str,
          "$set": {"updated_at": utcnow()}})
     member.setdefault("record", {})["vaccinations"] = [
         r for r in rows if not (isinstance(r, dict) and r.get("vax_id") == vax_id)]
+    # Its reminder marks travel with it, so putting it back does not send the
+    # "due" reminder a second time.
+    return {**public_member_record(member, full_member=True), "erased": erased}
+
+
+# What "Annuler" may write back: the fields a row is stored with, and no
+# others. A put-back is a row the same phone was handed when it erased it.
+_PUT_BACK_FIELDS = {
+    "medicines": ("med_id", {"med_id", "name", "dose", "times", "starts_on", "ends_on",
+                             "note", "stopped_on"}),
+    "vaccinations": ("vax_id", {"vax_id", "name", "given_on", "next_due", "note",
+                                DUE_MARK_DATE, DUE_MARK_STAGE}),
+}
+
+
+class HealthPutBackIn(BaseModel):
+    row: dict
+
+
+def _clean_put_back(kind: str, row: dict) -> dict:
+    id_key, allowed = _PUT_BACK_FIELDS[kind]
+    out = {}
+    for k, v in row.items():
+        if k not in allowed:
+            continue
+        if k == "times":
+            if not isinstance(v, list) or len(v) > 6 or not all(isinstance(x, str) and len(x) <= 5 for x in v):
+                raise HTTPException(status_code=400, detail="Not a row this record held")
+        elif v is not None and (not isinstance(v, str) or len(v) > 2000):
+            raise HTTPException(status_code=400, detail="Not a row this record held")
+        out[k] = v
+    if not str(out.get(id_key) or "").startswith(id_key.split("_")[0] + "_") or not (out.get("name") or "").strip():
+        raise HTTPException(status_code=400, detail="Not a row this record held")
+    return out
+
+
+async def _put_back(member_id: str, kind: str, body: HealthPutBackIn, user: dict) -> dict:
+    """Write back, unchanged, a health detail erased moments ago: same id,
+    same fields, reminder marks included. A row already there is left alone,
+    so a double tap puts back one."""
+    database = get_db()
+    member = await _load_member_for_record(database, user, member_id)
+    row = _clean_put_back(kind, body.row)
+    id_key = _PUT_BACK_FIELDS[kind][0]
+    rows = ((member.get("record") or {}).get(kind)) or []
+    if any(isinstance(r, dict) and r.get(id_key) == row[id_key] for r in rows):
+        return public_member_record(member, full_member=True)
+    if kind == "medicines":
+        _medicine_room(rows, stopped=bool(row.get("stopped_on")))
+    elif len(rows) >= VACCINATION_MAX:
+        raise HTTPException(status_code=400,
+                            detail=f"A record holds at most {VACCINATION_MAX} vaccinations")
+    # The id in the filter as well: of two put-backs at once only one pushes.
+    result = await database["family_members"].update_one(
+        {"family_id": user["family_id"], "member_id": member_id,
+         f"record.{kind}.{id_key}": {"$ne": row[id_key]}},
+        {"$push": {f"record.{kind}": row}, "$set": {"updated_at": utcnow()}})
+    if result.matched_count:
+        member.setdefault("record", {}).setdefault(kind, []).append(row)
     return public_member_record(member, full_member=True)
+
+
+@app.post("/api/family/members/{member_id}/medicines/put-back")
+async def put_back_member_medicine(member_id: str, body: HealthPutBackIn,
+                                   user=Depends(require_full_member)):
+    return await _put_back(member_id, "medicines", body, user)
+
+
+@app.post("/api/family/members/{member_id}/vaccinations/put-back")
+async def put_back_member_vaccination(member_id: str, body: HealthPutBackIn,
+                                      user=Depends(require_full_member)):
+    return await _put_back(member_id, "vaccinations", body, user)
 
 
 @app.get("/api/family/members/{member_id}/star-history")

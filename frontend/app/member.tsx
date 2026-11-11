@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,7 +15,7 @@ import { useStore } from '../src/store';
 import { api, FamilyMember, Medicine, MemberJob, MemberJobsToday, MemberRecord, Redemption, Reward, StarTransaction, Vaccination } from '../src/api';
 import { KidPageTop } from '../src/components/KidPageTop';
 import { personTone } from '../src/homeFamily';
-import { localeFor } from '../src/utils/date';
+import { localDayIso, localeFor } from '../src/utils/date';
 import { dueState } from '../src/vaccinations';
 import { logger } from '../src/logger';
 import { apiErrorText } from '../src/apiError';
@@ -422,38 +422,67 @@ export default function MemberProfile() {
 
   /** Erasing a health detail. It goes from the server at once: deleting is
    *  how a parent withdraws consent to keep it, and the policy promises that
-   *  is immediate (GDPR art. 7(3), 17(1)(b)). What the phone still holds is
-   *  offered back for 10 seconds, in case the tap was a mistake; "Annuler"
-   *  writes it down again. Nothing is kept anywhere after that. */
+   *  is immediate (GDPR art. 7(3), 17(1)(b)). The server hands this phone the
+   *  row as it was stored, and for 10 seconds "Annuler" writes it back
+   *  unchanged (same id, reminder marks included). Everything erased within
+   *  those 10 seconds comes back together, so a second erase never takes the
+   *  first one's way back. Nothing is kept anywhere after that. */
+  const pendingHealth = useRef<{ putBack: () => Promise<MemberRecord>; at: number }[]>([]);
+
   const offerHealthUndo = useCallback((message: string, putBack: () => Promise<MemberRecord>) => {
-    let pressed = false;
-    showToast(message, 'success', {
-      label: t('trash_undo'),
-      onPress: async () => {
-        if (pressed) return;
-        pressed = true;
-        try {
-          setRecord(await putBack());
-          setRecordState('ready');
-          showToast(t('trash_restored'), 'success');
-        } catch (e) {
-          logger.warn('health undo failed', e);
-          showToast(t('rec_save_failed'), 'error');
-        }
-      },
-    }, HEALTH_UNDO_MS);
-  }, [id, showToast, t]);
+    const now = Date.now();
+    pendingHealth.current = [
+      ...pendingHealth.current.filter((p) => now - p.at < HEALTH_UNDO_MS),
+      { putBack, at: now },
+    ];
+    const offer = (text: string, tone: 'success' | 'error', label: string) => {
+      let pressed = false;
+      showToast(text, tone, {
+        label,
+        onPress: async () => {
+          if (pressed) return;
+          pressed = true;
+          const waiting = pendingHealth.current;
+          pendingHealth.current = [];
+          const failed: typeof waiting = [];
+          for (const p of waiting) {
+            try {
+              setRecord(await p.putBack());
+              setRecordState('ready');
+            } catch (e) {
+              logger.warn('health undo failed', e);
+              failed.push(p);
+            }
+          }
+          if (failed.length === 0) {
+            showToast(t('trash_restored'), 'success');
+          } else {
+            // Not lost: offered again, for as long as the first offer.
+            pendingHealth.current = failed.map((p) => ({ ...p, at: Date.now() }));
+            offer(t('rec_health_undo_failed'), 'error', t('rec_health_retry'));
+          }
+        },
+      }, HEALTH_UNDO_MS);
+    };
+    const many = pendingHealth.current.length;
+    offer(many > 1 ? t('rec_health_erased_n', { n: many }) : message, 'success', t('trash_undo'));
+  }, [showToast, t]);
 
   const removeMedicine = useCallback((m: Medicine) => {
     const go = async () => {
       setMedBusy(m.med_id);
       try {
-        setRecord(await api.deleteMedicine(id, m.med_id));
+        const res = await api.deleteMedicine(id, m.med_id);
+        setRecord(res);
         setRecordState('ready');
-        offerHealthUndo(t('rec_health_erased', { name: m.name }), () => api.addMedicine(id, {
-          name: m.name, dose: m.dose, times: m.times, starts_on: m.starts_on,
-          ends_on: m.ends_on, note: m.note, stopped_on: m.stopped_on,
-        }));
+        const row = res.erased;
+        offerHealthUndo(t('rec_health_erased', { name: m.name }), () => (row
+          ? api.putBackMedicine(id, row)
+          // A server from before put-back: write it down again from the screen.
+          : api.addMedicine(id, {
+            name: m.name, dose: m.dose, times: m.times, starts_on: m.starts_on,
+            ends_on: m.ends_on, note: m.note, stopped_on: m.stopped_on,
+          })));
       } catch (e) {
         logger.warn('medicine delete failed', e);
         Alert.alert(t('rec_med'), t('rec_save_failed'));
@@ -471,9 +500,7 @@ export default function MemberProfile() {
 
   /** "Arrêté" today, by the phone's own calendar, or '' to take it again. */
   const stopMedicine = useCallback((m: Medicine, stop: boolean) => {
-    const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    saveMedicine(m.med_id, { stopped_on: stop ? today : '' });
+    saveMedicine(m.med_id, { stopped_on: stop ? localDayIso(new Date()) : '' });
   }, [saveMedicine]);
 
   // --- vaccinations ------------------------------------------------------
@@ -547,10 +574,14 @@ export default function MemberProfile() {
     const go = async () => {
       setVaxBusy(v.vax_id);
       try {
-        setRecord(await api.deleteVaccination(id, v.vax_id));
-        offerHealthUndo(t('rec_health_erased', { name: v.name }), () => api.addVaccination(id, {
-          name: v.name, given_on: v.given_on, next_due: v.next_due, note: v.note,
-        }));
+        const res = await api.deleteVaccination(id, v.vax_id);
+        setRecord(res);
+        const row = res.erased;
+        offerHealthUndo(t('rec_health_erased', { name: v.name }), () => (row
+          ? api.putBackVaccination(id, row)
+          : api.addVaccination(id, {
+            name: v.name, given_on: v.given_on, next_due: v.next_due, note: v.note,
+          })));
       } catch (e) {
         logger.warn('vaccination delete failed', e);
         Alert.alert(t('rec_vax'), t('rec_save_failed'));

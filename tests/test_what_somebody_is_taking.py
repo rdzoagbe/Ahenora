@@ -296,6 +296,130 @@ class AStoppedMedicineIsKept(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class AnnulerPutsBackExactlyWhatWasStored(unittest.TestCase):
+    """The erase is done at once (the law); "Annuler" writes back the row the
+    phone was handed, unchanged: same id, reminder marks included."""
+
+    setUp = AMedicineOnARecord.setUp
+    tearDown = AMedicineOnARecord.tearDown
+    add = AMedicineOnARecord.add
+    rows = AMedicineOnARecord.rows
+    patch = AMedicineOnARecord.patch
+
+    def erase_med(self, med):
+        return run(server.delete_member_medicine("m1", med, user=PARENT))
+
+    def put_back(self, kind, row):
+        fn = server.put_back_member_medicine if kind == "medicines" else server.put_back_member_vaccination
+        return run(fn("m1", server.HealthPutBackIn(row=row), user=PARENT))
+
+    def test_a_medicine_comes_back_with_its_own_id(self):
+        med = self.add(dose="5 ml", times=["08:00"])["medicines"][0]["med_id"]
+        out = self.erase_med(med)
+        self.assertEqual(out["medicines"], [])
+        self.assertEqual(out["erased"]["med_id"], med)
+        back = self.put_back("medicines", out["erased"])["medicines"]
+        self.assertEqual([(m["med_id"], m["dose"], m["times"]) for m in back], [(med, "5 ml", ["08:00"])])
+
+    def test_a_vaccination_keeps_its_reminder_marks(self):
+        run(server.add_member_vaccination("m1", server.VaccinationIn(name="ROR", next_due="2026-11-20"), user=PARENT))
+        member = run(self.db["family_members"].find_one({"member_id": "m1"}))
+        vax = dict(member["record"]["vaccinations"][0])
+        vax[server.DUE_MARK_STAGE] = "soon"
+        vax[server.DUE_MARK_DATE] = "2026-11-20"
+        run(self.db["family_members"].update_one({"member_id": "m1"}, {"$set": {"record.vaccinations": [vax]}}))
+        out = run(server.delete_member_vaccination("m1", vax["vax_id"], user=PARENT))
+        self.put_back("vaccinations", out["erased"])
+        member = run(self.db["family_members"].find_one({"member_id": "m1"}))
+        (row,) = member["record"]["vaccinations"]
+        self.assertEqual((row["vax_id"], row[server.DUE_MARK_STAGE]), (vax["vax_id"], "soon"))
+
+    def test_putting_back_twice_puts_back_one(self):
+        med = self.add()["medicines"][0]["med_id"]
+        erased = self.erase_med(med)["erased"]
+        self.put_back("medicines", erased)
+        self.put_back("medicines", erased)
+        self.assertEqual(len(self.rows()), 1)
+
+    def test_two_put_backs_at_once_put_back_one(self):
+        import asyncio as aio
+        med = self.add()["medicines"][0]["med_id"]
+        erased = self.erase_med(med)["erased"]
+
+        async def both():
+            body = server.HealthPutBackIn(row=erased)
+            await aio.gather(server.put_back_member_medicine("m1", body, user=PARENT),
+                             server.put_back_member_medicine("m1", body, user=PARENT))
+        run(both())
+        self.assertEqual(len(self.rows()), 1)
+
+    def test_only_a_rows_own_fields_go_back(self):
+        med = self.add()["medicines"][0]["med_id"]
+        erased = dict(self.erase_med(med)["erased"], family_id="someone_else", is_admin=True)
+        self.put_back("medicines", erased)
+        member = run(self.db["family_members"].find_one({"member_id": "m1"}))
+        self.assertNotIn("is_admin", member["record"]["medicines"][0])
+        self.assertNotIn("family_id", member["record"]["medicines"][0])
+
+    def test_something_that_was_never_a_row_is_refused(self):
+        for row in ({"name": "No id"}, {"med_id": "vax_x", "name": "Wrong id"},
+                    {"med_id": "med_x", "name": ""}, {"med_id": "med_x", "name": "X", "times": "08:00"}):
+            with self.assertRaises(server.HTTPException) as ctx:
+                self.put_back("medicines", row)
+            self.assertEqual(ctx.exception.status_code, 400)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class PastMedicinesDoNotCrowdOutNewOnes(unittest.TestCase):
+    setUp = AMedicineOnARecord.setUp
+    tearDown = AMedicineOnARecord.tearDown
+    add = AMedicineOnARecord.add
+    rows = AMedicineOnARecord.rows
+    patch = AMedicineOnARecord.patch
+
+    def test_forty_stopped_leave_room_for_a_new_one(self):
+        for i in range(server.MEDICINE_MAX):
+            self.add(name=f"Old {i}", stopped_on="2026-01-01")
+        self.add(name="New")
+        self.assertEqual(len(self.rows()), server.MEDICINE_MAX + 1)
+
+    def test_forty_taken_at_once_is_still_the_ceiling(self):
+        for i in range(server.MEDICINE_MAX):
+            self.add(name=f"Now {i}")
+        with self.assertRaises(server.HTTPException):
+            self.add(name="One more")
+        self.add(name="Past one", stopped_on="2026-01-01")  # a past one still fits
+
+    def test_taking_one_again_respects_the_ceiling(self):
+        past = self.add(name="Past", stopped_on="2026-01-01")["medicines"][0]["med_id"]
+        for i in range(server.MEDICINE_MAX):
+            self.add(name=f"Now {i}")
+        with self.assertRaises(server.HTTPException):
+            self.patch(past, stopped_on="")
+
+    def test_the_whole_list_has_a_ceiling_too(self):
+        member = {"member_id": "m1", "family_id": "fam_1"}
+        rows = [{"med_id": f"med_{i}", "name": f"P{i}", "stopped_on": "2026-01-01"}
+                for i in range(server.MEDICINE_TOTAL_MAX)]
+        run(self.db["family_members"].update_one(member, {"$set": {"record.medicines": rows}}))
+        with self.assertRaises(server.HTTPException):
+            self.add(name="Too many", stopped_on="2026-01-01")
+
+    def test_stopped_the_same_day_reads_a_to_z(self):
+        for name in ("Zyrtec", "Advil"):
+            med = self.add(name=name)["medicines"][-1]["med_id"]
+            self.patch(med, stopped_on="2026-11-10")
+        self.assertEqual([m["name"] for m in self.rows()], ["Advil", "Zyrtec"])
+
+    def test_it_cannot_stop_before_it_started_or_on_a_day_to_come(self):
+        med = self.add(starts_on="2026-11-01")["medicines"][0]["med_id"]
+        for day in ("2026-10-01", "2099-01-01"):
+            with self.assertRaises(server.HTTPException) as ctx:
+                self.patch(med, stopped_on=day)
+            self.assertEqual(ctx.exception.status_code, 400)
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class TheFreeTextFieldSurvives(unittest.TestCase):
     """People have already typed into `medications`, and none of it can be
     safely parsed into a dose. Migrating it would mean guessing."""

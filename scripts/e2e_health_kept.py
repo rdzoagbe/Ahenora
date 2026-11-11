@@ -137,6 +137,7 @@ async def run(r, tok):
         back = record()["medicines"]
         r["annuler_writes_it_back_whole"] = len(back) == 1 and back[0]["name"] == "Amoxicilline" \
             and back[0]["dose"] == "5 ml" and back[0]["times"] == ["08:00", "20:00"]
+        r["exactly_as_stored_same_id"] = len(back) == 1 and back[0]["med_id"] == med
         r["and_the_screen_shows_it"] = "Amoxicilline" in await page.locator(
             '[data-testid="record-medicines"]').inner_text()
 
@@ -151,6 +152,21 @@ async def run(r, tok):
         await page.wait_for_timeout(1500)
         vback = record()["vaccinations"]
         r["and_comes_back_with_its_date"] = len(vback) == 1 and vback[0]["given_on"] == "2025-03-01"
+
+        # Two erased within 10 seconds: "Annuler" brings back both.
+        await page.wait_for_timeout(2500)
+        await page.locator(f'[data-testid="med-remove-{med}"]').click()
+        await page.wait_for_selector('[data-testid="toast-action"]', timeout=10000)
+        await page.wait_for_timeout(800)
+        await page.locator(f'[data-testid="vax-remove-{vax}"]').click()
+        await page.wait_for_timeout(1500)
+        r["both_gone_from_the_server"] = record()["medicines"] == [] and record()["vaccinations"] == []
+        r["the_toast_says_two"] = "2 effacés" in await page.locator("body").inner_text()
+        await page.locator('[data-testid="toast-action"]').click()
+        await page.wait_for_timeout(2000)
+        rec2 = record()
+        r["annuler_brings_back_both"] = [m["med_id"] for m in rec2["medicines"]] == [med] \
+            and [v["vax_id"] for v in rec2["vaccinations"]] == [vax]
 
         r["no_page_errors"] = not errs
         if errs:
