@@ -138,6 +138,10 @@ HARNESSES = [
     # erasing / emptying each asked first. The server's tests hold who may see
     # what and the Coffre's storage. ~20s.
     "e2e_recently_deleted.py",
+    # Health details kept, not lost by mistake: a medicine no longer taken is
+    # stopped and kept among the past ones; erasing asks first, is done on the
+    # server at once (the law), and "Annuler" writes it back for 10 s. ~25s.
+    "e2e_health_kept.py",
     # The meal planner and the claim it is sold on: "plan dinners, share the
     # list". Buys the plan through a real RevenueCat webhook rather than
     # granting itself entitlements, then checks the shopping list actually
