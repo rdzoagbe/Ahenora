@@ -5515,6 +5515,8 @@ class MedicineIn(BaseModel):
     starts_on: Optional[str] = Field(default=None, max_length=10)
     ends_on: Optional[str] = Field(default=None, max_length=10)
     note: Optional[str] = Field(default=None, max_length=MEDICINE_NOTE_MAX)
+    # Set when "Annuler" puts back a medicine that had been stopped.
+    stopped_on: Optional[str] = Field(default=None, max_length=10)
 
 
 class MedicinePatchIn(BaseModel):
@@ -5527,6 +5529,11 @@ class MedicinePatchIn(BaseModel):
     starts_on: Optional[str] = Field(default=None, max_length=10)
     ends_on: Optional[str] = Field(default=None, max_length=10)
     note: Optional[str] = Field(default=None, max_length=MEDICINE_NOTE_MAX)
+    # "Arrêté": the day it stopped, or '' to take it again. A medicine that
+    # stopped moves to the past ones rather than being erased (Roland,
+    # 2026-11-11: health details should not be lost); erasing stays possible,
+    # since deleting is how consent to keep it is withdrawn (GDPR art. 7(3)).
+    stopped_on: Optional[str] = Field(default=None, max_length=10)
 
 
 class VaccinationIn(BaseModel):
@@ -5627,11 +5634,16 @@ def public_medicines(member: dict) -> list:
             "starts_on": r.get("starts_on") or "",
             "ends_on": r.get("ends_on") or "",
             "note": r.get("note") or "",
+            "stopped_on": r.get("stopped_on") or "",
         })
     # "" sorts after any real date only if we say so — an open-ended course
     # has no end, which is not the same as ending long ago.
-    out.sort(key=lambda m: (m["ends_on"] == "", m["ends_on"], m["name"].lower()))
-    return out
+    current = sorted((m for m in out if not m["stopped_on"]),
+                     key=lambda m: (m["ends_on"] == "", m["ends_on"], m["name"].lower()))
+    # Stopped ones after, the most recently stopped first.
+    past = sorted((m for m in out if m["stopped_on"]),
+                  key=lambda m: (m["stopped_on"], m["name"].lower()), reverse=True)
+    return current + past
 
 
 def public_member_record(member: dict, full_member: bool) -> dict:
@@ -8798,6 +8810,7 @@ async def add_member_medicine(member_id: str, payload: MedicineIn,
         "starts_on": starts_on,
         "ends_on": ends_on,
         "note": (payload.note or "").strip(),
+        "stopped_on": _clean_date(payload.stopped_on, "stopped_on"),
     }
     # $push rather than rewriting the array: the other parent's row, added
     # between our read and our write, survives.
@@ -8838,6 +8851,8 @@ async def update_member_medicine(member_id: str, med_id: str,
         hit["ends_on"] = _clean_date(sent["ends_on"], "ends_on")
     if "note" in sent:
         hit["note"] = (sent["note"] or "").strip()
+    if "stopped_on" in sent:
+        hit["stopped_on"] = _clean_date(sent["stopped_on"], "stopped_on")
     # Checked on the MERGED row, not on what was sent: a patch that moves only
     # the start date can still invert a course whose end was set weeks ago.
     if hit.get("starts_on") and hit.get("ends_on") and hit["ends_on"] < hit["starts_on"]:

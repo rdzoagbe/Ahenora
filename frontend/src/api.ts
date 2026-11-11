@@ -1138,6 +1138,8 @@ export interface Medicine {
   starts_on: string;
   ends_on: string;
   note: string;
+  /** The day it stopped ("Arrêté"), or '' while it is taken. */
+  stopped_on: string;
 }
 
 export interface MemberRecord {
@@ -3123,7 +3125,7 @@ export const api = {
       { method: 'DELETE' }),
   addMedicine: (memberId: string,
                 data: { name: string; dose?: string; times?: string[];
-                        starts_on?: string; ends_on?: string; note?: string }) =>
+                        starts_on?: string; ends_on?: string; note?: string; stopped_on?: string }) =>
     request<MemberRecord>(`/family/members/${memberId}/medicines`,
       { method: 'POST', body: data }),
   updateMedicine: (memberId: string, medId: string,

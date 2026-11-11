@@ -244,7 +244,55 @@ class HowTheListReads(unittest.TestCase):
         out = server.public_medicines(self.member([{"med_id": "a", "name": "X"}]))[0]
         self.assertEqual(set(out),
                          {"med_id", "name", "dose", "times",
-                          "starts_on", "ends_on", "note"})
+                          "starts_on", "ends_on", "note", "stopped_on"})
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class AStoppedMedicineIsKept(unittest.TestCase):
+    """Roland, 2026-11-11: health details should not be lost. A medicine that
+    is no longer taken is marked stopped and kept among the past ones; erasing
+    it stays possible, because deleting is how consent is withdrawn."""
+
+    setUp = AMedicineOnARecord.setUp
+    tearDown = AMedicineOnARecord.tearDown
+    add = AMedicineOnARecord.add
+    rows = AMedicineOnARecord.rows
+    patch = AMedicineOnARecord.patch
+
+    def test_stopping_keeps_it_with_the_day_it_stopped(self):
+        med = self.add()["medicines"][0]["med_id"]
+        out = self.patch(med, stopped_on="2026-11-11")
+        self.assertEqual([(m["name"], m["stopped_on"]) for m in out["medicines"]],
+                         [("Amoxicillin 500mg", "2026-11-11")])
+
+    def test_it_can_be_taken_again(self):
+        med = self.add()["medicines"][0]["med_id"]
+        self.patch(med, stopped_on="2026-11-11")
+        self.assertEqual(self.patch(med, stopped_on="")["medicines"][0]["stopped_on"], "")
+
+    def test_current_ones_come_first_and_the_latest_stopped_leads_the_past(self):
+        a = self.add(name="Old")["medicines"][0]["med_id"]
+        b = self.add(name="Older")["medicines"][-1]["med_id"]
+        self.add(name="Current")
+        self.patch(a, stopped_on="2026-11-10")
+        self.patch(b, stopped_on="2026-10-01")
+        self.assertEqual([m["name"] for m in self.rows()], ["Current", "Old", "Older"])
+
+    def test_a_stopped_day_that_is_not_a_day_is_refused(self):
+        med = self.add()["medicines"][0]["med_id"]
+        with self.assertRaises(server.HTTPException) as ctx:
+            self.patch(med, stopped_on="last week")
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_putting_back_a_stopped_one_keeps_it_stopped(self):
+        out = self.add(name="Ventolin", stopped_on="2026-11-01")
+        self.assertEqual(out["medicines"][0]["stopped_on"], "2026-11-01")
+
+    def test_erasing_still_erases(self):
+        med = self.add()["medicines"][0]["med_id"]
+        self.patch(med, stopped_on="2026-11-11")
+        out = run(server.delete_member_medicine("m1", med, user=PARENT))
+        self.assertEqual(out["medicines"], [])
 
 
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")

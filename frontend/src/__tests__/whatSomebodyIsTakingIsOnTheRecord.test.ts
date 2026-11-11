@@ -75,7 +75,7 @@ describe('the screen', () => {
 
   it('hides the section from a reader when there is nothing on it', () => {
     // An empty section invites a parent to fill it and tells a carer nothing.
-    expect(MEMBER).toContain('record.can_edit || medicines.length > 0');
+    expect(MEMBER).toContain('record.can_edit || allMedicines.length > 0');
   });
 
   it('renders the chosen times, and never a frequency', () => {
@@ -95,7 +95,7 @@ describe('the screen', () => {
   it('names the medicine in the delete confirmation', () => {
     // "Remove this medicine?" on a list of four is a question nobody can
     // answer correctly.
-    expect(MEMBER).toContain("t('rec_med_remove_q', { name })");
+    expect(MEMBER).toContain("t('rec_med_remove_q', { name: m.name })");
   });
 
   it('only offers editing to somebody allowed to edit', () => {
