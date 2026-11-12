@@ -62,7 +62,8 @@ class TheApiVersionIsPinned(unittest.TestCase):
         # before it is let in.
         req = open(os.path.join(os.path.dirname(__file__), "..", "backend",
                                 "requirements.txt")).read()
-        self.assertIn("google-genai>=3.0.0,<4", req)
+        # Any 3.x floor (routine bumps stay welcome), but the major capped.
+        self.assertRegex(req, r"google-genai>=3\.\d+\.\d+,<4")
 
 
 if __name__ == "__main__":

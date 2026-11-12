@@ -15,7 +15,7 @@ certifi>=2026.10.23  # the CA bundle requests/httpx/google-auth trust; 2026.10.1
 pandas>=3.1.1,<4  # the unbounded floor was already resolving 3.x on every deploy; now it says so, bounded against the next major
 numpy>=2.4.6  # transitive via pandas; floor pinned deliberately
 python-multipart>=0.0.33  # no import anywhere; FastAPI needs it for multipart uploads
-google-genai>=3.0.0,<4
+google-genai>=3.0.0,<4  # major capped: a new major moves defaults (3.0 moved the API to v1; server.py pins GEMINI_API_VERSION). Compare the scans' requests before raising it
 pillow>=13.0.0
 google-auth>=2.62.1
 openpyxl>=3.1.5  # looks unused, is not: pd.read_excel(engine="openpyxl") passes it as a string
