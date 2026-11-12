@@ -246,7 +246,10 @@ class EveryWallIsInstrumented(unittest.TestCase):
         # 16 since 2026-10-15: require_feature_or_taste walls the meal planner
         # and weekly report once a Free household's monthly taste is used. Same
         # features, already in the pricing read-out; only the message differs.
-        self.assertEqual(len(calls), 16, "the number of upgrade walls changed — "
+        # 17 since 2026-11-10: restoring a Coffre document from Recently
+        # deleted is refused if it no longer fits — the same vault_storage
+        # wall an upload meets, already in the read-out.
+        self.assertEqual(len(calls), 17, "the number of upgrade walls changed — "
                                          "check the pricing read-out still covers them")
 
 

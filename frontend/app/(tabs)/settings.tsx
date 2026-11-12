@@ -791,7 +791,7 @@ export default function Settings() {
     appearance: 'appearance theme light dark system display',
     household: 'household members co-parent co parent children child pin invite family custody weeks hand over kid mode phone',
     preferences: 'preferences language translation locale',
-    more: 'more history completed cards usage limits version update metrics',
+    more: 'more history completed cards usage limits version update metrics deleted recently trash bin restore undo supprimés corbeille restaurer',
     help: 'help support contact replay setup onboarding rate review',
     privacy: 'privacy security terms policy sign out devices sessions',
   };
@@ -1161,6 +1161,14 @@ export default function Settings() {
                           subtitle={t('set_completed_history_sub')}
                           right={<ChevronRight color={ui.muted} size={18} />}
                           onPress={() => router.push('/history' as never)}
+                        />
+                        <NavRow
+                          testID="settings-trash"
+                          tile={<IconTile bg={ui.soft}><RotateCcw color={ui.text} size={18} /></IconTile>}
+                          title={t('trash_settings_row')}
+                          subtitle={t('trash_sub')}
+                          right={<ChevronRight color={ui.muted} size={18} />}
+                          onPress={() => router.push('/trash' as never)}
                         />
 
                         {user?.is_admin ? (

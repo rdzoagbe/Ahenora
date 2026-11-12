@@ -123,6 +123,29 @@ HARNESSES = [
     # been held together in a browser. The scan itself is stubbed: reading a
     # photo is Gemini's, and the server's tests hold that side. ~25s.
     "e2e_shop_receipts.py",
+    # A shopping list that arrived as a FILE (PDF, or a JPG/PNG not in the
+    # gallery): picked from files, sent to the right reader, read into the
+    # same ticked review as a photo; HEIC, Word, too-heavy and unreadable
+    # files said so, the last by the real server. The read is stubbed; the
+    # server's tests hold Gemini's side. ~20s.
+    "e2e_shopping_file.py",
+    # A receipt too long for one photo: the top read alone (no total, said so),
+    # then the rest added and both read as ONE receipt; and a receipt as a PDF
+    # file. The read is stubbed; the server's tests hold Gemini's side. ~20s.
+    "e2e_long_receipt.py",
+    # Recently deleted: "Annuler" after a delete, a cleared list as one row in
+    # the bin with any one item coming back alone, an expense restored, and
+    # erasing / emptying each asked first. The server's tests hold who may see
+    # what and the Coffre's storage. ~20s.
+    "e2e_recently_deleted.py",
+    # A morning summary that counts several things ("2 choses encore en
+    # attente") opens "À traiter", the list of exactly them, not a Feed that
+    # leads with today; a normal launch does not. ~15s.
+    "e2e_digest_tap.py",
+    # Health details kept, not lost by mistake: a medicine no longer taken is
+    # stopped and kept among the past ones; erasing asks first, is done on the
+    # server at once (the law), and "Annuler" writes it back for 10 s. ~25s.
+    "e2e_health_kept.py",
     # The meal planner and the claim it is sold on: "plan dinners, share the
     # list". Buys the plan through a real RevenueCat webhook rather than
     # granting itself entitlements, then checks the shopping list actually

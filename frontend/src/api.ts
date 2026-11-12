@@ -236,6 +236,16 @@ export function reportCrash(message: string, componentStack?: string | null) {
 }
 
 /**
+ * A picture that could not be got (the picker failing on a phone, no data
+ * coming back) or that the server would not read (a 4xx, which it does not
+ * log as an error), to the admin panel under the route it was for. Without
+ * it a scan that "does nothing" on one person's phone leaves no trace.
+ */
+export function reportPictureProblem(where: string, message: string) {
+  reportClientError(where, 'PICTURE', undefined, String(message || 'unknown').slice(0, 240));
+}
+
+/**
  * A phone that could not get a push token says why, to the admin panel.
  *
  * On 2026-09-08 every Android install had been failing this call since
@@ -777,6 +787,22 @@ export interface Routine {
   created_at: string;
 }
 
+/**
+ * A "whose turn?" rotation: front seat, choosing the film. The people in
+ * order, whose turn it is now and next, and the last few turns taken.
+ */
+export interface Turn {
+  turn_id: string;
+  name: string;
+  icon?: string | null;
+  member_ids: string[];
+  current_member_id: string | null;
+  next_member_id: string | null;
+  history: { member_id: string; at: string; by: string }[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ShoppingHistoryEntry {
   history_id: string;
   items: string[];
@@ -1112,6 +1138,8 @@ export interface Medicine {
   starts_on: string;
   ends_on: string;
   note: string;
+  /** The day it stopped ("Arrêté"), or '' while it is taken. */
+  stopped_on: string;
 }
 
 export interface MemberRecord {
@@ -1464,6 +1492,18 @@ export interface BillingEventLog {
 }
 
 /** One line read off a till receipt, before anyone has confirmed it. */
+/** Something in Recently deleted, as the bin lists it. */
+export interface TrashEntry {
+  trash_id: string;
+  kind: 'shopping_item' | 'card' | 'vault_doc' | 'expense' | 'meal' | 'saved_plan' | string;
+  label: string;
+  deleted_by_name: string;
+  deleted_at: string;
+  expires_at: string;
+  /** Set when one delete removed several things (a cleared list). */
+  batch_id: string | null;
+}
+
 export interface ScannedReceiptItem {
   name: string;
   /** null when the amount could not be read — then there is no unit price. */
@@ -1475,15 +1515,32 @@ export interface ScannedReceiptItem {
   unsure: boolean;
 }
 
+/** A receipt read by the Home camera: always with its printed total. */
+export type CameraReceipt = ScannedReceipt & { total: number; reconciles: boolean };
+
 export interface ScannedReceipt {
   shop: string;
   /** Empty when the date could not be read — the app asks rather than guessing. */
   date: string;
-  total: number;
+  /** null when no total could be read (the top of a long receipt). */
+  total: number | null;
   lines_total: number;
-  /** False means the lines disagree with the printed total: show both, fix neither. */
-  reconciles: boolean;
+  /** False means the lines disagree with the printed total: show both, fix
+   *  neither. null when there is no printed total to compare with. */
+  reconciles: boolean | null;
   items: ScannedReceiptItem[];
+  /** Lines the reader could not make into an item, left out and counted. */
+  skipped?: number;
+  /** Lines past the reader's limit, counted. */
+  left_out?: number;
+  /** How many photos the receipt was read from. */
+  parts?: number;
+  /** How many it may be read from (the server's limit). */
+  max_parts?: number;
+  /** Sent with the next part so it is not charged as another scan. */
+  read_token?: string;
+  /** Money off printed against the basket, counted in lines_total. */
+  discounts?: number;
 }
 
 /** The last price this household paid for one thing, for the shopping list. */
@@ -1803,7 +1860,9 @@ export interface CapturedRecipe {
 export interface ScanResult {
   kind: 'document' | 'recipe' | 'shopping' | 'receipt';
   /** A till receipt, read line by line — on its way to the expenses. */
-  receipt?: ScannedReceipt;
+  // The Home camera's receipt pass only ever returns a receipt with a printed
+  // total (backend validate_receipt_scan), since it files the expense at it.
+  receipt?: CameraReceipt;
   /** A photographed shopping list, read item by item. Unsure reads come unticked. */
   shopping_items?: { name: string; unsure?: boolean }[];
   type: CardType;
@@ -2684,7 +2743,7 @@ export const api = {
   },
   deleteCard: (id: string) => {
     cache.invalidatePrefix('listCards');
-    return request(`/cards/${id}`, { method: 'DELETE' }).then((r) => {
+    return request<{ ok: boolean; trash_id?: string | null }>(`/cards/${id}`, { method: 'DELETE' }).then((r) => {
       cache.invalidatePrefix('listCards');
       return r;
     });
@@ -2821,7 +2880,7 @@ export const api = {
   deleteVaultDoc: (id: string) => {
     cache.invalidate('listVault');
     invalidateUsageCaches();
-    return request(`/vault/${id}`, { method: 'DELETE' }).then(settleVault);
+    return request<{ ok: boolean; trash_id?: string | null }>(`/vault/${id}`, { method: 'DELETE' }).then(settleVault);
   },
   // Rewards
   listRewards: () => {
@@ -3061,12 +3120,17 @@ export const api = {
                       data: Partial<Omit<Vaccination, 'vax_id'>>) =>
     request<MemberRecord>(`/family/members/${memberId}/vaccinations/${vaxId}`,
       { method: 'PATCH', body: data }),
+  /** Erased on the server at once; `erased` is the row as it was stored,
+   *  handed back only to this phone so "Annuler" can put it back exactly. */
   deleteVaccination: (memberId: string, vaxId: string) =>
-    request<MemberRecord>(`/family/members/${memberId}/vaccinations/${vaxId}`,
-      { method: 'DELETE' }),
+    request<MemberRecord & { erased?: Record<string, unknown> }>(
+      `/family/members/${memberId}/vaccinations/${vaxId}`, { method: 'DELETE' }),
+  putBackVaccination: (memberId: string, row: Record<string, unknown>) =>
+    request<MemberRecord>(`/family/members/${memberId}/vaccinations/put-back`,
+      { method: 'POST', body: { row } }),
   addMedicine: (memberId: string,
                 data: { name: string; dose?: string; times?: string[];
-                        starts_on?: string; ends_on?: string; note?: string }) =>
+                        starts_on?: string; ends_on?: string; note?: string; stopped_on?: string }) =>
     request<MemberRecord>(`/family/members/${memberId}/medicines`,
       { method: 'POST', body: data }),
   updateMedicine: (memberId: string, medId: string,
@@ -3074,8 +3138,11 @@ export const api = {
     request<MemberRecord>(`/family/members/${memberId}/medicines/${medId}`,
       { method: 'PATCH', body: data }),
   deleteMedicine: (memberId: string, medId: string) =>
-    request<MemberRecord>(`/family/members/${memberId}/medicines/${medId}`,
-      { method: 'DELETE' }),
+    request<MemberRecord & { erased?: Record<string, unknown> }>(
+      `/family/members/${memberId}/medicines/${medId}`, { method: 'DELETE' }),
+  putBackMedicine: (memberId: string, row: Record<string, unknown>) =>
+    request<MemberRecord>(`/family/members/${memberId}/medicines/put-back`,
+      { method: 'POST', body: { row } }),
   listHandoffNotes: () => request<HandoffNote[]>('/handoff-notes'),
   createHandoffNote: (data: { member_id?: string; text: string }) =>
     request<HandoffNote>('/handoff-notes', { method: 'POST', body: data }),
@@ -3092,14 +3159,25 @@ export const api = {
     request<ShoppingItem>('/shopping', { method: 'POST', body: data }),
   updateShoppingItem: (itemId: string, data: { checked?: boolean; name?: string; category?: string; ticked_from?: string }) =>
     request<ShoppingItem>(`/shopping/${itemId}`, { method: 'PATCH', body: data }),
+  // Each delete goes to Recently deleted and says where (trash_id, or the
+  // batch_id of a cleared list), so the app can offer "Annuler".
   deleteShoppingItem: (itemId: string) =>
-    request<{ ok: boolean }>(`/shopping/${itemId}`, { method: 'DELETE' }),
+    request<{ ok: boolean; trash_id?: string }>(`/shopping/${itemId}`, { method: 'DELETE' }),
   clearCheckedShopping: () =>
-    request<{ deleted: number }>('/shopping', { method: 'DELETE' }),
+    request<{ deleted: number; batch_id?: string | null }>('/shopping', { method: 'DELETE' }),
+  // left_out: items read past the server's limit (MAX_SCAN_ITEMS), counted
+  // so the review can say so rather than drop them in silence.
   scanShoppingList: (imageBase64: string) =>
-    request<{ items: { name: string; unsure: boolean }[] }>('/shopping/scan', {
+    request<{ items: { name: string; unsure: boolean }[]; left_out?: number }>('/shopping/scan', {
       method: 'POST',
       body: { image_base64: imageBase64 },
+      timeoutMs: VISION_TIMEOUT_MS,
+    }),
+  // A PDF of a shopping list, read like a photo of one: candidates only.
+  scanShoppingPdf: (pdfBase64: string) =>
+    request<{ items: { name: string; unsure: boolean }[]; left_out?: number }>('/shopping/scan', {
+      method: 'POST',
+      body: { pdf_base64: pdfBase64 },
       timeoutMs: VISION_TIMEOUT_MS,
     }),
   bulkAddShopping: (names: string[], categories?: (string | undefined)[]) =>
@@ -3108,7 +3186,7 @@ export const api = {
       body: { names, categories: categories?.map((c) => c || 'Other') || [] },
     }),
   // Wipes the whole list (it's archived to history first, so it's recoverable).
-  clearAllShopping: () => request<{ deleted: number }>('/shopping/all', { method: 'DELETE' }),
+  clearAllShopping: () => request<{ deleted: number; batch_id?: string | null }>('/shopping/all', { method: 'DELETE' }),
   /** `before` (an ISO moment) reaches the trips older than the page shown. */
   listShoppingHistory: (before?: string) =>
     request<ShoppingHistoryEntry[]>(`/shopping/history${before ? `?before=${encodeURIComponent(before)}` : ''}`),
@@ -3123,10 +3201,23 @@ export const api = {
     request<{ ok: boolean; deleted: number }>('/shopping/history', { method: 'DELETE' }),
 
   // Expenses
-  scanReceipt: (imageBase64: string) =>
+  // One photo, or a long receipt in up to three photos top to bottom, read
+  // as ONE receipt in one request (the server joins the overlap).
+  // readToken: from the read of the earlier parts, so the rest is not charged
+  // as a second scan.
+  scanReceipt: (imagesBase64: string[], readToken?: string) =>
     request<ScannedReceipt>('/expenses/scan-receipt', {
       method: 'POST',
-      body: { image_base64: imageBase64 },
+      body: imagesBase64.length === 1
+        ? { image_base64: imagesBase64[0] }
+        : { images_base64: imagesBase64, ...(readToken ? { read_token: readToken } : {}) },
+      timeoutMs: VISION_TIMEOUT_MS,
+    }),
+  // A digital receipt: a PDF from an email or the shop's app.
+  scanReceiptPdf: (pdfBase64: string) =>
+    request<ScannedReceipt>('/expenses/scan-receipt', {
+      method: 'POST',
+      body: { pdf_base64: pdfBase64 },
       timeoutMs: VISION_TIMEOUT_MS,
     }),
   getShopPrices: () => request<ShopPrices>('/shopping/prices'),
@@ -3145,7 +3236,7 @@ export const api = {
   }) =>
     request<Expense>('/expenses', { method: 'POST', body: data }),
   deleteExpense: (expenseId: string) =>
-    request<{ ok: boolean }>(`/expenses/${expenseId}`, { method: 'DELETE' }),
+    request<{ ok: boolean; trash_id?: string }>(`/expenses/${expenseId}`, { method: 'DELETE' }),
   // Shared-expense settle-up between the two parents.
   getSettlement: () => request<SettlementInfo>('/expenses/settlement'),
   settleUp: () => request<SettlementInfo>('/expenses/settlement/settle', { method: 'POST' }),
@@ -3175,14 +3266,31 @@ export const api = {
       `/routines/${id}/log`, { method: 'POST' },
     ),
 
+  // Whose turn?
+  listTurns: () => request<Turn[]>('/turns'),
+  createTurn: (data: { name: string; member_ids: string[] }) =>
+    request<Turn>('/turns', { method: 'POST', body: data }),
+  /** `seen_current_member_id`: whose turn the sheet showed. With
+   *  `current_member_id`, the server refuses (409) if it has moved since. */
+  updateTurn: (id: string, data: { name?: string; member_ids?: string[]; current_member_id?: string; seen_current_member_id?: string }) =>
+    request<Turn>(`/turns/${id}`, { method: 'PATCH', body: data }),
+  deleteTurn: (id: string) => request<{ ok: boolean }>(`/turns/${id}`, { method: 'DELETE' }),
+  /**
+   * Their turn is done. `fromMemberId` is whose turn the screen SHOWED: if it
+   * has already moved on (a double tap, or the other parent), the server
+   * answers 409 and nothing moves twice.
+   */
+  nextTurn: (id: string, fromMemberId: string) =>
+    request<Turn>(`/turns/${id}/next`, { method: 'POST', body: { from_member_id: fromMemberId } }),
+
   // Meal Planner
   listMeals: () => request<MealPlan[]>('/meals'),
   createMeal: (data: { day: string; meal_type?: string; title: string; ingredients?: string[]; notes?: string; recipe_id?: string }) =>
     // On Free this spends one of the month's meals: the next subscription read
     // has to show the new count, not the cached one.
     request<MealPlan>('/meals', { method: 'POST', body: data }).finally(invalidateUsageCaches),
-  deleteMeal: (id: string) => request<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
-  clearAllMeals: () => request<{ deleted: number }>('/meals/all', { method: 'DELETE' }),
+  deleteMeal: (id: string) => request<{ ok: boolean; trash_id?: string }>(`/meals/${id}`, { method: 'DELETE' }),
+  clearAllMeals: () => request<{ deleted: number; batch_id?: string | null }>('/meals/all', { method: 'DELETE' }),
   suggestMealsAI: (lang: string, variant = 0) =>
     request<{ meals: { day: string; title: string; uses: string[]; need: string[]; minutes: number }[] }>(
       `/meals/suggest-ai?lang=${encodeURIComponent(lang)}&variant=${variant}`,
@@ -3228,7 +3336,22 @@ export const api = {
   listSavedPlans: (before?: string) =>
     request<SavedMealPlan[]>(`/meals/saved${before ? `?before=${encodeURIComponent(before)}` : ''}`),
   reuseSavedPlan: (id: string) => request<{ ok: boolean; added: number }>(`/meals/saved/${id}/reuse`, { method: 'POST' }),
-  deleteSavedPlan: (id: string) => request<{ ok: boolean }>(`/meals/saved/${id}`, { method: 'DELETE' }),
+  deleteSavedPlan: (id: string) => request<{ ok: boolean; trash_id?: string | null }>(`/meals/saved/${id}`, { method: 'DELETE' }),
+
+  // Recently deleted: 30 days to bring something back.
+  listTrash: () => request<TrashEntry[]>('/trash'),
+  restoreTrash: (trashId: string) => {
+    // A restored card or document is new to the lists that hold them.
+    // Before and after: a list read while the request is in flight would
+    // otherwise be cached without it (see settleVault).
+    cache.invalidatePrefix('listCards');
+    return request<{ kind: string; ref: string; label: string }>(`/trash/${trashId}/restore`, { method: 'POST' })
+      .then((r) => { cache.invalidatePrefix('listCards'); return settleVault(r); });
+  },
+  restoreTrashBatch: (batchId: string) =>
+    request<{ restored: number }>('/trash/restore-batch', { method: 'POST', body: { batch_id: batchId } }),
+  purgeTrash: (trashId: string) => request<{ ok: boolean }>(`/trash/${trashId}`, { method: 'DELETE' }),
+  emptyTrash: () => request<{ deleted: number }>('/trash', { method: 'DELETE' }),
 
   // Carpool
   listCarpools: () => request<Carpool[]>('/carpools'),

@@ -48,9 +48,11 @@ describe('A digest that names one thing opens that thing', () => {
     expect(target).toEqual({ pathname: '/(tabs)/feed', params: { cardId: 'c_old' } });
   });
 
-  it('still lands on the Feed when the day was several things', () => {
+  it('opens the list of them when the day was several things', () => {
+    // Plain Feed was reported a third time (2026-11-11): it leads with today,
+    // so "2 choses encore en attente" from last week were nowhere in sight.
     expect(targetForNotification({ type: 'morning_digest' }))
-      .toEqual({ pathname: '/(tabs)/feed' });
+      .toEqual({ pathname: '/(tabs)/feed', params: { open: 'attention' } });
   });
 
   it('leaves the weekly recap and the quiet-day tip alone', () => {

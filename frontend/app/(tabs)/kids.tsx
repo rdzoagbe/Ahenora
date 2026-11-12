@@ -68,6 +68,7 @@ import { apiErrorText } from '../../src/apiError';
 import { refreshOutcome, onlyWhatIsOnScreen, type RefreshSnapshot } from '../../src/refreshOutcome';
 import { useKidsSectionsHidden } from '../../src/kidsSections';
 import { ChildrenLockedCard } from '../../src/components/FreeChangeCard';
+import WhoseTurnCard from '../../src/components/WhoseTurnCard';
 
 // The teen-accounts hint is a one-time announcement, so what it needs is a
 // memory, not a timer. Scoped to the device, not the household: the key has no
@@ -1971,6 +1972,13 @@ export default function Kids() {
                   </Card></View>
                 );
               })() : null}
+
+              {/* Whose turn? — front seat, choosing the film. Between the
+                  children, so it lives with everyone rather than on one
+                  child's page. Hidden until there are two to take turns. */}
+              {!isFocused && !kidsHidden ? (
+                <WhoseTurnCard members={members} canEdit={!viewerIsHelper} refreshKey={dataVersion} showToast={showToast} />
+              ) : null}
 
               {isFocused && activeChild ? (
                 <>

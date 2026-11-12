@@ -53,9 +53,10 @@ describe('the client', () => {
   it('returns the whole record from every write', () => {
     // So the list redraws from the server rather than from a guess about
     // what the server did with it.
-    for (const call of ['addMedicine', 'updateMedicine', 'deleteMedicine']) {
+    for (const call of ['addMedicine', 'updateMedicine', 'deleteMedicine', 'putBackMedicine']) {
       const at = API.indexOf(`${call}:`);
-      expect(API.slice(at, at + 260)).toContain('request<MemberRecord>');
+      // A delete also hands back the row it erased (for "Annuler").
+      expect(API.slice(at, at + 260)).toMatch(/request<MemberRecord( & \{ erased\?: Record<string, unknown> \})?>/);
     }
   });
 });
@@ -75,7 +76,7 @@ describe('the screen', () => {
 
   it('hides the section from a reader when there is nothing on it', () => {
     // An empty section invites a parent to fill it and tells a carer nothing.
-    expect(MEMBER).toContain('record.can_edit || medicines.length > 0');
+    expect(MEMBER).toContain('record.can_edit || allMedicines.length > 0');
   });
 
   it('renders the chosen times, and never a frequency', () => {
@@ -95,7 +96,7 @@ describe('the screen', () => {
   it('names the medicine in the delete confirmation', () => {
     // "Remove this medicine?" on a list of four is a question nobody can
     // answer correctly.
-    expect(MEMBER).toContain("t('rec_med_remove_q', { name })");
+    expect(MEMBER).toContain("t('rec_med_remove_q', { name: m.name })");
   });
 
   it('only offers editing to somebody allowed to edit', () => {

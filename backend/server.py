@@ -4,10 +4,12 @@ import unicodedata
 import re
 import json
 import base64
+import binascii
 import random
 import asyncio
 import math
 import hashlib
+import threading
 import traceback
 import hmac
 import secrets
@@ -58,6 +60,7 @@ except ImportError:
     genai = None
     genai_types = None
 import PIL.Image
+import PIL.ImageOps
 
 from ai_models import model_candidates, should_try_next_model, summarize_ai_error
 from document_crop import crop_to_document
@@ -85,8 +88,11 @@ from ai_safety import (
     validate_chef_answer,
     SHOPPING_SCAN_SYSTEM_PROMPT,
     validate_shopping_scan,
+    read_shopping_scan,
+    SHOPPING_SCAN_UNREAD,
     RECEIPT_SCAN_SYSTEM_PROMPT,
     validate_receipt_scan,
+    read_receipt_scan,
     RECEIPT_UNITS,
     RECIPE_PHOTO_SYSTEM_PROMPT,
     validate_captured_recipe,
@@ -1040,12 +1046,106 @@ async def _gemini_text(prompt: str, system: str = "", temperature: float = None,
     return await _gemini_generate(prompt, system, temperature=temperature, fast=fast)
 
 
-async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast: bool = False) -> str:
+# How big a picture is sent to the model, as a PIXEL budget rather than a
+# longest side: 3072 x 3072, the size Google's document guide scales PDF pages
+# to. Every 768 x 768 tile of an image costs 258 tokens (image-understanding
+# guide), so a 12 MP photo sent whole is more to read, not more readable. A
+# budget, not a side cap, because a long screenshot of a list (1170 x 12000)
+# capped at 3072 tall would be 300 px wide and unreadable; under a budget it
+# keeps most of its width.
+VISION_MAX_PIXELS = 3072 * 3072
+VISION_JPEG_QUALITY = 85
+
+# One request can read the same photo more than once (the document scan's
+# recipe / shopping / receipt passes, the shopping scan's opens-check then its
+# read). The prepared JPEG is kept for the few most recent pictures, keyed by
+# a digest of the upload, so that work is done once.
+_VISION_CACHE: "dict[bytes, bytes]" = {}
+_VISION_CACHE_SIZE = 8
+_VISION_CACHE_LOCK = threading.Lock()
+
+
+def _vision_budget_size(width: int, height: int) -> tuple:
+    if width * height <= VISION_MAX_PIXELS:
+        return width, height
+    scale = math.sqrt(VISION_MAX_PIXELS / (width * height))
+    return max(1, int(width * scale)), max(1, int(height * scale))
+
+
+def _vision_to_rgb(img):
+    """Flatten what JPEG cannot hold, the way the picture looked on screen."""
+    if img.mode in ("I", "F") or img.mode.startswith("I;16"):
+        # 16-bit (or float) greyscale from a scanner app. Converting straight
+        # to 8-bit clips everything past 255 to white, i.e. a blank page.
+        import numpy as np
+        values = np.asarray(img, dtype=np.float64)
+        top = float(values.max()) if values.size else 0.0
+        if top > 255:
+            values = values * (255.0 / (65535.0 if top <= 65535 else top))
+        img = PIL.Image.fromarray(np.clip(values, 0, 255).astype(np.uint8), "L")
+    if img.mode in ("RGB", "L") and "transparency" not in img.info:
+        return img
+    # Transparency, whether as an alpha channel or a PNG tRNS colour: on white.
+    rgba = img.convert("RGBA")
+    flat = PIL.Image.new("RGB", rgba.size, (255, 255, 255))
+    flat.paste(rgba, mask=rgba.getchannel("A"))
+    return flat
+
+
+def vision_jpeg(image_base64: str) -> bytes:
+    """A picture as the model should get it: upright, within VISION_MAX_PIXELS,
+    as JPEG. Raises on a picture that cannot be decoded, truncated included.
+
+    Handing the SDK a PIL image made it re-encode the picture as PNG
+    (google-genai pil_to_blob keeps JPEG only for an image opened from a
+    named FILE; ours come from memory). A 2 MB phone photo became a 26 MB
+    PNG: 2.3 s of encoding here, an upload of the same to Google, and past
+    the 20 MB inline request limit Google documents for a detailed shot.
+    Reported as "it takes a long time before it adds", 2026-11-10.
+
+    CPU work: callers run it in a worker thread.
+    """
     if "," in image_base64:
         image_base64 = image_base64.split(",")[-1]
-    img_bytes = base64.b64decode(image_base64)
-    img = PIL.Image.open(io.BytesIO(img_bytes))
-    return await _gemini_generate([prompt, img], system, fast=fast)
+    key = hashlib.sha256(image_base64.encode("ascii", "ignore")).digest()
+    with _VISION_CACHE_LOCK:
+        cached = _VISION_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    img = PIL.Image.open(io.BytesIO(base64.b64decode(image_base64)))
+    # Shrink while decoding where the format allows it (JPEG's draft mode
+    # decodes at 1/2, 1/4 or 1/8 scale): far less memory and time than
+    # decoding 12 MP and throwing most of it away. The budget is an area, so
+    # it holds whichever way up the picture turns out to be.
+    target = _vision_budget_size(*img.size)
+    if target != img.size:
+        img.draft("RGB", target)
+    # A photo saved as a file keeps its orientation in an EXIF tag, which
+    # re-encoding drops: turn it upright, or a portrait list arrives on its
+    # side. (The camera and gallery pickers already re-encode upright.)
+    img = PIL.ImageOps.exif_transpose(img)
+    img = _vision_to_rgb(img)
+    size = _vision_budget_size(*img.size)
+    if size != img.size:
+        img = img.resize(size, PIL.Image.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=VISION_JPEG_QUALITY)
+    data = out.getvalue()
+
+    with _VISION_CACHE_LOCK:
+        _VISION_CACHE[key] = data
+        while len(_VISION_CACHE) > _VISION_CACHE_SIZE:
+            _VISION_CACHE.pop(next(iter(_VISION_CACHE)))
+    return data
+
+
+async def _gemini_vision(prompt: str, image_base64: str, system: str = "", fast: bool = False) -> str:
+    if genai_types is None:
+        raise RuntimeError("google-genai is not installed")
+    data = await run_in_threadpool(vision_jpeg, image_base64)
+    part = genai_types.Part.from_bytes(data=data, mime_type="image/jpeg")
+    return await _gemini_generate([prompt, part], system, fast=fast)
 
 
 # The two launch tiers. Young people are metered (role-aware: parents/caregivers
@@ -2554,6 +2654,56 @@ def tidy_merchant(raw: Optional[str]) -> Optional[str]:
     return cleaned.title() if cleaned.isupper() else cleaned
 
 
+def shop_key(name: Optional[str]) -> str:
+    """The one key a shop is counted under, however its name was typed or read.
+
+    "Marché Frais", "marche frais" and "MARCHE  FRAIS" are the same shop: the
+    key ignores case, accents, punctuation and spacing. Before, the spending
+    screen listed them as three shops of one visit each.
+    """
+    text = unicodedata.normalize("NFKD", str(name or "")).casefold()
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    # Letters NFKD leaves whole: "Cœur" and "Coeur" are one shop.
+    for whole, spelled in (("œ", "oe"), ("æ", "ae"), ("ø", "o"), ("ł", "l"), ("đ", "d")):
+        text = text.replace(whole, spelled)
+    # Letters of every script are kept ("Магнит" stays "магнит"); only
+    # punctuation, symbols and spacing go.
+    return " ".join(re.sub(r"[\W_]+", " ", text).split())
+
+
+def shop_display_name(spellings: dict) -> str:
+    """The spelling a shop is shown under, the same everywhere it appears: the
+    one written like a name (accents, not all lower case), then the one used
+    most, then the first seen. "Marché Frais" over "marche frais"."""
+    def score(item):
+        name, (count, first_seen) = item
+        accented = any(unicodedata.combining(c) for c in unicodedata.normalize("NFKD", name))
+        return (not accented, name == name.lower(), -count, first_seen)
+    return min(spellings.items(), key=score)[0]
+
+
+def unify_shop_names(lines: list, field: str = "shop") -> list:
+    """The same lines, each shop under the one name it is shown by.
+
+    Receipt lines keep the shop as it was read, and a scan reads "Marché
+    Frais" one week and "marche frais" the next: compared as they are, a shop
+    would be "cheaper" than itself. Pure: returns new dicts.
+    """
+    spellings: dict = {}
+    for line in lines:
+        shop = (line.get(field) or "").strip()
+        if shop:
+            names = spellings.setdefault(shop_key(shop) or shop, {})
+            count, first = names.get(shop, (0, len(names)))
+            names[shop] = (count + 1, first)
+    display = {key: shop_display_name(names) for key, names in spellings.items()}
+    out = []
+    for line in lines:
+        shop = (line.get(field) or "").strip()
+        out.append({**line, field: display[shop_key(shop) or shop]} if shop else line)
+    return out
+
+
 def parse_spent_on(value: Optional[str], fallback: datetime) -> datetime:
     """A YYYY-MM-DD from the receipt, kept as date-only at midnight UTC.
 
@@ -2604,6 +2754,32 @@ def public_routine(r: dict) -> dict:
         "star_reward": int(r.get("star_reward", 2) or 0),
         "icon": r.get("icon"),
         "created_at": iso(r["created_at"]),
+    }
+
+
+def public_turn(t: dict) -> dict:
+    """A "whose turn?" rotation: the people in order, whose turn it is now, and
+    the last few turns taken (the proof a child asks for: "I went last time")."""
+    members = list(t.get("member_ids") or [])
+    current = t.get("current_member_id")
+    if current not in members:
+        current = members[0] if members else None
+    nxt = None
+    if current and len(members) > 1:
+        nxt = members[(members.index(current) + 1) % len(members)]
+    return {
+        "turn_id": t["turn_id"],
+        "name": t.get("name") or "",
+        "icon": t.get("icon"),
+        "member_ids": members,
+        "current_member_id": current,
+        "next_member_id": nxt,
+        "history": [
+            {"member_id": h.get("member_id"), "at": iso(h.get("at")), "by": h.get("by") or ""}
+            for h in (t.get("history") or [])
+        ],
+        "created_at": iso(t["created_at"]),
+        "updated_at": iso(t.get("updated_at") or t["created_at"]),
     }
 
 
@@ -2830,6 +3006,7 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
         # Retire the managed child profile this teen is replacing — same name,
         # no login — so they don't appear (or count) twice.
         teen_name = (user.get("name") or "").strip().lower()
+        retired_child_ids: List[str] = []
         async for m in database["family_members"].find({"family_id": family_id}, {"_id": 0}):
             if (m.get("role") or "").strip().lower() == "child" and not m.get("user_id") \
                and (m.get("name") or "").strip().lower() == teen_name and teen_name:
@@ -2844,6 +3021,9 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
                         detail="That person is recorded as under 13. An account of their own "
                                "is for 13 and over.")
                 await database["family_members"].delete_one({"member_id": m["member_id"]})
+                retired_child_ids.append(m["member_id"])
+    else:
+        retired_child_ids = []
 
     existing = await database["family_members"].find_one(
         {
@@ -2856,6 +3036,8 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
         {"_id": 0},
     )
     if existing:
+        for old in retired_child_ids:
+            await _turns_without_member(database, family_id, old, replacement=existing.get("member_id"))
         return existing
 
     # Backstop the young-people cap at accept time, the way the parent cap is
@@ -2897,6 +3079,9 @@ async def add_user_to_family_if_needed(database: Any, user: dict, family_id: str
         "created_at": utcnow(),
     }
     await database["family_members"].insert_one(member)
+    # The teen takes the child profile's place in any "whose turn?" rotation.
+    for old in retired_child_ids:
+        await _turns_without_member(database, family_id, old, replacement=member["member_id"])
     return member
 
 
@@ -4157,8 +4342,8 @@ async def _build_morning_digest(database, user, local, L):
         # routing was never the fault: the digest lands on the Feed, which is
         # the screen the app already opens on, so a tap that worked perfectly
         # was indistinguishable from launching the app. Naming the card is
-        # what makes the difference visible. With several, there is no single
-        # right place and the Feed, which lists them, is the honest answer.
+        # what makes the difference visible. With several, the app opens "À
+        # traiter", the list of exactly them (src/notificationRouting.ts).
         return (L["digest_title"], body, None, None, {"card_id": _only(today_ids)})
 
     # Nothing due in the window, but the house is not actually clear: there is
@@ -4769,6 +4954,7 @@ INDEXES = {
     "redemptions": ["redemption_id"],
     "rewards": ["family_id", "reward_id"],
     "routines": ["family_id", "routine_id"],
+    "turns": ["family_id", "turn_id"],
     "santa_draws": ["draw_id"],
     "shopping_history": ["family_id", "history_id"],
     "shopping_list": ["family_id", "item_id"],
@@ -4778,6 +4964,9 @@ INDEXES = {
     "support_tickets": ["ticket_id"],
     "vault": ["family_id", "doc_id"],
     "web_push_subscriptions": ["user_id", "endpoint"],
+    # Recently deleted: listed per household, restored by id or by the batch a
+    # cleared list went in. expires_at is a TTL index, made below.
+    "trash": ["family_id", "trash_id", "batch_id"],
 }
 
 
@@ -4796,6 +4985,13 @@ async def ensure_indexes():
                 await db[collection].create_index(field)
             except Exception as e:
                 log.warning("could not index %s.%s: %s", collection, field, e)
+    # The bin empties itself: MongoDB removes an entry once expires_at passes
+    # (its TTL monitor runs about once a minute). /api/trash also skips anything
+    # past it, so a late sweep is never visible.
+    try:
+        await db["trash"].create_index("expires_at", expireAfterSeconds=0)
+    except Exception as e:
+        log.warning("could not index trash.expires_at (TTL): %s", e)
 
 
 def _resolve_icon(chosen, title: str, card_type: Optional[str] = None):
@@ -5265,6 +5461,35 @@ def _clean_date(value: Optional[str], field: str) -> str:
 
 
 MEDICINE_MAX = 40
+# Stopped medicines are kept (Roland, 2026-11-11), so they do not count
+# toward the 40 taken at once; this bounds the whole list, past included.
+MEDICINE_TOTAL_MAX = 200
+
+
+def _check_stopped_on(row: dict) -> None:
+    """A medicine cannot stop before it started, nor on a day still to come
+    (a day of slack: the phone sends its own calendar's today, which can be
+    a day ahead of UTC)."""
+    stopped = row.get("stopped_on") or ""
+    if not stopped:
+        return
+    if row.get("starts_on") and stopped < row["starts_on"]:
+        raise HTTPException(status_code=400, detail="A medicine cannot stop before it starts")
+    if stopped > (utcnow() + timedelta(days=1)).date().isoformat():
+        raise HTTPException(status_code=400, detail="A medicine cannot stop on a day still to come")
+
+
+def _medicine_room(existing: list, *, stopped: bool) -> None:
+    """At most MEDICINE_MAX taken at once, and MEDICINE_TOTAL_MAX in all."""
+    rows = [r for r in existing if isinstance(r, dict)]
+    if len(rows) >= MEDICINE_TOTAL_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A record holds at most {MEDICINE_TOTAL_MAX} medicines, past ones included")
+    if not stopped and sum(1 for r in rows if not r.get("stopped_on")) >= MEDICINE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A record holds at most {MEDICINE_MAX} medicines")
 MEDICINE_NAME_MAX = 120
 MEDICINE_DOSE_MAX = 80
 MEDICINE_NOTE_MAX = 200
@@ -5319,6 +5544,8 @@ class MedicineIn(BaseModel):
     starts_on: Optional[str] = Field(default=None, max_length=10)
     ends_on: Optional[str] = Field(default=None, max_length=10)
     note: Optional[str] = Field(default=None, max_length=MEDICINE_NOTE_MAX)
+    # Set when "Annuler" puts back a medicine that had been stopped.
+    stopped_on: Optional[str] = Field(default=None, max_length=10)
 
 
 class MedicinePatchIn(BaseModel):
@@ -5331,6 +5558,11 @@ class MedicinePatchIn(BaseModel):
     starts_on: Optional[str] = Field(default=None, max_length=10)
     ends_on: Optional[str] = Field(default=None, max_length=10)
     note: Optional[str] = Field(default=None, max_length=MEDICINE_NOTE_MAX)
+    # "Arrêté": the day it stopped, or '' to take it again. A medicine that
+    # stopped moves to the past ones rather than being erased (Roland,
+    # 2026-11-11: health details should not be lost); erasing stays possible,
+    # since deleting is how consent to keep it is withdrawn (GDPR art. 7(3)).
+    stopped_on: Optional[str] = Field(default=None, max_length=10)
 
 
 class VaccinationIn(BaseModel):
@@ -5431,11 +5663,17 @@ def public_medicines(member: dict) -> list:
             "starts_on": r.get("starts_on") or "",
             "ends_on": r.get("ends_on") or "",
             "note": r.get("note") or "",
+            "stopped_on": r.get("stopped_on") or "",
         })
     # "" sorts after any real date only if we say so — an open-ended course
     # has no end, which is not the same as ending long ago.
-    out.sort(key=lambda m: (m["ends_on"] == "", m["ends_on"], m["name"].lower()))
-    return out
+    current = sorted((m for m in out if not m["stopped_on"]),
+                     key=lambda m: (m["ends_on"] == "", m["ends_on"], m["name"].lower()))
+    # Stopped ones after, the most recently stopped first; on the same day,
+    # A to Z, as everywhere else (two stable sorts, like public_vaccinations).
+    past = sorted((m for m in out if m["stopped_on"]), key=lambda m: m["name"].lower())
+    past.sort(key=lambda m: m["stopped_on"], reverse=True)
+    return current + past
 
 
 def public_member_record(member: dict, full_member: bool) -> dict:
@@ -5684,6 +5922,40 @@ class RoutinePatchIn(BaseModel):
     # only deleted and built again, which takes its completion history with it.
     member_id: Optional[str] = None
     star_reward: Optional[int] = None
+
+
+TURN_NAME_MAX = 40
+TURN_MEMBERS_MAX = 8
+TURN_HISTORY_KEPT = 10
+# More than the list ever shows would be rotations nobody can see or manage.
+TURNS_PER_FAMILY_MAX = 20
+
+
+class TurnIn(BaseModel):
+    name: str = Field(min_length=1, max_length=TURN_NAME_MAX)
+    # In rotation order. Two at least: a turn with one person is not a turn.
+    member_ids: List[str] = Field(min_length=2, max_length=TURN_MEMBERS_MAX)
+    # See CardIn.icon.
+    icon: Optional[str] = None
+
+
+class TurnPatchIn(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=TURN_NAME_MAX)
+    member_ids: Optional[List[str]] = Field(default=None, min_length=2, max_length=TURN_MEMBERS_MAX)
+    icon: Optional[str] = None
+    # "Actually it's Leo's turn": a parent putting it right by hand.
+    current_member_id: Optional[str] = None
+    # Whose turn the sheet SHOWED when it was opened. With current_member_id,
+    # it must still be true, or the change is refused (409): otherwise a
+    # rename saved after someone tapped "Done" would quietly undo that turn.
+    seen_current_member_id: Optional[str] = None
+
+
+class TurnNextIn(BaseModel):
+    # Whose turn the person tapping SAW. If it has already moved on (a second
+    # parent tapped first, or a double tap), nothing moves again: a turn that
+    # skips a child is exactly the unfairness this exists to end.
+    from_member_id: str
 
 
 class MealPlanIn(BaseModel):
@@ -6210,7 +6482,10 @@ _FAMILY_SCOPED_COLLECTIONS = (
     "cards", "carpools", "chore_logs", "chores", "expenses", "family_invites",
     "family_members", "handoff_notes", "meal_plans_saved", "meals", "redemptions",
     "rewards", "routine_logs", "routines", "shopping_aisles", "shopping_history",
+    "turns",
     "shopping_list",
+    # Recently deleted: the household's deleted rows, whole, for 30 days.
+    "trash",
     # "templates" has no feature behind it any more — the recurring-template
     # endpoints were removed once it was found that nothing could ever create
     # one. The COLLECTION stays listed: rows written before it went are still
@@ -6403,6 +6678,9 @@ async def delete_account(payload: DeleteAccountIn, user=Depends(require_user)):
         deleted_household = True
     elif family_id:
         # A co-parent remains — take only this member out; the family stays.
+        async for gone in database["family_members"].find(
+                {"family_id": family_id, "user_id": fresh["user_id"]}, {"_id": 0, "member_id": 1}):
+            await _turns_without_member(database, family_id, gone.get("member_id"))
         await database["family_members"].delete_many(
             {"family_id": family_id, "user_id": fresh["user_id"]})
         await _purge_departing_parent(database, family_id, fresh["user_id"])
@@ -6439,7 +6717,9 @@ async def _purge_departing_parent(database: Any, family_id: str, user_id: str) -
     The household's shared things stay: they belong to the people still in it.
     But a private card or a private vault document was never anybody else's,
     and once its owner's account is gone nobody can open it again; keeping it
-    would be keeping a deleted person's data (audit, 2026-10-02)."""
+    would be keeping a deleted person's data (audit, 2026-10-02). The same
+    goes for their private things in Recently deleted."""
+    await database["trash"].delete_many({"family_id": family_id, "private_to": user_id})
     cards = [c async for c in database["cards"].find(
         {"family_id": family_id, "created_by_user_id": user_id}, {"_id": 0})]
     for card in cards:
@@ -7512,6 +7792,14 @@ async def export_my_data(include_files: bool = False, user=Depends(require_user)
             return []
         return [shape(r) async for r in database[collection].find({"family_id": fid}, {"_id": 0})]
 
+    # Recently deleted is still held, so it is in the copy: as the bin lists
+    # it to this person (what it was, who deleted it, when it goes).
+    recently_deleted = []
+    if fid:
+        async for e in database["trash"].find({"family_id": fid}, {"_id": 0, "doc": 0, "extra": 0}):
+            if _trash_visible(e, fresh):
+                recently_deleted.append(public_trash(e))
+
     settings = await database["notification_settings"].find_one({"user_id": uid}, {"_id": 0})
     sub = await build_subscription(fid) if fid else {}
 
@@ -7535,6 +7823,8 @@ async def export_my_data(include_files: bool = False, user=Depends(require_user)
         "shopping_list": await household_rows("shopping_list", public_shopping_item),
         "routines": await household_rows("routines", public_routine),
         "chores": await household_rows("chores", public_chore),
+        "turns": await household_rows("turns", public_turn),
+        "recently_deleted": recently_deleted,
     }
 
 
@@ -8096,6 +8386,10 @@ async def delete_family_member(member_id: str, user=Depends(require_full_member)
         {"$set": {"current_assignee": None}},
     )
 
+    # A "whose turn?" keeps going without them (the same helper every removal
+    # path calls).
+    await _turns_without_member(database, family_id, member_id)
+
     # A routine is a checklist worth keeping; it just belongs to nobody now,
     # which the completion path already handles.
     await database["routines"].update_many(
@@ -8528,10 +8822,7 @@ async def add_member_medicine(member_id: str, payload: MedicineIn,
     database = get_db()
     member = await _load_member_for_record(database, user, member_id)
     existing = ((member.get("record") or {}).get("medicines")) or []
-    if len(existing) >= MEDICINE_MAX:
-        raise HTTPException(
-            status_code=400,
-            detail=f"A record holds at most {MEDICINE_MAX} medicines")
+    _medicine_room(existing, stopped=bool((payload.stopped_on or "").strip()))
     starts_on = _clean_date(payload.starts_on, "starts_on")
     ends_on = _clean_date(payload.ends_on, "ends_on")
     if starts_on and ends_on and ends_on < starts_on:
@@ -8546,7 +8837,9 @@ async def add_member_medicine(member_id: str, payload: MedicineIn,
         "starts_on": starts_on,
         "ends_on": ends_on,
         "note": (payload.note or "").strip(),
+        "stopped_on": _clean_date(payload.stopped_on, "stopped_on"),
     }
+    _check_stopped_on(row)
     # $push rather than rewriting the array: the other parent's row, added
     # between our read and our write, survives.
     await database["family_members"].update_one(
@@ -8586,6 +8879,13 @@ async def update_member_medicine(member_id: str, med_id: str,
         hit["ends_on"] = _clean_date(sent["ends_on"], "ends_on")
     if "note" in sent:
         hit["note"] = (sent["note"] or "").strip()
+    if "stopped_on" in sent:
+        was_stopped = bool(hit.get("stopped_on"))
+        hit["stopped_on"] = _clean_date(sent["stopped_on"], "stopped_on")
+        if was_stopped and not hit["stopped_on"]:
+            # Taken again: it counts among the ones taken at once.
+            _medicine_room([r for r in rows if r is not hit], stopped=False)
+    _check_stopped_on(hit)
     # Checked on the MERGED row, not on what was sent: a patch that moves only
     # the start date can still invert a course whose end was set weeks ago.
     if hit.get("starts_on") and hit.get("ends_on") and hit["ends_on"] < hit["starts_on"]:
@@ -8609,7 +8909,8 @@ async def delete_member_medicine(member_id: str, med_id: str,
     database = get_db()
     member = await _load_member_for_record(database, user, member_id)
     rows = ((member.get("record") or {}).get("medicines")) or []
-    if not any(isinstance(r, dict) and r.get("med_id") == med_id for r in rows):
+    erased = next((r for r in rows if isinstance(r, dict) and r.get("med_id") == med_id), None)
+    if erased is None:
         raise HTTPException(status_code=404, detail="No such medicine")
     await database["family_members"].update_one(
         {"family_id": user["family_id"], "member_id": member_id},
@@ -8617,7 +8918,9 @@ async def delete_member_medicine(member_id: str, med_id: str,
          "$set": {"updated_at": utcnow()}})
     member.setdefault("record", {})["medicines"] = [
         r for r in rows if not (isinstance(r, dict) and r.get("med_id") == med_id)]
-    return public_member_record(member, full_member=True)
+    # Erased here and now. The row goes back to the phone that erased it, and
+    # only there, so "Annuler" can put back exactly what was stored.
+    return {**public_member_record(member, full_member=True), "erased": erased}
 
 
 @app.post("/api/family/members/{member_id}/vaccinations")
@@ -8691,7 +8994,8 @@ async def delete_member_vaccination(member_id: str, vax_id: str,
     database = get_db()
     member = await _load_member_for_record(database, user, member_id)
     rows = ((member.get("record") or {}).get("vaccinations")) or []
-    if not any(isinstance(r, dict) and r.get("vax_id") == vax_id for r in rows):
+    erased = next((r for r in rows if isinstance(r, dict) and r.get("vax_id") == vax_id), None)
+    if erased is None:
         raise HTTPException(status_code=404, detail="No such vaccination")
     await database["family_members"].update_one(
         {"family_id": user["family_id"], "member_id": member_id},
@@ -8699,7 +9003,78 @@ async def delete_member_vaccination(member_id: str, vax_id: str,
          "$set": {"updated_at": utcnow()}})
     member.setdefault("record", {})["vaccinations"] = [
         r for r in rows if not (isinstance(r, dict) and r.get("vax_id") == vax_id)]
+    # Its reminder marks travel with it, so putting it back does not send the
+    # "due" reminder a second time.
+    return {**public_member_record(member, full_member=True), "erased": erased}
+
+
+# What "Annuler" may write back: the fields a row is stored with, and no
+# others. A put-back is a row the same phone was handed when it erased it.
+_PUT_BACK_FIELDS = {
+    "medicines": ("med_id", {"med_id", "name", "dose", "times", "starts_on", "ends_on",
+                             "note", "stopped_on"}),
+    "vaccinations": ("vax_id", {"vax_id", "name", "given_on", "next_due", "note",
+                                DUE_MARK_DATE, DUE_MARK_STAGE}),
+}
+
+
+class HealthPutBackIn(BaseModel):
+    row: dict
+
+
+def _clean_put_back(kind: str, row: dict) -> dict:
+    id_key, allowed = _PUT_BACK_FIELDS[kind]
+    out = {}
+    for k, v in row.items():
+        if k not in allowed:
+            continue
+        if k == "times":
+            if not isinstance(v, list) or len(v) > 6 or not all(isinstance(x, str) and len(x) <= 5 for x in v):
+                raise HTTPException(status_code=400, detail="Not a row this record held")
+        elif v is not None and (not isinstance(v, str) or len(v) > 2000):
+            raise HTTPException(status_code=400, detail="Not a row this record held")
+        out[k] = v
+    if not str(out.get(id_key) or "").startswith(id_key.split("_")[0] + "_") or not (out.get("name") or "").strip():
+        raise HTTPException(status_code=400, detail="Not a row this record held")
+    return out
+
+
+async def _put_back(member_id: str, kind: str, body: HealthPutBackIn, user: dict) -> dict:
+    """Write back, unchanged, a health detail erased moments ago: same id,
+    same fields, reminder marks included. A row already there is left alone,
+    so a double tap puts back one."""
+    database = get_db()
+    member = await _load_member_for_record(database, user, member_id)
+    row = _clean_put_back(kind, body.row)
+    id_key = _PUT_BACK_FIELDS[kind][0]
+    rows = ((member.get("record") or {}).get(kind)) or []
+    if any(isinstance(r, dict) and r.get(id_key) == row[id_key] for r in rows):
+        return public_member_record(member, full_member=True)
+    if kind == "medicines":
+        _medicine_room(rows, stopped=bool(row.get("stopped_on")))
+    elif len(rows) >= VACCINATION_MAX:
+        raise HTTPException(status_code=400,
+                            detail=f"A record holds at most {VACCINATION_MAX} vaccinations")
+    # The id in the filter as well: of two put-backs at once only one pushes.
+    result = await database["family_members"].update_one(
+        {"family_id": user["family_id"], "member_id": member_id,
+         f"record.{kind}.{id_key}": {"$ne": row[id_key]}},
+        {"$push": {f"record.{kind}": row}, "$set": {"updated_at": utcnow()}})
+    if result.matched_count:
+        member.setdefault("record", {}).setdefault(kind, []).append(row)
     return public_member_record(member, full_member=True)
+
+
+@app.post("/api/family/members/{member_id}/medicines/put-back")
+async def put_back_member_medicine(member_id: str, body: HealthPutBackIn,
+                                   user=Depends(require_full_member)):
+    return await _put_back(member_id, "medicines", body, user)
+
+
+@app.post("/api/family/members/{member_id}/vaccinations/put-back")
+async def put_back_member_vaccination(member_id: str, body: HealthPutBackIn,
+                                      user=Depends(require_full_member)):
+    return await _put_back(member_id, "vaccinations", body, user)
 
 
 @app.get("/api/family/members/{member_id}/star-history")
@@ -11894,6 +12269,9 @@ async def admin_purge_account(payload: PurgeAccountIn, user=Depends(require_user
         await _purge_family(database, family_id)
         deleted_household = True
     elif family_id:
+        async for gone in database["family_members"].find(
+                {"family_id": family_id, "user_id": target["user_id"]}, {"_id": 0, "member_id": 1}):
+            await _turns_without_member(database, family_id, gone.get("member_id"))
         await database["family_members"].delete_many(
             {"family_id": family_id, "user_id": target["user_id"]})
 
@@ -12858,18 +13236,18 @@ async def share_card(card_id: str, user=Depends(require_user)):
 async def delete_card(card_id: str, user=Depends(require_user)):
     database = get_db()
     card = await database["cards"].find_one(
-        {"card_id": card_id, "family_id": user["family_id"]},
-        {"_id": 0, "shared": 1, "created_by_user_id": 1},
-    )
+        {"card_id": card_id, "family_id": user["family_id"]}, {"_id": 0})
+    trash_id = None
     if card:
         refuse_unless_owner_of_private(card, user)
+        (trash_id,) = await move_to_trash(database, user, "card", [card])
     await database["cards"].delete_one({"card_id": card_id, "family_id": user["family_id"]})
     # Deleting a card from the completed history takes its feed lines with it —
     # "done" and "created" for a thing that no longer exists would otherwise
     # linger. Scoped to the family and the card's own id, so nothing else moves.
     await database["activity"].delete_many(
         {"family_id": user["family_id"], "ref": card_id})
-    return {"ok": True}
+    return {"ok": True, "trash_id": trash_id}
 
 
 @app.get("/api/cards/conflicts")
@@ -13182,14 +13560,19 @@ async def delete_vault_doc(doc_id: str, user=Depends(require_full_member)):
     )
     if doc and doc.get("owner_user_id") not in (None, user["user_id"]):
         raise HTTPException(status_code=403, detail="Only the owner can delete this document")
+    trash_id = None
     if doc:
+        # Into Recently deleted, where it no longer counts toward the storage
+        # (Roland, 2026-11-10); restoring counts it again.
         size = len(doc["image_base64"].encode("utf-8"))
+        await make_room_in_trash_for_vault(database, user, size)
+        (trash_id,) = await move_to_trash(database, user, "vault_doc", [doc])
         await database["vault"].delete_one({"doc_id": doc_id})
         await database["families"].update_one(
             {"family_id": user["family_id"]},
             {"$inc": {"vault_bytes_used": -size}, "$set": {"updated_at": utcnow()}},
         )
-    return {"ok": True}
+    return {"ok": True, "trash_id": trash_id}
 
 
 # -----------------------------------------------------------------------------
@@ -17213,21 +17596,28 @@ async def clear_all_shopping(user=Depends(require_user)):
             "items": names,
             "created_at": utcnow(),
         })
-    result = await database["shopping_list"].delete_many({"family_id": user["family_id"]})
+    batch_id = new_id("tbatch")
+    full = [d async for d in database["shopping_list"].find({"family_id": user["family_id"]}, {"_id": 0})]
+    await move_to_trash(database, user, "shopping_item", full, batch_id=batch_id)
+    # Only what went into the bin: a line added meanwhile on the other phone
+    # stays on the list rather than vanish without a copy.
+    result = await database["shopping_list"].delete_many(
+        {"family_id": user["family_id"], "item_id": {"$in": [d["item_id"] for d in full]}})
     if names:
         await log_activity(database, user, "list_cleared", "", len(names))
-    return {"deleted": result.deleted_count}
+    return {"deleted": result.deleted_count, "batch_id": batch_id if full else None}
 
 
 @app.delete("/api/shopping/{item_id}")
 async def delete_shopping_item(item_id: str, user=Depends(require_user)):
     database = get_db()
-    result = await database["shopping_list"].delete_one(
-        {"item_id": item_id, "family_id": user["family_id"]}
-    )
-    if result.deleted_count == 0:
+    item = await database["shopping_list"].find_one(
+        {"item_id": item_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not item:
         raise HTTPException(404, "Item not found")
-    return {"ok": True}
+    (trash_id,) = await move_to_trash(database, user, "shopping_item", [item])
+    await database["shopping_list"].delete_one({"item_id": item_id, "family_id": user["family_id"]})
+    return {"ok": True, "trash_id": trash_id}
 
 
 def public_shopping_history(h: dict) -> dict:
@@ -17249,12 +17639,19 @@ async def clear_checked_shopping(user=Depends(require_user)):
             "items": names,
             "created_at": utcnow(),
         })
+    # Each one also into Recently deleted, as one batch: "Annuler" brings the
+    # trip back whole, the bin brings back any single line of it.
+    batch_id = new_id("tbatch")
+    full = [d async for d in database["shopping_list"].find(
+        {"family_id": user["family_id"], "checked": True}, {"_id": 0})]
+    await move_to_trash(database, user, "shopping_item", full, batch_id=batch_id)
+    # Only what went into the bin (a line ticked meanwhile stays).
     result = await database["shopping_list"].delete_many(
-        {"family_id": user["family_id"], "checked": True}
+        {"family_id": user["family_id"], "item_id": {"$in": [d["item_id"] for d in full]}}
     )
     # The shop is over: tell the other parent, once, how much was bought.
     await notify_shop_done(database, user, user["family_id"], len(names))
-    return {"deleted": result.deleted_count}
+    return {"deleted": result.deleted_count, "batch_id": batch_id if full else None}
 
 
 @app.get("/api/shopping/history")
@@ -17364,28 +17761,139 @@ async def delete_shopping_history(history_id: str, user=Depends(require_user)):
     return {"ok": True}
 
 
+# A PDF shopping list: what a printed or exported list weighs, with room for
+# a phone scanner app's one-page scan. Gemini would take far more; nothing on
+# a shopping list needs it.
+SHOPPING_PDF_MAX_BYTES = 5 * 1024 * 1024
+SHOPPING_PDF_MAX_PAGES = 10
+# "12 0 obj << /Type /Page ..." — the object NUMBER is what is counted, so a
+# PDF saved incrementally (each save appends a fresh copy of the pages it
+# touched) is not counted once per save. Two simple patterns rather than one
+# clever one: a single expression spanning "obj ... /Page" backtracks for
+# seconds on a hostile file, and this runs on the request's event loop.
+_PDF_PAGE_TYPE = re.compile(rb"/Type[ \t\r\n]{0,8}/Page(?![a-zA-Z])")
+_PDF_OBJ_HEADER = re.compile(rb"(\d{1,10})[ \t\r\n]+\d{1,5}[ \t\r\n]+obj\b")
+# More page markers than any shopping list, saved any number of times, has.
+_PDF_PAGE_MARKERS_LOOKED_AT = 2000
+
+# How google-genai words a request the model will not take: "400
+# INVALID_ARGUMENT. {...}".
+_MODEL_REFUSED_INPUT = re.compile(r"^\s*400\b|INVALID_ARGUMENT")
+
+
+def pdf_page_count_seen(data: bytes, stop_after: int) -> int:
+    """Distinct page objects visible in the clear, counting no further than
+    `stop_after` (the caller only needs to know whether it is over).
+
+    Each "/Type /Page" is tied to the object it sits in by looking back for
+    that object's "N G obj" header; a marker with no header in reach counts
+    on its own, which can only over-count.
+    """
+    seen = set()
+    for index, marker in enumerate(_PDF_PAGE_TYPE.finditer(data)):
+        if index >= _PDF_PAGE_MARKERS_LOOKED_AT:
+            return stop_after
+        window = data[max(0, marker.start() - 512):marker.start()]
+        closed = window.rfind(b"endobj")
+        if closed >= 0:
+            window = window[closed + 6:]
+        header = None
+        for header in _PDF_OBJ_HEADER.finditer(window):
+            pass
+        seen.add(header.group(1) if header else b"@%d" % marker.start())
+        if len(seen) >= stop_after:
+            break
+    return len(seen)
+
+
+def shopping_pdf_bytes(pdf_b64: str) -> bytes:
+    """Decode and check a PDF sent for a shopping-list read.
+
+    The page count is read from the page objects the file shows in the clear.
+    A PDF that packs them into compressed object streams shows none, so this
+    is a ceiling that catches the ordinary long document, not a guarantee;
+    the byte limit is the hard bound. (A real parser would count those too,
+    at the price of a new dependency parsing untrusted files on the server;
+    what gets past this is bounded by the 5 MB, read once on the fast model,
+    and still counted as one of the family's scans.)
+
+    Not _decode_doc_bytes: that one decodes leniently, and here a file that
+    is not valid base64 is told so rather than read as whatever it decodes to.
+    """
+    if "," in pdf_b64:
+        pdf_b64 = pdf_b64.split(",", 1)[1]
+    if len(pdf_b64) < 100:
+        raise HTTPException(400, "No PDF attached.")
+    if len(pdf_b64) > (SHOPPING_PDF_MAX_BYTES * 4) // 3 + 4:
+        raise HTTPException(413, "That PDF is too large.")
+    try:
+        data = base64.b64decode(pdf_b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(400, "That file is not a PDF.")
+    # The header may sit after a little junk (the spec allows 1024 bytes).
+    if b"%PDF-" not in data[:1024]:
+        raise HTTPException(400, "That file is not a PDF.")
+    if pdf_page_count_seen(data, SHOPPING_PDF_MAX_PAGES + 1) > SHOPPING_PDF_MAX_PAGES:
+        raise HTTPException(413, "That PDF has too many pages.")
+    return data
+
+
+def shopping_picture_opens(image_b64: str) -> bytes:
+    """Refuse, before any allowance or model, a picture this server cannot
+    open. A picture imported from Files can be a format Pillow does not read
+    (HEIC without its plugin), a renamed document, or a JPG only half
+    downloaded from iCloud: the file's problem, said as a free 400, not a 502
+    the app tells as an outage.
+
+    It prepares the very JPEG the read will send (vision_jpeg, which decodes
+    every pixel, so a truncated file with a perfect header is caught too); the
+    read then finds it in vision_jpeg's cache instead of doing it again. Run
+    in a worker thread.
+    """
+    try:
+        return vision_jpeg(image_b64)
+    except Exception:  # noqa: BLE001 — any way of not opening is "not readable"
+        # Pillow says it several ways: UnidentifiedImageError for an unknown
+        # format, a bare OSError for a PNG broken after its signature or a
+        # truncated JPEG, binascii.Error for base64 with bad padding.
+        raise HTTPException(400, "That file is not a picture we can read.")
+
+
 @app.post("/api/shopping/scan")
 async def scan_shopping_list(
     payload: dict = Body(...),
     user: dict = Depends(require_user),
     database=Depends(get_db),
 ):
-    """Read a photo of a paper shopping list into items.
+    """Read a photo of a paper shopping list, or a PDF of one, into items.
 
     Returns candidates only — nothing is added here. The app shows them in a
     ticked preview (unsure reads come unticked) and commits the selection
     through the ordinary bulk add, so a misread never lands silently.
-    """
-    image_b64 = str(payload.get("image_base64") or "")
-    if "," in image_b64:
-        image_b64 = image_b64.split(",")[-1]
-    if len(image_b64) < 100:
-        raise HTTPException(400, "No photo attached.")
-    if len(image_b64) > MAX_IMAGE_B64_CHARS:
-        raise HTTPException(413, "That photo is too large.")
 
-    if not GOOGLE_API_KEY:
-        raise HTTPException(503, "Photo scanning is unavailable right now.")
+    A PDF (``pdf_base64``) goes to the model as the document itself: Gemini
+    reads PDFs natively, text and scanned pages alike (up to 50 MB / 1000
+    pages per Google's document-understanding guide). Ours is far tighter —
+    a shopping list is a page or two — so a stray manual or bank statement
+    costs one refusal, not a thousand pages of tokens.
+    """
+    pdf_bytes = None
+    if payload.get("pdf_base64"):
+        pdf_bytes = shopping_pdf_bytes(str(payload.get("pdf_base64")))
+        image_b64 = ""
+    else:
+        image_b64 = str(payload.get("image_base64") or "")
+        if "," in image_b64:
+            image_b64 = image_b64.split(",")[-1]
+        if len(image_b64) < 100:
+            raise HTTPException(400, "No photo attached.")
+        if len(image_b64) > MAX_IMAGE_B64_CHARS:
+            raise HTTPException(413, "That photo is too large.")
+        await run_in_threadpool(shopping_picture_opens, image_b64)
+
+    kind = "PDF" if pdf_bytes is not None else "photo"
+    if not GOOGLE_API_KEY or (pdf_bytes is not None and genai_types is None):
+        raise HTTPException(503, f"{'PDF' if pdf_bytes is not None else 'Photo'} scanning is unavailable right now.")
 
     sub = await build_subscription(user["family_id"])
     family = await get_family_doc(user["family_id"])
@@ -17400,22 +17908,40 @@ async def scan_shopping_list(
         )
 
     try:
-        text = await _gemini_vision(
-            "Read the shopping list in this photo.",
-            image_b64,
-            system=SHOPPING_SCAN_SYSTEM_PROMPT,
-            fast=True,
-        )
+        if pdf_bytes is not None:
+            text = await _gemini_generate(
+                ["Read the shopping list in this PDF.",
+                 genai_types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")],
+                SHOPPING_SCAN_SYSTEM_PROMPT,
+                fast=True,
+            )
+        else:
+            text = await _gemini_vision(
+                "Read the shopping list in this photo.",
+                image_b64,
+                system=SHOPPING_SCAN_SYSTEM_PROMPT,
+                fast=True,
+            )
         parsed = extract_json(text)
         if parsed is None:
             raise UnsafeRecipe("unparseable")
-        items = validate_shopping_scan(parsed)
+        items, left_out = read_shopping_scan(parsed)
     except UnsafeRecipe as exc:
-        log.info("shopping scan rejected by safety gate: %s", exc.reason)
-        raise HTTPException(422, "We could not read a shopping list in that photo.")
+        log.info("shopping scan (%s) rejected by safety gate: %s", kind, exc.reason)
+        # Counted by reason, so the Metrics screen can say WHY lists go
+        # unread: a 422 is not an error, and the log line alone was the only
+        # trace when a real one was reported.
+        await _bump_metric(f"shopping_scan_unread_{SHOPPING_SCAN_UNREAD.get(exc.reason, 'other')}")
+        raise HTTPException(422, f"We could not read a shopping list in that {kind}.")
     except Exception as exc:
-        log.warning("shopping scan failed: %s", exc)
-        raise HTTPException(502, "We could not read a shopping list in that photo.")
+        log.warning("shopping scan (%s) failed: %s", kind, exc)
+        # A PDF the model refuses as input (password-protected, damaged) is
+        # this file's problem, not an outage: say it about the file, and do
+        # not send the person to retry the same thing.
+        if pdf_bytes is not None and _MODEL_REFUSED_INPUT.search(str(exc)):
+            await _bump_metric("shopping_scan_unread_pdf_unreadable")
+            raise HTTPException(422, "We could not read a shopping list in that PDF.")
+        raise HTTPException(502, f"We could not read a shopping list in that {kind}.")
 
     if not is_admin_user(user):
         # Guarded so two concurrent scans cannot both push the counter past the
@@ -17428,7 +17954,7 @@ async def scan_shopping_list(
             {"$inc": {"ai_scans_used": 1}, "$set": {"updated_at": utcnow()}},
         )
 
-    return {"items": items}
+    return {"items": items, "left_out": left_out}
 
 
 
@@ -17491,6 +18017,7 @@ def compare_receipt_prices(lines: list) -> dict:
     for the comparison without reading the family's whole history twice.
     """
     cutoff = utcnow() - timedelta(days=PRICE_WINDOW_DAYS)
+    lines = unify_shop_names(lines)
 
     # name_key + unit is the comparison key. Same words, same unit, or the
     # numbers are not about the same thing.
@@ -17594,6 +18121,9 @@ async def shopping_prices(user=Depends(require_full_member)):
         {"family_id": user["family_id"],
          "spent_on": {"$gte": utcnow() - timedelta(days=PRICE_WINDOW_DAYS)}},
         {"_id": 0}).to_list(None)
+    # Under the same shop names the comparison uses, so "last bought at" and
+    # "cheapest at" name a shop the same way.
+    lines = unify_shop_names(lines)
     for line in lines:
         name_key = (line.get("name_key") or "").strip()
         shop = (line.get("shop") or "").strip()
@@ -17732,6 +18262,48 @@ async def shopping_due(timezone_name: Optional[str] = Query(default=None, alias=
     return {"window_days": REBUY_WINDOW_DAYS, "items": due[:20]}
 
 
+# A receipt too long for one sharp photo: up to three, top to bottom, read as
+# one. Three 12 MP photos prepared by vision_jpeg stay well inside Google's
+# 20 MB inline request cap (checked per request below, base64 included).
+RECEIPT_MAX_PARTS = 3
+RECEIPT_REQUEST_MAX_BYTES = 19 * 1024 * 1024
+
+# "Ajouter la suite du ticket" is the SAME receipt read again with one more
+# photo, and must not cost a second scan (on Free, three a month, one long
+# receipt would have spent them all). Each read hands back a token signed over
+# the household and the photos it read; a continuation that presents it with
+# those same photos first is free. Signed with a key made at start-up, so no
+# secret has to be configured: after a restart, or on another worker, the
+# token simply does not verify and the continuation is charged as before —
+# never free by mistake. Short-lived, so it cannot be farmed.
+_RECEIPT_TOKEN_KEY = secrets.token_bytes(32)
+RECEIPT_CONTINUE_SECONDS = 15 * 60
+
+
+def _receipt_parts_digest(parts: list) -> str:
+    return "|".join(hashlib.sha256(p.encode("ascii", "ignore")).hexdigest() for p in parts)
+
+
+def receipt_read_token(family_id: str, parts: list, now: Optional[int] = None) -> str:
+    expires = int(now if now is not None else utcnow().timestamp()) + RECEIPT_CONTINUE_SECONDS
+    body = f"{family_id}|{expires}|{_receipt_parts_digest(parts)}".encode()
+    return f"{expires}.{hmac.new(_RECEIPT_TOKEN_KEY, body, hashlib.sha256).hexdigest()}"
+
+
+def receipt_continues(token: str, family_id: str, earlier_parts: list, now: Optional[int] = None) -> bool:
+    """Whether `token` was issued to this household for exactly these photos,
+    and has not expired."""
+    try:
+        expires_s, sig = str(token or "").split(".", 1)
+        expires = int(expires_s)
+    except ValueError:
+        return False
+    if expires < int(now if now is not None else utcnow().timestamp()) or not earlier_parts:
+        return False
+    body = f"{family_id}|{expires}|{_receipt_parts_digest(earlier_parts)}".encode()
+    return hmac.compare_digest(sig, hmac.new(_RECEIPT_TOKEN_KEY, body, hashlib.sha256).hexdigest())
+
+
 @app.post("/api/expenses/scan-receipt")
 async def scan_receipt(
     payload: dict = Body(...),
@@ -17750,21 +18322,56 @@ async def scan_receipt(
     compares basket sizes rather than prices. The lines are what let the app
     eventually say the thing a family can act on: these onions cost less per
     kilo at that shop than at this one.
-    """
-    image_b64 = str(payload.get("image_base64") or "")
-    if "," in image_b64:
-        image_b64 = image_b64.split(",")[-1]
-    if len(image_b64) < 100:
-        raise HTTPException(400, "No photo attached.")
-    if len(image_b64) > MAX_IMAGE_B64_CHARS:
-        raise HTTPException(413, "That photo is too large.")
 
-    if not GOOGLE_API_KEY:
-        raise HTTPException(503, "Photo scanning is unavailable right now.")
+    A receipt too long for one sharp photo comes as `images_base64`: up to
+    RECEIPT_MAX_PARTS photos, top to bottom, read in ONE request as one
+    receipt (the model joins the overlap; one scan is charged). A digital
+    receipt comes as `pdf_base64`, checked like the shopping list's PDF.
+    """
+    pdf_bytes = None
+    pictures: list = []
+    if payload.get("pdf_base64"):
+        pdf_bytes = shopping_pdf_bytes(str(payload.get("pdf_base64")))
+    else:
+        raw = payload.get("images_base64")
+        if raw is None:
+            raw = [payload.get("image_base64") or ""]
+        if not isinstance(raw, list) or not raw:
+            raise HTTPException(400, "No photo attached.")
+        if len(raw) > RECEIPT_MAX_PARTS:
+            raise HTTPException(413, "Too many photos for one receipt.")
+        for one in raw:
+            one = str(one or "")
+            if "," in one:
+                one = one.split(",")[-1]
+            if len(one) < 100:
+                raise HTTPException(400, "No photo attached.")
+            if len(one) > MAX_IMAGE_B64_CHARS:
+                raise HTTPException(413, "That photo is too large.")
+            pictures.append(one)
+
+    jpegs: list = []
+    if pictures:
+        # Every photo checked to open (a free 400 if not, said whatever else
+        # is the matter) and prepared for the model in the same step, side by
+        # side. Google caps an inline request at 20 MB in total, base64
+        # included.
+        jpegs = list(await asyncio.gather(
+            *(run_in_threadpool(shopping_picture_opens, one) for one in pictures)))
+        if sum(len(j) for j in jpegs) * 4 // 3 > RECEIPT_REQUEST_MAX_BYTES:
+            raise HTTPException(413, "Those photos are too large together.")
+
+    kind = "PDF" if pdf_bytes is not None else "photo"
+    if not GOOGLE_API_KEY or genai_types is None:
+        raise HTTPException(503, f"{kind.capitalize() if kind == 'photo' else kind} scanning is unavailable right now.")
+
+    # The rest of a receipt already read (and paid for) in this household.
+    continuing = len(pictures) > 1 and receipt_continues(
+        str(payload.get("read_token") or ""), user["family_id"], pictures[:-1])
 
     sub = await build_subscription(user["family_id"])
     family = await get_family_doc(user["family_id"])
-    if not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
+    if not continuing and not is_admin_user(user) and family.get("ai_scans_used", 0) >= sub["limits"]["ai_scans_per_month"]:
         plan_limit_error(
             family_id=user["family_id"],
             feature="ai_scans",
@@ -17775,24 +18382,39 @@ async def scan_receipt(
         )
 
     try:
-        text = await _gemini_vision(
-            "Read the shop receipt in this photo.",
-            image_b64,
-            system=RECEIPT_SCAN_SYSTEM_PROMPT,
-            fast=True,
-        )
+        if pdf_bytes is not None:
+            contents = ["Read the shop receipt in this PDF.",
+                        genai_types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")]
+        elif len(jpegs) == 1:
+            contents = ["Read the shop receipt in this photo.",
+                        genai_types.Part.from_bytes(data=jpegs[0], mime_type="image/jpeg")]
+        else:
+            contents = [f"These {len(jpegs)} photos are consecutive parts of ONE shop receipt, "
+                        "top to bottom; consecutive photos may overlap. Read that one receipt."]
+            contents += [genai_types.Part.from_bytes(data=j, mime_type="image/jpeg") for j in jpegs]
+        text = await _gemini_generate(contents, RECEIPT_SCAN_SYSTEM_PROMPT, fast=True)
         parsed = extract_json(text)
         if parsed is None:
             raise UnsafeRecipe("unparseable")
-        result = validate_receipt_scan(parsed)
+        result = read_receipt_scan(parsed)
     except UnsafeRecipe as exc:
-        log.info("receipt scan rejected by safety gate: %s", exc.reason)
-        raise HTTPException(422, "We could not read a receipt in that photo.")
+        log.info("receipt scan (%s) rejected by safety gate: %s", kind, exc.reason)
+        await _bump_metric(f"receipt_scan_unread_{SHOPPING_SCAN_UNREAD.get(exc.reason, 'other')}")
+        raise HTTPException(422, f"We could not read a receipt in that {kind}.")
     except Exception as exc:
-        log.warning("receipt scan failed: %s", type(exc).__name__)
-        raise HTTPException(502, "We could not read a receipt in that photo.")
+        log.warning("receipt scan (%s) failed: %s", kind, type(exc).__name__)
+        if pdf_bytes is not None and _MODEL_REFUSED_INPUT.search(str(exc)):
+            await _bump_metric("receipt_scan_unread_pdf_unreadable")
+            raise HTTPException(422, "We could not read a receipt in that PDF.")
+        raise HTTPException(502, f"We could not read a receipt in that {kind}.")
+    result["parts"] = len(pictures) if pictures else 1
+    # What the app needs to offer the rest: how many photos a receipt may be
+    # read from, and the token that makes the next part free.
+    result["max_parts"] = RECEIPT_MAX_PARTS
+    if pictures:
+        result["read_token"] = receipt_read_token(user["family_id"], pictures)
 
-    if not is_admin_user(user):
+    if not continuing and not is_admin_user(user):
         # Same guarded increment as the shopping scan: two concurrent scans
         # cannot both push the counter past the limit.
         await database["families"].update_one(
@@ -17971,18 +18593,24 @@ async def expense_overview(
         # the new one so co-parents can still settle up without a second screen.
         payer = exp.get("paid_by_name") or "—"
         bucket["people"][payer] = bucket["people"].get(payer, 0.0) + amount
-        seen = bucket["shops"].setdefault(shop, {"total": 0.0, "visits": 0})
-        seen["total"] += amount
-        seen["visits"] += 1
-
-        entry = range_shops.setdefault(shop, {"total": 0.0, "visits": 0})
-        entry["total"] += amount
-        entry["visits"] += 1
+        # Counted under one key whatever the spelling: "Marché Frais" and
+        # "marche frais" are one shop, shown under the spelling used most.
+        key_ = shop_key(shop) or shop
+        for shops in (bucket["shops"], range_shops):
+            seen = shops.setdefault(key_, {"total": 0.0, "visits": 0, "names": {}})
+            seen["total"] += amount
+            seen["visits"] += 1
+            count, first = seen["names"].get(shop, (0, len(seen["names"])))
+            seen["names"][shop] = (count + 1, first)
         range_total += amount
         range_count += 1
 
+    # One name per shop, chosen across the whole window, so a shop reads the
+    # same on "Ce mois-ci" and on "Six derniers mois".
+    display = {k: shop_display_name(v["names"]) for k, v in range_shops.items()}
+
     def shop_rows(shops: dict) -> list:
-        rows = [{"merchant": name,
+        rows = [{"merchant": display.get(name, name),
                  "total": round(v["total"], 2),
                  "visits": v["visits"],
                  "average": round(v["total"] / v["visits"], 2) if v["visits"] else 0.0}
@@ -18109,17 +18737,22 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
 @app.delete("/api/expenses/{expense_id}")
 async def delete_expense(expense_id: str, user=Depends(require_full_member)):
     database = get_db()
-    result = await database["expenses"].delete_one(
-        {"expense_id": expense_id, "family_id": user["family_id"]}
-    )
-    if result.deleted_count == 0:
+    expense = await database["expenses"].find_one(
+        {"expense_id": expense_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not expense:
         raise HTTPException(404, "Expense not found")
+    # Its receipt lines go in with it, so restoring brings its prices back too.
+    lines = [{k: v for k, v in line.items() if k != "_id"} async for line in database["expense_items"].find(
+        {"expense_id": expense_id, "family_id": user["family_id"]})]
+    (trash_id,) = await move_to_trash(database, user, "expense", [expense],
+                                      extra={expense_id: {"expense_items": lines}})
+    await database["expenses"].delete_one({"expense_id": expense_id, "family_id": user["family_id"]})
     # The lines go with it. Leaving them would keep a deleted receipt quoting
     # prices in comparisons — the one kind of stale data nobody would think to
     # look for, because the receipt it came from is no longer on the screen.
     await database["expense_items"].delete_many(
         {"expense_id": expense_id, "family_id": user["family_id"]})
-    return {"ok": True}
+    return {"ok": True, "trash_id": trash_id}
 
 
 async def compute_settlement(database, family_id: str, me_user_id: str) -> dict:
@@ -19370,6 +20003,180 @@ async def log_routine_completion(routine_id: str, user: dict = Depends(require_u
 
 
 # -----------------------------------------------------------------------------
+# Whose turn? — fair rotations between siblings (front seat, choosing the film)
+# -----------------------------------------------------------------------------
+async def _turns_without_member(database, family_id: str, member_id: str,
+                                replacement: Optional[str] = None) -> None:
+    """Take somebody out of every "whose turn?" rotation, or hand their place to
+    `replacement` (a teen's own account replacing the child profile it grew
+    out of). Called by EVERY path that removes a member row: a rotation left
+    pointing at someone gone would pass the turn to nobody, and hide itself.
+
+    Their turn passes to whoever came after them; their past turns go from the
+    history, since that is a record about a person no longer in the family.
+    A rotation left with fewer than two people goes.
+    """
+    if not family_id or not member_id:
+        return
+    async for turn in database["turns"].find(
+        {"family_id": family_id, "member_ids": member_id}, {"_id": 0}
+    ):
+        order = list(turn.get("member_ids") or [])
+        history = list(turn.get("history") or [])
+        current = turn.get("current_member_id")
+        if replacement and replacement not in order:
+            order = [replacement if m == member_id else m for m in order]
+            if current == member_id:
+                current = replacement
+            history = [{**h, "member_id": replacement} if h.get("member_id") == member_id else h
+                       for h in history]
+        else:
+            remaining = [m for m in order if m != member_id]
+            if len(remaining) < 2:
+                await database["turns"].delete_one({"turn_id": turn["turn_id"], "family_id": family_id})
+                continue
+            if current == member_id or current not in remaining:
+                after = order[(order.index(member_id) + 1) % len(order)]
+                current = after if after in remaining else remaining[0]
+            order = remaining
+            history = [h for h in history if h.get("member_id") != member_id]
+        await database["turns"].update_one(
+            {"turn_id": turn["turn_id"], "family_id": family_id},
+            {"$set": {"member_ids": order, "current_member_id": current,
+                      "history": history, "updated_at": utcnow()}},
+        )
+
+
+async def _turn_members(database, family_id: str, member_ids: List[str]) -> List[str]:
+    """The ids, tidied: no blanks, no repeats, every one a member of THIS
+    household. Anything else is refused, never silently dropped, so a rotation
+    can never quietly leave a child out."""
+    cleaned = [m.strip() for m in member_ids if m and m.strip()]
+    if len(set(cleaned)) != len(cleaned):
+        raise HTTPException(400, "Each person can only be in a rotation once.")
+    if len(cleaned) < 2:
+        raise HTTPException(400, "A rotation needs at least two people.")
+    found = await database["family_members"].find(
+        {"family_id": family_id, "member_id": {"$in": cleaned}}, {"_id": 0, "member_id": 1}
+    ).to_list(None)
+    if {f["member_id"] for f in found} != set(cleaned):
+        raise HTTPException(400, "Everyone in a rotation must be in this family.")
+    return cleaned
+
+
+async def _turn_or_404(database, family_id: str, turn_id: str) -> dict:
+    turn = await database["turns"].find_one({"turn_id": turn_id, "family_id": family_id}, {"_id": 0})
+    if not turn:
+        raise HTTPException(404, "Rotation not found")
+    return turn
+
+
+@app.get("/api/turns")
+async def list_turns(user: dict = Depends(require_user), database=Depends(get_db)):
+    rows = await database["turns"].find(
+        {"family_id": user["family_id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(TURNS_PER_FAMILY_MAX)
+    return [public_turn(r) for r in rows]
+
+
+@app.post("/api/turns")
+async def create_turn(body: TurnIn, user: dict = Depends(require_full_member), database=Depends(get_db)):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "A rotation needs a name.")
+    if await database["turns"].count_documents({"family_id": user["family_id"]}) >= TURNS_PER_FAMILY_MAX:
+        raise HTTPException(400, f"A family can have up to {TURNS_PER_FAMILY_MAX} rotations.")
+    members = await _turn_members(database, user["family_id"], body.member_ids)
+    now = utcnow()
+    turn = {
+        "turn_id": new_id("turn"),
+        "family_id": user["family_id"],
+        "name": name,
+        "member_ids": members,
+        "current_member_id": members[0],
+        "history": [],
+        "created_at": now,
+        "updated_at": now,
+    }
+    turn["icon"], turn["icon_auto"] = _resolve_icon(body.icon, name)
+    await database["turns"].insert_one(turn)
+    return public_turn(turn)
+
+
+@app.patch("/api/turns/{turn_id}")
+async def update_turn(turn_id: str, body: TurnPatchIn, user: dict = Depends(require_full_member), database=Depends(get_db)):
+    turn = await _turn_or_404(database, user["family_id"], turn_id)
+    sent = body.model_dump(exclude_unset=True)
+    updates: dict = {}
+    if sent.get("name") is not None:
+        name = sent["name"].strip()
+        if not name:
+            raise HTTPException(400, "A rotation needs a name.")
+        updates["name"] = name
+        if turn.get("icon_auto", True) and "icon" not in sent:
+            updates["icon"] = guess_icon(name)
+            updates["icon_auto"] = True
+    if "icon" in sent:
+        updates["icon"], updates["icon_auto"] = _resolve_icon(sent["icon"], updates.get("name") or turn["name"])
+    members = turn.get("member_ids") or []
+    if sent.get("member_ids") is not None:
+        members = await _turn_members(database, user["family_id"], sent["member_ids"])
+        updates["member_ids"] = members
+    current = turn.get("current_member_id")
+    if sent.get("current_member_id") is not None:
+        seen = sent.get("seen_current_member_id")
+        if seen is not None and seen != public_turn(turn)["current_member_id"]:
+            raise HTTPException(409, "already_moved")
+        current = sent["current_member_id"]
+        if current not in members:
+            raise HTTPException(400, "That person is not in this rotation.")
+        updates["current_member_id"] = current
+    elif current not in members:
+        # Whoever had the turn was taken out of the rotation: it goes to the
+        # first person, rather than to nobody.
+        updates["current_member_id"] = members[0]
+    if not updates:
+        raise HTTPException(400, "No updates provided")
+    updates["updated_at"] = utcnow()
+    await database["turns"].update_one(
+        {"turn_id": turn_id, "family_id": user["family_id"]}, {"$set": updates})
+    return public_turn({**turn, **updates})
+
+
+@app.post("/api/turns/{turn_id}/next")
+async def next_turn(turn_id: str, body: TurnNextIn, user: dict = Depends(require_user), database=Depends(get_db)):
+    """Their turn is done: it passes to the next person in the rotation."""
+    turn = await _turn_or_404(database, user["family_id"], turn_id)
+    shown = public_turn(turn)
+    if shown["current_member_id"] != body.from_member_id:
+        raise HTTPException(409, "already_moved")
+    members = shown["member_ids"]
+    current = shown["current_member_id"]
+    nxt = members[(members.index(current) + 1) % len(members)]
+    history = ([{"member_id": current, "at": utcnow(), "by": user.get("name") or ""}]
+               + list(turn.get("history") or []))[:TURN_HISTORY_KEPT]
+    now = utcnow()
+    # Conditional on the turn still being where the tapper saw it. Two taps
+    # that both read the same state above: only one of them moves it.
+    result = await database["turns"].update_one(
+        {"turn_id": turn_id, "family_id": user["family_id"],
+         "current_member_id": turn.get("current_member_id"), "updated_at": turn.get("updated_at")},
+        {"$set": {"current_member_id": nxt, "history": history, "updated_at": now}},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "already_moved")
+    return public_turn({**turn, "current_member_id": nxt, "history": history, "updated_at": now})
+
+
+@app.delete("/api/turns/{turn_id}")
+async def delete_turn(turn_id: str, user: dict = Depends(require_full_member), database=Depends(get_db)):
+    result = await database["turns"].delete_one({"turn_id": turn_id, "family_id": user["family_id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Rotation not found")
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
 # Meal Planner
 # -----------------------------------------------------------------------------
 DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -19410,18 +20217,23 @@ async def create_meal(body: MealPlanIn, user: dict = Depends(require_user), data
 # Registered before /{meal_id} so "all" isn't captured as a meal id.
 @app.delete("/api/meals/all")
 async def clear_all_meals(user: dict = Depends(require_user), database=Depends(get_db)):
-    result = await database["meals"].delete_many({"family_id": user["family_id"]})
-    return {"deleted": result.deleted_count}
+    batch_id = new_id("tbatch")
+    full = [m async for m in database["meals"].find({"family_id": user["family_id"]}, {"_id": 0})]
+    await move_to_trash(database, user, "meal", full, batch_id=batch_id)
+    # Only what went into the bin (a meal added meanwhile stays).
+    result = await database["meals"].delete_many(
+        {"family_id": user["family_id"], "meal_id": {"$in": [m["meal_id"] for m in full]}})
+    return {"deleted": result.deleted_count, "batch_id": batch_id if full else None}
 
 
 @app.delete("/api/meals/{meal_id}")
 async def delete_meal(meal_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
-    result = await database["meals"].delete_one(
-        {"meal_id": meal_id, "family_id": user["family_id"]}
-    )
-    if result.deleted_count == 0:
+    meal = await database["meals"].find_one({"meal_id": meal_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not meal:
         raise HTTPException(404, "Meal not found")
-    return {"ok": True}
+    (trash_id,) = await move_to_trash(database, user, "meal", [meal])
+    await database["meals"].delete_one({"meal_id": meal_id, "family_id": user["family_id"]})
+    return {"ok": True, "trash_id": trash_id}
 
 
 class SavedPlanIn(BaseModel):
@@ -19503,10 +20315,15 @@ async def reuse_saved_plan(plan_id: str, user: dict = Depends(require_user), dat
 
 @app.delete("/api/meals/saved/{plan_id}")
 async def delete_saved_plan(plan_id: str, user: dict = Depends(require_user), database=Depends(get_db)):
+    plan = await database["meal_plans_saved"].find_one(
+        {"plan_id": plan_id, "family_id": user["family_id"]}, {"_id": 0})
+    trash_id = None
+    if plan:
+        (trash_id,) = await move_to_trash(database, user, "saved_plan", [plan])
     await database["meal_plans_saved"].delete_one(
         {"plan_id": plan_id, "family_id": user["family_id"]}
     )
-    return {"ok": True}
+    return {"ok": True, "trash_id": trash_id}
 
 
 RECIPE_LANGUAGE_NAMES = {
@@ -22444,6 +23261,277 @@ async def admin_reply_support_ticket(
 # -----------------------------------------------------------------------------
 # Railway entrypoint
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Recently deleted ("Récemment supprimés")
+# -----------------------------------------------------------------------------
+#
+# Asked for on 2026-11-10: "I can't put back recently deleted items... if I
+# mistakenly deleted my list I can restore recently deleted without putting
+# back all the list, and it should be the same for any place where we have
+# data stored, documents etc." Until then every delete but "clear the whole
+# list" was final.
+#
+# A delete MOVES the row here, whole, and out of its own collection, so no
+# screen, count, search or brief has to learn to skip deleted rows: they are
+# simply not there. Restoring puts the row back exactly as it was. Thirty days
+# after deletion the database erases the entry by itself (a TTL index on
+# expires_at); the listing also skips anything past it, whatever the TTL
+# monitor's timing.
+#
+# Decided with Roland, 2026-11-10:
+#   * the privacy policy says, in one line, that deleted items stay here 30
+#     days and are then erased;
+#   * health details (medicines, vaccinations) never come here: deleting them
+#     withdraws consent, which the policy promises is immediate (they get a
+#     short "Annuler" in the app instead);
+#   * a Coffre document here does not count toward the household's storage;
+#     restoring counts it again, and is refused if it no longer fits.
+#
+# A private item (a private card, any Coffre document, whose owner alone may
+# delete it) is listed and restorable by that person only; everything else by
+# the household, under the same rule its delete had.
+
+TRASH_DAYS = 30
+
+
+def _trash_label_expense(doc: dict) -> str:
+    who = (doc.get("merchant") or doc.get("description") or "").strip()
+    amount = doc.get("amount")
+    try:
+        figure = f"{float(amount):.2f}"
+    except (TypeError, ValueError):
+        figure = ""
+    return f"{who} · {figure}" if who and figure else (who or figure)
+
+
+# kind -> how a row of it is found, named, and who may bring it back.
+TRASH_KINDS = {
+    "shopping_item": {"collection": "shopping_list", "id": "item_id",
+                      "label": lambda d: d.get("name", ""), "full_member": False},
+    "card": {"collection": "cards", "id": "card_id",
+             "label": lambda d: d.get("title", ""), "full_member": False},
+    "vault_doc": {"collection": "vault", "id": "doc_id",
+                  "label": lambda d: d.get("title", ""), "full_member": True},
+    "expense": {"collection": "expenses", "id": "expense_id",
+                "label": _trash_label_expense, "full_member": True},
+    "meal": {"collection": "meals", "id": "meal_id",
+             "label": lambda d: d.get("title", ""), "full_member": False},
+    "saved_plan": {"collection": "meal_plans_saved", "id": "plan_id",
+                   "label": lambda d: d.get("name", ""), "full_member": False},
+}
+
+
+# The fields each kind's own visibility rule reads, kept beside the entry so
+# the bin asks the same question the list did: _card_visible_to for a card
+# (an assigned task is its parents' and assignee's, a private card its
+# author's), _may_see_vault_doc for a Coffre document (shared by name, or
+# its owner's).
+_TRASH_SIGHT_FIELDS = ("created_by_user_id", "shared", "visible_to", "owner_user_id", "visibility")
+
+
+def _trash_sight(kind: str, doc: dict) -> Optional[dict]:
+    if kind not in ("card", "vault_doc"):
+        return None
+    return {k: doc[k] for k in _TRASH_SIGHT_FIELDS if k in doc}
+
+
+def _trash_private_to(kind: str, doc: dict) -> Optional[str]:
+    """Whose eyes only, in the bin as before: a Coffre document is its owner's
+    (only the owner may delete it); a card is its author's when not shared."""
+    if kind == "vault_doc":
+        return doc.get("owner_user_id")
+    if kind == "card" and doc.get("shared", True) is False:
+        return doc.get("created_by_user_id")
+    return None
+
+
+async def move_to_trash(database, user: dict, kind: str, docs: list, *,
+                        batch_id: Optional[str] = None, extra: Optional[dict] = None) -> list:
+    """File `docs` (rows of `kind`, already read) in the bin. Returns their
+    trash ids. The caller deletes them from their own collection after."""
+    now = utcnow()
+    spec = TRASH_KINDS[kind]
+    entries = []
+    for doc in docs:
+        row = {k: v for k, v in doc.items() if k != "_id"}
+        entry = {
+            "trash_id": new_id("trash"),
+            "family_id": user["family_id"],
+            "kind": kind,
+            "ref": row.get(spec["id"]),
+            "label": str(spec["label"](row) or "")[:120],
+            "doc": row,
+            "extra": (extra or {}).get(row.get(spec["id"])) if extra else None,
+            "private_to": _trash_private_to(kind, row),
+            "sight": _trash_sight(kind, row),
+            "bytes": len((row.get("image_base64") or "").encode("utf-8")) if kind == "vault_doc" else 0,
+            "deleted_by": user["user_id"],
+            "deleted_by_name": user.get("name", ""),
+            "deleted_at": now,
+            "expires_at": now + timedelta(days=TRASH_DAYS),
+            "batch_id": batch_id,
+        }
+        entries.append(entry)
+    if entries:
+        await database["trash"].insert_many(entries)
+    return [e["trash_id"] for e in entries]
+
+
+async def make_room_in_trash_for_vault(database, user: dict, size: int) -> None:
+    """A document in the bin no longer counts toward the Coffre's storage, but
+    it is still held. So the bin holds at most as much as the plan's Coffre
+    does: past that, the oldest deleted documents are erased first, earlier
+    than 30 days. Without it, uploading and deleting in turn would store
+    without limit."""
+    sub = await build_subscription(user["family_id"])
+    limit = sub["limits"]["vault_bytes"]
+    rows = [e async for e in database["trash"].find(
+        {"family_id": user["family_id"], "kind": "vault_doc"},
+        {"_id": 0, "trash_id": 1, "bytes": 1, "deleted_at": 1}).sort("deleted_at", 1)]
+    held = sum(int(e.get("bytes") or 0) for e in rows)
+    evict = []
+    for e in rows:
+        if held + size <= limit:
+            break
+        evict.append(e["trash_id"])
+        held -= int(e.get("bytes") or 0)
+    if evict:
+        await database["trash"].delete_many({"trash_id": {"$in": evict}})
+
+
+def _trash_visible(entry: dict, user: dict) -> bool:
+    """The one rule for listing, restoring, erasing and the data copy: the
+    people who could see it before it was deleted, and nobody else."""
+    if entry.get("private_to") and entry["private_to"] != user["user_id"]:
+        return False
+    if TRASH_KINDS.get(entry.get("kind"), {}).get("full_member") and bool(user.get("is_helper")):
+        return False
+    sight = entry.get("sight")
+    if sight is not None:
+        if entry["kind"] == "card" and not _card_visible_to(sight, user["user_id"]):
+            return False
+        if entry["kind"] == "vault_doc" and not _may_see_vault_doc(sight, user):
+            return False
+    # Never a bare compare: a date read back from Mongo can be naive.
+    return not _expired(entry.get("expires_at"))
+
+
+def public_trash(entry: dict) -> dict:
+    return {
+        "trash_id": entry["trash_id"],
+        "kind": entry["kind"],
+        "label": entry.get("label", ""),
+        "deleted_by_name": entry.get("deleted_by_name", ""),
+        "deleted_at": iso(entry["deleted_at"]),
+        "expires_at": iso(entry["expires_at"]),
+        "batch_id": entry.get("batch_id"),
+    }
+
+
+async def _trash_entry_for(database, trash_id: str, user: dict) -> dict:
+    entry = await database["trash"].find_one(
+        {"trash_id": trash_id, "family_id": user["family_id"]}, {"_id": 0})
+    if not entry or not _trash_visible(entry, user):
+        raise HTTPException(404, "Not in Recently deleted")
+    return entry
+
+
+async def _restore_entry(database, entry: dict, user: dict) -> dict:
+    kind = entry["kind"]
+    spec = TRASH_KINDS[kind]
+    doc = dict(entry["doc"])
+    done = {"kind": kind, "ref": doc.get(spec["id"]), "label": entry.get("label", "")}
+    size = len((doc.get("image_base64") or "").encode("utf-8")) if kind == "vault_doc" else 0
+    if kind == "vault_doc":
+        # Back on the storage it left: refused, as a new upload would be, if
+        # it no longer fits the plan. Checked before the row is claimed, so a
+        # refusal leaves it in the bin.
+        sub = await build_subscription(user["family_id"])
+        family = await get_family_doc(user["family_id"])
+        if not is_admin_user(user) and family.get("vault_bytes_used", 0) + size > sub["limits"]["vault_bytes"]:
+            plan_limit_error(
+                family_id=user["family_id"], feature="vault_storage", current_plan=sub["plan"],
+                limit=sub["limits"]["vault_bytes"], used=family.get("vault_bytes_used", 0),
+                message="Not enough Coffre storage to restore this document.")
+    # Claim the row: of two restores at once (a double tap, two phones) only
+    # the one that removes it goes on, so nothing comes back twice.
+    if (await database["trash"].delete_one({"trash_id": entry["trash_id"]})).deleted_count == 0:
+        return done
+    # Already back by another way: leaving the bin is all there is to do.
+    if await database[spec["collection"]].find_one(
+            {spec["id"]: doc.get(spec["id"]), "family_id": user["family_id"]}, {"_id": 0, spec["id"]: 1}):
+        return done
+    try:
+        await database[spec["collection"]].insert_one(doc)
+        lines = [dict(line) for line in ((entry.get("extra") or {}).get("expense_items") or [])] \
+            if kind == "expense" else []
+        if lines:
+            await database["expense_items"].insert_many(lines)
+    except Exception:
+        # Not back, so not lost either: into the bin again.
+        await database["trash"].insert_one({k: v for k, v in entry.items() if k != "_id"})
+        raise
+    if size:
+        await database["families"].update_one(
+            {"family_id": user["family_id"]},
+            {"$inc": {"vault_bytes_used": size}, "$set": {"updated_at": utcnow()}})
+    return done
+
+
+@app.get("/api/trash")
+async def list_trash(user=Depends(require_user)):
+    """What this person may bring back, newest first."""
+    database = get_db()
+    rows = [e async for e in database["trash"].find(
+        {"family_id": user["family_id"]}, {"_id": 0, "doc": 0, "extra": 0}).sort("deleted_at", -1)]
+    return [public_trash(e) for e in rows if _trash_visible(e, user)][:500]
+
+
+@app.post("/api/trash/{trash_id}/restore")
+async def restore_trash(trash_id: str, user=Depends(require_user)):
+    database = get_db()
+    entry = await _trash_entry_for(database, trash_id, user)
+    return await _restore_entry(database, entry, user)
+
+
+class TrashBatchIn(BaseModel):
+    batch_id: str = Field(max_length=64)
+
+
+@app.post("/api/trash/restore-batch")
+async def restore_trash_batch(body: TrashBatchIn, user=Depends(require_user)):
+    """Everything one delete removed at once ("Annuler" after clearing a list)."""
+    database = get_db()
+    entries = [e async for e in database["trash"].find(
+        {"family_id": user["family_id"], "batch_id": body.batch_id}, {"_id": 0})]
+    restored = []
+    for entry in entries:
+        if not _trash_visible(entry, user):
+            continue
+        restored.append(await _restore_entry(database, entry, user))
+    return {"restored": len(restored)}
+
+
+@app.delete("/api/trash/{trash_id}")
+async def purge_trash(trash_id: str, user=Depends(require_user)):
+    """Erase one thing now instead of in 30 days."""
+    database = get_db()
+    await _trash_entry_for(database, trash_id, user)
+    await database["trash"].delete_one({"trash_id": trash_id})
+    return {"ok": True}
+
+
+@app.delete("/api/trash")
+async def empty_trash(user=Depends(require_user)):
+    """Erase now everything this person sees in the bin (nobody else's)."""
+    database = get_db()
+    mine = [e["trash_id"] async for e in database["trash"].find(
+        {"family_id": user["family_id"]}, {"_id": 0, "doc": 0, "extra": 0}) if _trash_visible(e, user)]
+    if mine:
+        await database["trash"].delete_many({"trash_id": {"$in": mine}})
+    return {"deleted": len(mine)}
+
+
 if __name__ == "__main__":
     import uvicorn
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from '../src/components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,10 +15,12 @@ import { useStore } from '../src/store';
 import { api, FamilyMember, Medicine, MemberJob, MemberJobsToday, MemberRecord, Redemption, Reward, StarTransaction, Vaccination } from '../src/api';
 import { KidPageTop } from '../src/components/KidPageTop';
 import { personTone } from '../src/homeFamily';
-import { localeFor } from '../src/utils/date';
+import { localDayIso, localeFor } from '../src/utils/date';
 import { dueState } from '../src/vaccinations';
 import { logger } from '../src/logger';
 import { apiErrorText } from '../src/apiError';
+import AppToast from '../src/components/AppToast';
+import { HEALTH_UNDO_MS, useToast } from '../src/hooks/useToast';
 
 type Kind = 'parent' | 'teen' | 'kid' | 'helper' | 'member';
 
@@ -343,10 +345,16 @@ export default function MemberProfile() {
   // survive. Each call returns the whole record, so the list redraws from
   // the server rather than from a guess about what it did.
   const [medBusy, setMedBusy] = useState<string | null>(null);
+  const { toast, showToast } = useToast();
   const [newMed, setNewMed] = useState(
     { name: '', dose: '', times: '', starts_on: '', ends_on: '' });
 
-  const medicines = record?.medicines ?? [];
+  const allMedicines = record?.medicines ?? [];
+  // Taken now, then the ones that stopped ("Médicaments passés"). Stopping
+  // keeps a medicine rather than erasing it: health details are not to be
+  // lost (Roland, 2026-11-11).
+  const medicines = allMedicines.filter((m) => !m.stopped_on);
+  const pastMedicines = allMedicines.filter((m) => m.stopped_on);
 
   /** "8:00, 14:00" -> ["8:00", "14:00"]. Split only — the SERVER decides what
    *  is a real time, so that the app and the web agree and neither invents a
@@ -412,12 +420,69 @@ export default function MemberProfile() {
     }
   }, [id, t, medError]);
 
-  const removeMedicine = useCallback((medId: string, name: string) => {
+  /** Erasing a health detail. It goes from the server at once: deleting is
+   *  how a parent withdraws consent to keep it, and the policy promises that
+   *  is immediate (GDPR art. 7(3), 17(1)(b)). The server hands this phone the
+   *  row as it was stored, and for 10 seconds "Annuler" writes it back
+   *  unchanged (same id, reminder marks included). Everything erased within
+   *  those 10 seconds comes back together, so a second erase never takes the
+   *  first one's way back. Nothing is kept anywhere after that. */
+  const pendingHealth = useRef<{ putBack: () => Promise<MemberRecord>; at: number }[]>([]);
+
+  const offerHealthUndo = useCallback((message: string, putBack: () => Promise<MemberRecord>) => {
+    const now = Date.now();
+    pendingHealth.current = [
+      ...pendingHealth.current.filter((p) => now - p.at < HEALTH_UNDO_MS),
+      { putBack, at: now },
+    ];
+    const offer = (text: string, tone: 'success' | 'error', label: string) => {
+      let pressed = false;
+      showToast(text, tone, {
+        label,
+        onPress: async () => {
+          if (pressed) return;
+          pressed = true;
+          const waiting = pendingHealth.current;
+          pendingHealth.current = [];
+          const failed: typeof waiting = [];
+          for (const p of waiting) {
+            try {
+              setRecord(await p.putBack());
+              setRecordState('ready');
+            } catch (e) {
+              logger.warn('health undo failed', e);
+              failed.push(p);
+            }
+          }
+          if (failed.length === 0) {
+            showToast(t('trash_restored'), 'success');
+          } else {
+            // Not lost: offered again, for as long as the first offer.
+            pendingHealth.current = failed.map((p) => ({ ...p, at: Date.now() }));
+            offer(t('rec_health_undo_failed'), 'error', t('rec_health_retry'));
+          }
+        },
+      }, HEALTH_UNDO_MS);
+    };
+    const many = pendingHealth.current.length;
+    offer(many > 1 ? t('rec_health_erased_n', { n: many }) : message, 'success', t('trash_undo'));
+  }, [showToast, t]);
+
+  const removeMedicine = useCallback((m: Medicine) => {
     const go = async () => {
-      setMedBusy(medId);
+      setMedBusy(m.med_id);
       try {
-        setRecord(await api.deleteMedicine(id, medId));
+        const res = await api.deleteMedicine(id, m.med_id);
+        setRecord(res);
         setRecordState('ready');
+        const row = res.erased;
+        offerHealthUndo(t('rec_health_erased', { name: m.name }), () => (row
+          ? api.putBackMedicine(id, row)
+          // A server from before put-back: write it down again from the screen.
+          : api.addMedicine(id, {
+            name: m.name, dose: m.dose, times: m.times, starts_on: m.starts_on,
+            ends_on: m.ends_on, note: m.note, stopped_on: m.stopped_on,
+          })));
       } catch (e) {
         logger.warn('medicine delete failed', e);
         Alert.alert(t('rec_med'), t('rec_save_failed'));
@@ -427,11 +492,16 @@ export default function MemberProfile() {
     };
     // Named in the question. "Remove this medicine?" on a list of four is a
     // question nobody can answer correctly.
-    Alert.alert(t('rec_med_remove_q', { name }), '', [
+    Alert.alert(t('rec_med_remove_q', { name: m.name }), t('rec_health_erase_body'), [
       { text: t('cancel'), style: 'cancel' },
       { text: t('remove'), style: 'destructive', onPress: () => { go(); } },
     ]);
-  }, [id, t]);
+  }, [id, t, offerHealthUndo]);
+
+  /** "Arrêté" today, by the phone's own calendar, or '' to take it again. */
+  const stopMedicine = useCallback((m: Medicine, stop: boolean) => {
+    saveMedicine(m.med_id, { stopped_on: stop ? localDayIso(new Date()) : '' });
+  }, [saveMedicine]);
 
   // --- vaccinations ------------------------------------------------------
   // Written per ENTRY, never by sending the whole list back: two parents
@@ -500,11 +570,18 @@ export default function MemberProfile() {
     }
   }, [id, t, vaxError]);
 
-  const removeVaccination = useCallback((vaxId: string) => {
+  const removeVaccination = useCallback((v: Vaccination) => {
     const go = async () => {
-      setVaxBusy(vaxId);
+      setVaxBusy(v.vax_id);
       try {
-        setRecord(await api.deleteVaccination(id, vaxId));
+        const res = await api.deleteVaccination(id, v.vax_id);
+        setRecord(res);
+        const row = res.erased;
+        offerHealthUndo(t('rec_health_erased', { name: v.name }), () => (row
+          ? api.putBackVaccination(id, row)
+          : api.addVaccination(id, {
+            name: v.name, given_on: v.given_on, next_due: v.next_due, note: v.note,
+          })));
       } catch (e) {
         logger.warn('vaccination delete failed', e);
         Alert.alert(t('rec_vax'), t('rec_save_failed'));
@@ -512,11 +589,11 @@ export default function MemberProfile() {
         setVaxBusy(null);
       }
     };
-    Alert.alert(t('rec_vax_remove_q'), '', [
+    Alert.alert(t('rec_vax_remove_q', { name: v.name }), t('rec_health_erase_body'), [
       { text: t('cancel'), style: 'cancel' },
       { text: t('rec_vax_remove'), style: 'destructive', onPress: () => { go(); } },
     ]);
-  }, [id, t]);
+  }, [id, t, offerHealthUndo]);
 
   const [avatar, setAvatar] = useState<string | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -847,7 +924,7 @@ export default function MemberProfile() {
                 Hidden entirely from a reader when empty, like the blank text
                 fields: an empty section invites a parent to fill it and tells
                 a carer nothing. */}
-            {record.can_edit || medicines.length > 0 ? (
+            {record.can_edit || allMedicines.length > 0 ? (
               <View style={styles.recCard} testID="record-medicines">
                 <View style={styles.recGroupRow}>
                   <Text style={styles.recGroup}>{t('rec_med')}</Text>
@@ -855,7 +932,9 @@ export default function MemberProfile() {
                 </View>
 
                 {medicines.length === 0 ? (
-                  <Text style={styles.recEmptyAll}>{t('rec_med_empty')}</Text>
+                  <Text style={styles.recEmptyAll}>
+                    {t(pastMedicines.length > 0 ? 'rec_med_none_now' : 'rec_med_empty')}
+                  </Text>
                 ) : medicines.map((m) => (
                   <View key={m.med_id} style={styles.vaxRow} testID={`med-${m.med_id}`}>
                     <View style={{ flex: 1, minWidth: 0 }}>
@@ -888,17 +967,67 @@ export default function MemberProfile() {
                     {medBusy === m.med_id ? (
                       <ActivityIndicator color={ui.muted} size="small" />
                     ) : record.can_edit ? (
-                      <PressScale
-                        testID={`med-remove-${m.med_id}`}
-                        onPress={() => removeMedicine(m.med_id, m.name)}
-                        style={styles.vaxRemove}
-                        accessibilityLabel={t('rec_med_remove')}
-                      >
-                        <Trash2 color={ui.muted} size={16} />
-                      </PressScale>
+                      <View style={styles.medActions}>
+                        <PressScale
+                          testID={`med-stop-${m.med_id}`}
+                          onPress={() => stopMedicine(m, true)}
+                          style={styles.medStop}
+                          accessibilityRole="button"
+                        >
+                          <Text style={styles.medStopText}>{t('rec_med_stop')}</Text>
+                        </PressScale>
+                        <PressScale
+                          testID={`med-remove-${m.med_id}`}
+                          onPress={() => removeMedicine(m)}
+                          style={styles.vaxRemove}
+                          accessibilityLabel={t('rec_med_remove')}
+                        >
+                          <Trash2 color={ui.muted} size={16} />
+                        </PressScale>
+                      </View>
                     ) : null}
                   </View>
                 ))}
+
+                {/* Médicaments passés: stopped, kept, out of the way. */}
+                {pastMedicines.length > 0 ? (
+                  <View testID="record-medicines-past" style={styles.medPast}>
+                    <Text style={styles.recGroup}>{t('rec_med_past')}</Text>
+                    {pastMedicines.map((m) => (
+                      <View key={m.med_id} style={styles.vaxRow} testID={`med-past-${m.med_id}`}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.vaxName} numberOfLines={2}>{m.name}</Text>
+                          {m.dose ? <Text style={styles.vaxWhen}>{m.dose}</Text> : null}
+                          <Text style={styles.vaxWhen} testID={`med-stopped-${m.med_id}`}>
+                            {t('rec_med_stopped_on', { date: m.stopped_on })}
+                          </Text>
+                        </View>
+                        {medBusy === m.med_id ? (
+                          <ActivityIndicator color={ui.muted} size="small" />
+                        ) : record.can_edit ? (
+                          <View style={styles.medActions}>
+                            <PressScale
+                              testID={`med-resume-${m.med_id}`}
+                              onPress={() => stopMedicine(m, false)}
+                              style={styles.medStop}
+                              accessibilityRole="button"
+                            >
+                              <Text style={styles.medStopText}>{t('rec_med_resume')}</Text>
+                            </PressScale>
+                            <PressScale
+                              testID={`med-remove-${m.med_id}`}
+                              onPress={() => removeMedicine(m)}
+                              style={styles.vaxRemove}
+                              accessibilityLabel={t('rec_med_remove')}
+                            >
+                              <Trash2 color={ui.muted} size={16} />
+                            </PressScale>
+                          </View>
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
 
                 {record.can_edit ? (
                   <View style={styles.vaxAdd}>
@@ -1073,7 +1202,7 @@ export default function MemberProfile() {
                       ) : record.can_edit ? (
                         <PressScale
                           testID={`vax-remove-${v.vax_id}`}
-                          onPress={() => removeVaccination(v.vax_id)}
+                          onPress={() => removeVaccination(v)}
                           style={styles.vaxRemove}
                           accessibilityLabel={t('rec_vax_remove')}
                         >
@@ -1261,6 +1390,7 @@ export default function MemberProfile() {
           }
         }}
       />
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />
     </SafeAreaView>
   );
 }
@@ -1382,6 +1512,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
              backgroundColor: ui.bg, borderWidth: 1, borderColor: '#E7E3DC' },
   medTimeText: { fontFamily: 'Figtree_700Bold', fontSize: 12, color: ui.text },
   vaxRemove: { padding: 6 },
+  medActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  medStop: {
+    height: 30, paddingHorizontal: 10, borderRadius: 15, borderWidth: 1, borderColor: ui.line,
+    backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center',
+  },
+  medStopText: { fontFamily: 'Figtree_700Bold', fontSize: 12, color: ui.text },
+  medPast: { marginTop: 6 },
   vaxAdd: { borderTopWidth: 1, borderTopColor: ui.line, paddingTop: 10, paddingBottom: 12, gap: 8 },
   vaxInputName: {
     borderWidth: 1, borderColor: ui.line, borderRadius: 12,

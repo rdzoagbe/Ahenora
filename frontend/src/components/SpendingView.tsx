@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View,
+  ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
-import { Camera, Plus, Trash2, TrendingDown, TrendingUp, Scale, Check, ShoppingCart } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { Camera, Plus, Trash2, TrendingDown, TrendingUp, Scale, Check, ShoppingCart, FileText } from 'lucide-react-native';
+import { pickPicture, type PictureSource } from '../pickPicture';
+import { pickListFile } from '../pickListFile';
 
 import { PressScale } from './PressScale';
 import ErrorState from './ErrorState';
@@ -18,6 +19,9 @@ import { splitQuantity } from '../shoppingAisles';
 import { localeFor } from '../utils/date';
 import { logger } from '../logger';
 import { apiErrorText } from '../apiError';
+import AppToast from './AppToast';
+import { useToast } from '../hooks/useToast';
+import { offerUndo } from '../trashUndo';
 
 const CATEGORY = 'Groceries';
 const MONTHS = 6;
@@ -25,6 +29,11 @@ const MONTHS = 6;
 // twenty with nothing to say there were more, and the list passed for the
 // whole four months the server had sent; "Show older" reaches the rest.
 const RECEIPTS_PAGE = 20;
+
+/** "octobre" → "Octobre": a month name at the start of a line. */
+function capitalise(text: string): string {
+  return text ? text.charAt(0).toLocaleUpperCase() + text.slice(1) : text;
+}
 
 /** "2026-07" → a Date on the first of that month, for formatting only. */
 function monthDate(key: string): Date {
@@ -83,10 +92,25 @@ const UNIT_SHORT: Record<string, string> = { kg: 'kg', g: 'g', l: 'L', ml: 'mL' 
  * figure does not announce itself — it quietly makes six months of history
  * false. Eight seconds of typing is right every time.
  */
-export function SpendingView({ embedded = false }: { embedded?: boolean }) {
+// Until the server has said (each read returns max_parts): a receipt in at
+// most three photos, as RECEIPT_MAX_PARTS on the server.
+const RECEIPT_MAX_PARTS = 3;
+
+type ShowToast = ReturnType<typeof useToast>['showToast'];
+
+export function SpendingView({ embedded = false, showToast: hostToast }: {
+  embedded?: boolean;
+  /** Embedded in Cuisine, the toast is the screen's: this view sits inside
+   *  Cuisine's scrolling content, where its own would sit off-screen. */
+  showToast?: ShowToast;
+}) {
   const ui = useUI();
   const { t, lang, bumpData, user } = useStore();
   const owner = user?.user_id ?? '';
+  // "Annuler" after deleting an expense (it goes to Recently deleted).
+  const own = useToast();
+  const toast = hostToast ? null : own.toast;
+  const showToast = hostToast ?? own.showToast;
   const styles = createStyles(ui);
   const locale = localeFor(lang);
   const money = (n: number) => formatMoney(n, lang);
@@ -112,6 +136,11 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   // shopping-list scan already takes.
   const [scanning, setScanning] = useState(false);
   const [scan, setScan] = useState<ScannedReceipt | null>(null);
+  // The photos the receipt on review was read from, top to bottom: the next
+  // part is read together with them. Empty for a PDF.
+  const [parts, setParts] = useState<string[]>([]);
+  // More pages were scanned than one receipt can be read from: how many were.
+  const [pagesCapped, setPagesCapped] = useState(0);
   const [keep, setKeep] = useState<boolean[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
   // The shopping list, read when a receipt is scanned, so the review can show
@@ -185,64 +214,149 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
   }, [shop, amount, when, splitOn, load, t]);
 
   /**
-   * Photograph the receipt and read it.
+   * Read a receipt: one photo, a long one in parts, or a file.
    *
    * Nothing is saved here. The lines come back as candidates and go into a
    * review sheet with the unsure ones unticked, exactly like the shopping-list
    * scan — a misread PRICE is worse than a misread item, because it does not
    * look wrong. It just quietly makes every later comparison false.
+   *
+   * A failed read leaves the review that was there (adding a part that could
+   * not be read does not lose the part that could).
    */
-  const captureReceipt = useCallback(async (source: 'camera' | 'library') => {
-    setScanError(null);
-    try {
-      if (Platform.OS !== 'web') {
-        const perm = source === 'camera'
-          ? await ImagePicker.requestCameraPermissionsAsync()
-          : await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) {
-          throw new Error(t(source === 'camera'
-            ? 'cam_camera_permission_denied' : 'cam_gallery_permission_denied'));
-        }
-      }
-      const res = source === 'camera'
-        // allowsEditing for the same reason as the document scanner: a
-        // receipt cropped to the receipt is a fraction of the bytes and a
-        // far easier read than a photo of a whole worktop.
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, allowsEditing: true, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, allowsEditing: true, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (res.canceled || !res.assets?.[0]) return;
-      const asset = res.assets[0];
-      // Native hands back base64; web hands back a data URL instead.
-      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64) return;
+  const figureOf = useCallback((r: ScannedReceipt) => {
+    const figure = r.total ?? r.lines_total;
+    return figure ? formatDecimal(figure, lang) : '';
+  }, [lang]);
 
+  const readReceipt = useCallback(async (
+    read: () => Promise<ScannedReceipt>,
+    pictures: string[],
+    from: 'photo' | 'file',
+    // The review this read continues ("Ajouter la suite"): what the person
+    // already decided there is kept, not thrown away by the new read.
+    previous?: { scan: ScannedReceipt; keep: boolean[]; shop: string; amount: string; when: string },
+    // Pages an iPhone's scanner shot past what one receipt is read from.
+    dropped = 0,
+  ) => {
+    try {
       setScanning(true);
-      const read = await api.scanReceipt(base64);
+      const result = await read();
       // The last receipt's note goes only once this one has been read: a
       // failed scan must not take away the way to undo the previous one.
       setTicked(null);
-      setScan(read);
+      setScan(result);
+      setParts(pictures);
+      // Said about THIS read only: how many pages it was read from, when more
+      // were shot. Any other read (a file, a part that fitted) clears it.
+      setPagesCapped(dropped > 0 ? pictures.length : 0);
       setUntick(new Set());
       // Only for the review: without the list, nothing is offered to tick.
       api.listShopping().then(setListItems).catch(() => setListItems([]));
       // Unsure lines start unticked. Saying "no" to a bad read must be the
-      // lazy option, not the diligent one.
-      setKeep(read.items.map((i) => !i.unsure));
-      setShop(read.shop || '');
-      // Pre-filled the way the reader types money: "9,95" in French, "9.95" in English.
-      setAmount(read.total ? formatDecimal(read.total, lang) : '');
+      // lazy option, not the diligent one. A line the person had unticked
+      // stays unticked when the receipt is read again with its next part.
+      const untickedBefore = new Set(previous
+        ? previous.scan.items.filter((_, i) => !previous.keep[i]).map((i) => i.name) : []);
+      setKeep(result.items.map((i) => !i.unsure && !untickedBefore.has(i.name)));
+      // A shop or a date the person corrected stays corrected.
+      setShop(previous && previous.shop !== (previous.scan.shop || '') ? previous.shop : (result.shop || ''));
+      setWhen(previous && previous.when !== (previous.scan.date || todayISO())
+        ? previous.when : (result.date || todayISO()));
+      // Pre-filled the way the reader types money: "9,95" in French, "9.95"
+      // in English. No printed total read (the top of a long receipt): the
+      // sum of the lines, and the review says that is what it is. A printed
+      // total, once read, wins over a figure typed while there was none.
+      const typed = previous && previous.amount !== figureOf(previous.scan) ? previous.amount : null;
+      setAmount(typed !== null && result.total == null ? typed : figureOf(result));
       // An unreadable date comes back empty and today is the honest default —
       // it is at least a date the person can see is wrong.
-      setWhen(read.date || todayISO());
     } catch (e: any) {
       logger.warn('receipt scan failed', e);
       // Running out of allowance must not cost the expense. The reading is what
       // the allowance buys; typing the total was always available and stays so.
-      setScanError(apiErrorText(e, t, 'exp_scan_failed'));
+      // The server's own reasons, in words that fit what was sent.
+      setScanError(e?.status === 413
+        ? t(from === 'file' ? 'scan_file_too_large' : 'exp_scan_photos_too_large')
+        : e?.status === 400
+          ? t(from === 'file' ? 'scan_file_not_supported' : 'scan_photo_open_failed')
+          : apiErrorText(e, t, 'exp_scan_failed'));
     } finally {
       setScanning(false);
     }
-  }, [t, lang, setTicked]);
+  }, [t, setTicked, figureOf]);
+
+  // allowsEditing for the same reason as the document scanner: a receipt
+  // cropped to the receipt is a fraction of the bytes and a far easier read
+  // than a photo of a whole worktop.
+  // The camera is the phone's document scanner: it frames the receipt itself,
+  // straightens it, and lets a long one be shot in up to `room` pages with
+  // its own "add a page" and "done" buttons, all read as one receipt. The
+  // plain camera (web, a build without the scanner) keeps the system crop
+  // step for the same reason: a receipt cropped to the receipt is a
+  // fraction of the bytes and a far easier read than a photo of a worktop.
+  const pickReceiptPages = useCallback(async (source: PictureSource, room: number): Promise<{ pages: string[]; dropped: number } | null> => {
+    const picked = await pickPicture(source, {
+      where: '/expenses/scan-receipt', allowsEditing: true, scanner: { maxPages: room },
+    });
+    if (!picked) return null;
+    if ('problem' in picked) {
+      setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
+      return null;
+    }
+    // pickPicture keeps at most `room` pages (an iPhone's scanner has no cap)
+    // and counts the rest; the review says so once the read has worked.
+    return { pages: picked.pages, dropped: picked.dropped };
+  }, [t]);
+
+  const captureReceipt = useCallback(async (source: PictureSource) => {
+    setScanError(null);
+    const got = await pickReceiptPages(source, RECEIPT_MAX_PARTS);
+    if (!got) return;
+    const { pages, dropped } = got;
+    await readReceipt(() => api.scanReceipt(pages), pages, 'photo', undefined, dropped);
+  }, [pickReceiptPages, readReceipt]);
+
+  /**
+   * The rest of a receipt too long for one sharp photo. The parts so far and
+   * the new one are read again together, as ONE receipt: the server joins
+   * where they overlap and takes the total from wherever it is printed.
+   */
+  const addReceiptPart = useCallback(async () => {
+    setScanError(null);
+    const room = (scan?.max_parts ?? RECEIPT_MAX_PARTS) - parts.length;
+    const got = await pickReceiptPages('camera', room);
+    if (!got) return;
+    const pictures = [...parts, ...got.pages];
+    const previous = scan ? { scan, keep, shop, amount, when } : undefined;
+    await readReceipt(() => api.scanReceipt(pictures, scan?.read_token), pictures, 'photo', previous, got.dropped);
+  }, [parts, scan, keep, shop, amount, when, pickReceiptPages, readReceipt]);
+
+  /** A digital receipt (PDF), or a picture of one that is not in the gallery. */
+  const importReceiptFile = useCallback(async () => {
+    setScanError(null);
+    let picked: Awaited<ReturnType<typeof pickListFile>>;
+    try {
+      picked = await pickListFile();
+    } catch (e: any) {
+      logger.warn('receipt file failed', e?.message || e);
+      setScanError(t('scan_file_open_failed'));
+      return;
+    }
+    if (!picked) return;
+    if ('problem' in picked) {
+      setScanError(t({
+        too_large: 'scan_file_too_large',
+        not_supported: 'scan_file_not_supported',
+        heic: 'scan_file_heic',
+        update_needed: 'vault_files_update_needed',
+      }[picked.problem]));
+      return;
+    }
+    const { kind, base64 } = picked;
+    if (kind === 'pdf') await readReceipt(() => api.scanReceiptPdf(base64), [], 'file');
+    else await readReceipt(() => api.scanReceipt([base64]), [base64], 'file');
+  }, [t, readReceipt]);
 
   /** Commit the reviewed receipt: the expense, and the lines kept with it. */
   // Items on the list this receipt shows were bought, from the lines kept.
@@ -305,6 +419,8 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
       setListItems([]);
       setUntick(new Set());
       setScan(null);
+      setParts([]);
+      setPagesCapped(0);
       setKeep([]);
       setShop('');
       setAmount('');
@@ -333,21 +449,30 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
 
   const remove = useCallback(async (id: string) => {
     try {
-      await api.deleteExpense(id);
+      const res = await api.deleteExpense(id);
       await load();
+      // Its receipt lines go with it, and come back with it.
+      offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] }, load);
     } catch (e) {
       logger.warn('expense delete failed', e);
       Alert.alert(t('exp_save_failed'), apiErrorText(e, t, 'err_please_try_again'));
     }
-  }, [load, t]);
+  }, [load, t, showToast]);
 
-  // The month to lead with: the newest finished month if there is one, because
-  // that is the month we can actually say something about. Otherwise the month
-  // in progress, shown without a comparison.
-  const lead = useMemo(() => {
-    if (!overview) return null;
-    const finished = overview.months.filter((m) => m.complete && m.count > 0);
-    return finished.length ? finished[finished.length - 1] : overview.current;
+  // "Ce mois-ci" is this month, so far. It used to lead with the newest
+  // FINISHED month whenever there was one (the month it could compare), so on
+  // 9 November it showed October and left November's receipts out (Roland,
+  // 2026-11-09). The finished month is still there, on its own line beneath,
+  // with its comparison: never mixed into this month's number.
+  const lead = overview?.current ?? null;
+  // Last month is the calendar month before this one, even with no receipts:
+  // an empty October must read as empty, not be skipped for September (a
+  // month of forgotten receipts would otherwise look like restraint). Shown
+  // once the family has any finished month with receipts at all.
+  const lastMonth = useMemo(() => {
+    if (!overview || overview.months.length < 2) return null;
+    if (!overview.months.some((m) => m.complete && m.count > 0)) return null;
+    return overview.months[overview.months.length - 2];
   }, [overview]);
 
   const monthName = (key: string) =>
@@ -360,7 +485,27 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
     new Date(`${iso}T00:00:00`).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
 
   const comparison = overview?.comparison;
-  const showsComparison = Boolean(comparison && lead && comparison.month === lead.month);
+  // The average month, over the FINISHED months that have receipts: the month
+  // still running would pull it down, and an empty month is more likely
+  // forgotten receipts than a month of nothing bought.
+  // Two finished months at least: one month alone is that month, not an
+  // average.
+  const monthAverage = useMemo(() => {
+    const done = (overview?.months ?? []).filter((m) => m.complete && m.count > 0);
+    if (done.length < 2) return null;
+    return { amount: done.reduce((a, m) => a + m.total, 0) / done.length, months: done.length };
+  }, [overview]);
+
+  // The months to list, newest first, from the first month that has a
+  // receipt: months before the family started would read as forgotten
+  // receipts. An empty month AFTER that still shows, as empty.
+  const monthsShown = useMemo(() => {
+    const months = overview?.months ?? [];
+    const first = months.findIndex((m) => m.count > 0);
+    return first < 0 ? months.slice(-1) : months.slice(first).reverse();
+  }, [overview]);
+
+  const showsComparison = Boolean(comparison && lastMonth && comparison.month === lastMonth.month);
   const difference = comparison ? comparison.difference : 0;
   const meaningful = Math.abs(difference) >= 5;
 
@@ -447,7 +592,20 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
               </PressScale>
             </View>
           ) : null}
-          {scanError ? <Text style={styles.scanErr}>{scanError}</Text> : null}
+          {!scan ? (
+            // A digital receipt (PDF from an email or the shop's app), or a
+            // picture of one saved in Files: no photo of paper at all.
+            <PressScale
+              testID="exp-scan-file"
+              onPress={importReceiptFile}
+              disabled={scanning}
+              style={[styles.fileRow, scanning && styles.dim]}
+            >
+              <FileText color={ui.muted} size={15} />
+              <Text style={styles.quietText}>{t('exp_scan_file')}</Text>
+            </PressScale>
+          ) : null}
+          {scanError && !scan ? <Text style={styles.scanErr}>{scanError}</Text> : null}
 
           {/* One month or six — the same screen, so there is nothing new to learn. */}
           <View style={styles.seg}>
@@ -483,50 +641,91 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                     </View>
                   ))}
                 </View>
+
+                {/* Every month, in words: what was spent in it and on how many
+                    receipts, newest first (Roland, 2026-11-09: "so we know what
+                    was spent in that month"). The bars above only show shape. */}
+                <View style={styles.monthList} testID="exp-month-list">
+                  {monthsShown.map((m) => (
+                    <View
+                      key={m.month}
+                      style={styles.monthRow}
+                      testID={`exp-month-${m.month}`}
+                      accessible
+                      accessibilityLabel={`${capitalise(monthName(m.month))}: ${
+                        m.count > 0 ? `${money(m.total)}, ${shopsLabel(m.count)}` : t('exp_month_none')}`}
+                    >
+                      <Text style={[styles.monthName, !m.complete && styles.colLblNow]}>
+                        {capitalise(monthName(m.month))}
+                        {!m.complete ? ` · ${t('exp_so_far')}` : ''}
+                      </Text>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.monthAmount}>{m.count > 0 ? money(m.total) : '—'}</Text>
+                        <Text style={styles.monthCount}>{m.count > 0 ? shopsLabel(m.count) : t('exp_month_none')}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+                {monthAverage ? (
+                  <View style={styles.pending} testID="exp-month-average">
+                    <Text style={styles.lastMonth}>
+                      {t(monthAverage.months === 1 ? 'exp_month_average_one' : 'exp_month_average_n', {
+                        amount: money(monthAverage.amount),
+                        n: monthAverage.months,
+                      })}
+                    </Text>
+                  </View>
+                ) : null}
               </>
             ) : (
               <>
                 <Text style={styles.lbl}>
-                  {lead ? monthName(lead.month) : ''}
-                  {lead && !lead.complete ? ` · ${t('exp_so_far')}` : ''}
+                  {lead ? `${monthName(lead.month)} · ${t('exp_so_far')}` : ''}
                 </Text>
                 <Text style={styles.big}>{money(lead?.total ?? 0)}</Text>
                 {/* How much of the month this number actually covers. Without it,
                     a month where four receipts were forgotten reads as restraint. */}
                 <Text style={styles.sub}>{shopsLabel(lead?.count ?? 0)}</Text>
 
-                {showsComparison && comparison ? (
-                  meaningful ? (
-                    <View style={styles.compare}>
-                      {difference > 0
-                        ? <TrendingUp color={ui.orangeDeep} size={16} />
-                        : <TrendingDown color={ui.mintText} size={16} />}
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.compareText, difference < 0 && styles.compareGood]}>
+                {lastMonth ? (
+                  <View style={styles.pending} testID="exp-last-month">
+                    <Text style={styles.lastMonth}>
+                      {t('exp_last_month', {
+                        month: capitalise(monthName(lastMonth.month)),
+                        amount: money(lastMonth.total),
+                        count: shopsLabel(lastMonth.count),
+                      })}
+                    </Text>
+                    {showsComparison && comparison ? (
+                      meaningful ? (
+                        <View style={styles.compareRow}>
                           {difference > 0
-                            ? t('exp_more_usual', { amount: money(Math.abs(difference)) })
-                            : t('exp_less_usual', { amount: money(Math.abs(difference)) })}
-                        </Text>
-                        {/* "Usual" says what it means, on the line beneath it. */}
-                        <Text style={styles.compareWhy}>
-                          {t('exp_usual_note', {
-                            months: comparison.basis_months.map(monthName).join(', '),
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.compare}>
-                      <Text style={styles.compareWhy}>{t('exp_same_usual')}</Text>
-                    </View>
-                  )
+                            ? <TrendingUp color={ui.orangeDeep} size={16} />
+                            : <TrendingDown color={ui.mintText} size={16} />}
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.compareText, difference < 0 && styles.compareGood]}>
+                              {difference > 0
+                                ? t('exp_more_usual', { amount: money(Math.abs(difference)) })
+                                : t('exp_less_usual', { amount: money(Math.abs(difference)) })}
+                            </Text>
+                            {/* "Usual" says what it means, on the line beneath it. */}
+                            <Text style={styles.compareWhy}>
+                              {t('exp_usual_note', {
+                                months: comparison.basis_months.map(monthName).join(', '),
+                              })}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={styles.compareWhy}>{t('exp_same_usual')}</Text>
+                      )
+                    ) : (
+                      <Text style={styles.compareWhy}>{t('exp_not_enough_yet')}</Text>
+                    )}
+                  </View>
                 ) : (
                   <View style={styles.pending}>
-                    <Text style={styles.compareWhy}>
-                      {overview && overview.current.count > 0 && !overview.comparison
-                        ? t('exp_not_enough_yet')
-                        : t('exp_wait_for_month_end', { month: monthName(overview?.current.month ?? '') })}
-                    </Text>
+                    <Text style={styles.compareWhy}>{t('exp_not_enough_yet')}</Text>
                   </View>
                 )}
               </>
@@ -648,14 +847,56 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
               {/* The arithmetic, reported and never repaired. If the lines do
                   not add up to the printed total, something was misread — and
                   a wrong price is silent in a way a wrong name is not. */}
-              {!scan.reconciles ? (
+              {scan.reconciles === false ? (
                 <View style={styles.warn}>
                   <Text style={styles.warnText}>
                     {t('exp_scan_mismatch', {
-                      lines: money(scan.lines_total), total: money(scan.total),
+                      lines: money(scan.lines_total), total: money(scan.total ?? 0),
                     })}
                   </Text>
                 </View>
+              ) : null}
+              {/* No printed total in what was read: the amount is the sum of
+                  the lines, said so, and the bottom of the receipt is one
+                  photo away. */}
+              {scan.total == null ? (
+                <View testID="exp-scan-no-total" style={styles.warn}>
+                  <Text style={styles.warnText}>{t('exp_scan_no_total', { lines: money(scan.lines_total) })}</Text>
+                </View>
+              ) : null}
+              {(scan.skipped ?? 0) > 0 ? (
+                <Text testID="exp-scan-missed" style={styles.hint}>
+                  {t('exp_scan_missed', { n: scan.skipped ?? 0 })}
+                </Text>
+              ) : null}
+              {(scan.left_out ?? 0) > 0 ? (
+                <Text testID="exp-scan-left-out" style={styles.hint}>
+                  {t('exp_scan_left_out', { n: scan.left_out ?? 0 })}
+                </Text>
+              ) : null}
+              {(scan.parts ?? 1) > 1 ? (
+                <Text testID="exp-scan-parts" style={styles.hint}>{t('exp_scan_parts', { n: scan.parts ?? 1 })}</Text>
+              ) : null}
+              {pagesCapped > 0 ? (
+                <Text testID="exp-scan-pages-capped" style={styles.hint}>{t('exp_scan_pages_capped', { n: pagesCapped })}</Text>
+              ) : null}
+              {/* The rest of a receipt too long for one sharp photo. */}
+              {/* Said here, by the button, not at the top of a screen the
+                  person has scrolled away from. */}
+              {scanError ? <Text testID="exp-scan-review-error" style={styles.scanErr}>{scanError}</Text> : null}
+              {parts.length > 0 && parts.length < (scan.max_parts ?? RECEIPT_MAX_PARTS) ? (
+                <PressScale
+                  testID="exp-scan-add-part"
+                  onPress={addReceiptPart}
+                  disabled={scanning}
+                  style={[styles.ghost, scanning && styles.dim]}
+                >
+                  <Camera color={ui.text} size={16} />
+                  <Text style={styles.ghostText}>{scanning ? t('exp_scan_reading') : t('exp_scan_add_part')}</Text>
+                </PressScale>
+              ) : null}
+              {parts.length > 0 && parts.length < (scan.max_parts ?? RECEIPT_MAX_PARTS) ? (
+                <Text style={styles.hint}>{t('exp_scan_add_part_hint')}</Text>
               ) : null}
 
               <TextInput
@@ -775,7 +1016,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
                         : t('exp_save_tick_n', { n: toTick.length })}
                 </Text>
               </PressScale>
-              <PressScale onPress={() => { setScan(null); setKeep([]); }} style={styles.quiet}>
+              <PressScale onPress={() => { setScan(null); setKeep([]); setParts([]); setPagesCapped(0); }} style={styles.quiet}>
                 <Text style={styles.quietText}>{t('cancel')}</Text>
               </PressScale>
             </View>
@@ -842,6 +1083,7 @@ export function SpendingView({ embedded = false }: { embedded?: boolean }) {
           ) : null}
         </Wrapper>
       )}
+      {hostToast ? null : <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />}
     </View>
   );
 }
@@ -880,9 +1122,16 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   compareText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.orangeDeep },
   compareGood: { color: ui.mintText },
   compareWhy: { fontFamily: 'Figtree_500Medium', fontSize: 11.5, color: ui.muted, marginTop: 2 },
-  pending: { backgroundColor: ui.soft, borderRadius: 12, padding: 10 },
+  pending: { backgroundColor: ui.soft, borderRadius: 12, padding: 10, gap: 4 },
+  lastMonth: { fontFamily: 'Figtree_700Bold', fontSize: 13.5, color: ui.text },
+  compareRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 2 },
 
   chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 96, marginTop: 4 },
+  monthList: { marginTop: 6 },
+  monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 9, borderTopWidth: 1, borderTopColor: ui.line },
+  monthName: { fontFamily: 'Figtree_700Bold', fontSize: 14.5, color: ui.text, flex: 1 },
+  monthAmount: { fontFamily: 'Figtree_800ExtraBold', fontSize: 15, color: ui.text },
+  monthCount: { fontFamily: 'Figtree_500Medium', fontSize: 12, color: ui.muted },
   col: { flex: 1, height: '100%', justifyContent: 'flex-end', alignItems: 'center', gap: 4 },
   stick: { width: '100%', borderRadius: 6, backgroundColor: ui.orangeSoft, minHeight: 3 },
   stickNow: { backgroundColor: ui.orange },
@@ -927,6 +1176,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   splitLabel: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14.5 },
   splitSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 2 },
   quiet: { alignItems: 'center', paddingVertical: 10 },
+  fileRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8 },
   actionRow: { flexDirection: 'row', gap: 8 },
   actionHalf: { flex: 1, marginTop: 0 },
   ghost: {

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
+import { pickPicture } from '../../src/pickPicture';
 import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, CalendarClock, Share2, Image as ImageIcon, Lock, Users, Search } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
@@ -34,6 +34,7 @@ import { CATEGORY_STATIC } from '../../src/documentCategories';
 import { useStore } from '../../src/store';
 
 import { api, logEvent, Entitlements, ExpiryAlert, FamilyMember, VaultDoc, VaultVisibility } from '../../src/api';
+import { offerUndo } from '../../src/trashUndo';
 import { logger } from '../../src/logger';
 import { apiErrorText } from '../../src/apiError';
 import { refreshOutcome } from '../../src/refreshOutcome';
@@ -295,27 +296,16 @@ export default function Vault() {
   const closeAdd = () => setShowAdd(false);
 
   const pickImage = async () => {
-    try {
-      if (Platform.OS !== 'web') {
-        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) {
-          Alert.alert(t('vault_permission_needed'), t('vault_gallery_access_required'));
-          return;
-        }
-      }
-      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, base64: true, quality: 0.6 });
-      if (!res.canceled && res.assets?.[0]) {
-        const asset = res.assets[0];
-        const imageValue = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-        setImage(imageValue);
-        setMimeType('image/jpeg');
-        setFileName(null);
-        if (!title.trim() && asset.fileName) setTitle(asset.fileName.replace(/\.[^.]+$/, ''));
-      }
-    } catch (e: any) {
-      logger.warn('pickImage failed:', e?.message || e);
+    const picked = await pickPicture('library', { where: '/vault', quality: 0.6 });
+    if (!picked) return;
+    if ('problem' in picked) {
       Alert.alert(t('vault_could_not_open_gallery'), t('vault_please_try_again'));
+      return;
     }
+    setImage(`data:image/jpeg;base64,${picked.base64}`);
+    setMimeType('image/jpeg');
+    setFileName(null);
+    if (!title.trim() && picked.fileName) setTitle(picked.fileName.replace(/\.[^.]+$/, ''));
   };
 
   const pickDocument = async () => {
@@ -432,8 +422,10 @@ export default function Vault() {
     setDocs((prev) => prev.filter((d) => d.doc_id !== doc.doc_id));
     setPreview(null);
     try {
-      await api.deleteVaultDoc(doc.doc_id);
-      showToast(t('vault_document_deleted'), 'success');
+      const res = await api.deleteVaultDoc(doc.doc_id);
+      // In Recently deleted for 30 days, where it no longer counts toward the
+      // storage; "Annuler" brings it straight back (if it still fits).
+      offerUndo(showToast, t, t('vault_document_deleted'), { trashIds: [res?.trash_id] }, load);
     } catch (e: any) {
       logger.warn('Delete vault document failed:', e?.message || e);
       setDocs(previous);
@@ -1019,7 +1011,7 @@ export default function Vault() {
       />
 
       <LoadingOverlay visible={loading} label={t('vault_loading')} />
-      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />
     </SwipeableTabView>
   );
 }

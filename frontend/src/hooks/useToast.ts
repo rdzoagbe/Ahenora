@@ -16,6 +16,12 @@ export type ToastState = {
  * screen unmounted mid-toast set state on a gone component. Four screens each
  * carried their own timer-less copy of this; they now share it.
  */
+// A toast with a way back ("Annuler") stays long enough to reach for it.
+export const ACTION_TOAST_MS = 6000;
+// Erasing a health detail is said once, with "Annuler" for 10 seconds
+// (Roland, 2026-11-11).
+export const HEALTH_UNDO_MS = 10000;
+
 export function useToast(duration = 2300) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -34,10 +40,13 @@ export function useToast(duration = 2300) {
       // One optional way back. The capture bar decides where a typed line
       // goes, so a wrong guess has to cost a tap, not a hunt.
       action?: { label: string; onPress: () => void },
+      // How long this one stays, when it is not the screen's usual.
+      ms?: number,
     ) => {
       clear();
       setToast({ message, tone, action });
-      timer.current = setTimeout(() => setToast(null), duration);
+      timer.current = setTimeout(() => setToast(null),
+        ms ?? (action ? Math.max(duration, ACTION_TOAST_MS) : duration));
     },
     [clear, duration],
   );

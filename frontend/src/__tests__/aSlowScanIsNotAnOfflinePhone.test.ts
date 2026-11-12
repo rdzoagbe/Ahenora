@@ -40,6 +40,7 @@ const API_ERROR = readFileSync(join(__dirname, '..', 'apiError.ts'), 'utf8');
 const I18N = readFileSync(join(__dirname, '..', 'i18n.ts'), 'utf8');
 const CAMERA = readFileSync(
   join(__dirname, '..', 'components', 'CameraCaptureModal.tsx'), 'utf8');
+const PICKER = readFileSync(join(__dirname, '..', 'pickPicture.ts'), 'utf8');
 const SPENDING = readFileSync(
   join(__dirname, '..', 'components', 'SpendingView.tsx'), 'utf8');
 
@@ -139,23 +140,29 @@ describe('the photo is cropped before it is uploaded', () => {
 
   it('offers it on the receipt scanner too', () => {
     // Same round trip, same megabytes, same 30-second abort.
-    expect(SPENDING.match(/allowsEditing: true/g) || []).toHaveLength(2);
+    // One call now covers camera and gallery (pickPicture.ts).
+    expect(SPENDING).toContain("where: '/expenses/scan-receipt', allowsEditing: true, scanner: { maxPages: room },");
   });
 
   it('keeps one set of capture options for camera and library', () => {
     // They drifted apart once already; a shared object is why they cannot.
-    expect(CAMERA).toContain('launchCameraAsync(shot)');
-    expect(CAMERA).toContain('launchImageLibraryAsync(shot)');
+    // Every picture in the app now comes through pickPicture.ts.
+    expect(PICKER).toContain('launchCameraAsync(shot)');
+    expect(PICKER).toContain('launchImageLibraryAsync(shot)');
+    expect(CAMERA).toContain("pickPicture(source, { where: '/vision/extract', allowsEditing: true, scanner: { maxPages: 1 } })");
   });
 
   it('tries the OS document scanner first, and only for the camera', () => {
     // The automatic framing that was asked for. It is reached through the
     // wrapper, never the plugin, and only on the camera path: neither
     // platform's scanner works on a photo already in the gallery.
-    expect(CAMERA).toContain("from '../documentScanner'");
-    expect(CAMERA).toContain("if (source === 'camera') {");
-    expect(CAMERA.indexOf('await scanDocument()')).toBeLessThan(
-      CAMERA.indexOf('launchCameraAsync(shot)'));
+    // Through the shared picker now (pickPicture.ts), which opens the scanner
+    // before the plain camera, and only when the source is the camera.
+    expect(CAMERA).toContain('scanner: { maxPages: 1 }');
+    expect(PICKER).toContain("from './documentScanner'");
+    expect(PICKER).toContain("if (native && source === 'camera' && options.scanner) {");
+    expect(PICKER.indexOf('await scanDocumentPages(max)')).toBeLessThan(
+      PICKER.indexOf('launchCameraAsync(shot)'));
   });
 
   it('is gated by the runtime version, not by a JavaScript guard', () => {

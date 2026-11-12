@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal, Platform } from 'react-native';
+import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useClientValue } from '../../src/hooks/useClientValue';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , ListChecks, Leaf, Shuffle, Tag, ReceiptText, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , FileText, ListChecks, Leaf, Shuffle, Tag, ReceiptText, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
@@ -22,7 +21,7 @@ import { TabScreen } from '../../src/components/TabScreen';
 import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
 
 import { useStore } from '../../src/store';
-import { api, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
+import { api, reportPictureProblem, MealPlan, ShoppingItem, ShoppingHistoryEntry, SavedMealPlan, Diet, AiRecipe,
   FamilyAllergy, FrequentItem, ShopPrices, ShopDue } from '../../src/api';
 import { suggestFromReceipts, priceForItem, priceLabel, lastPriceLine, splitTyped, groupByShop, estimateFromGroups, parseNeed, findNameMatch, fold } from '../../src/shopPrices';
 import { formatMoney } from '../../src/money';
@@ -38,6 +37,9 @@ import { recipeMethod } from '../../src/recipeSteps';
 import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '../../src/kitchenWeek';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
+import { pickListFile } from '../../src/pickListFile';
+import { offerUndo } from '../../src/trashUndo';
+import { pickPicture, type PictureSource } from '../../src/pickPicture';
 import { SECTION_ART } from '../../src/sectionArt';
 
 type KitchenView = 'shop' | 'meal' | 'spend';
@@ -409,6 +411,11 @@ export default function Kitchen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanItems, setScanItems] = useState<{ name: string; unsure: boolean; checked: boolean }[]>([]);
   const [scanAdding, setScanAdding] = useState(false);
+  // What was read, so the review says "your PDF" rather than "your photo",
+  // and offers another file rather than another photo.
+  const [scanSource, setScanSource] = useState<'photo' | 'pdf' | 'image_file'>('photo');
+  // Items read past the server's limit: said in the review, never dropped quietly.
+  const [scanLeftOut, setScanLeftOut] = useState(0);
 
   const openScan = useCallback(() => {
     setScanPhase('idle');
@@ -417,46 +424,103 @@ export default function Kitchen() {
     setShowScan(true);
   }, []);
 
-  const pickScan = useCallback(async (source: 'camera' | 'library') => {
-    setScanError(null);
-    try {
-      if (Platform.OS !== 'web') {
-        if (source === 'camera') {
-          const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-        } else {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
-        }
-      }
-      const res = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (res.canceled || !res.assets?.[0]) return;
-      // Native supplies base64 directly; web supplies a data URL instead.
-      const asset = res.assets[0];
-      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64) return;
+  // One way into the review for a photo and a PDF alike.
+  const readScan = useCallback(async (
+    source: 'photo' | 'pdf' | 'image_file',
+    read: () => Promise<{ items: { name: string; unsure: boolean }[]; left_out?: number }>,
+  ) => {
+    setScanPhase('reading');
+    setScanSource(source);
+    setScanLeftOut(0);
+    const { items, left_out: leftOut } = await read();
+    setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
+    setScanLeftOut(leftOut ?? 0);
+    setScanPhase('review');
+  }, []);
 
-      setScanPhase('reading');
-      const { items } = await api.scanShoppingList(base64);
-      setScanItems(items.map((i) => ({ ...i, checked: !i.unsure })));
-      setScanPhase('review');
+  const scanFailed = useCallback((e: any, fallbackKey: string) => {
+    setScanPhase('idle');
+    // Out of AI allowance is not a failure of the app, and it must not be a
+    // dead end: the sheet closes and the manual add takes over, because the
+    // allowance buys the SORTING, never the doing. Same decision the document
+    // scan already makes when it runs out.
+    if (isAiAllowanceError(e)) {
+      setShowScan(false);
+      setScanError(null);
+      showToast(t('err_ai_allowance'), 'info');
+      return;
+    }
+    setScanError(apiErrorText(e, t, fallbackKey));
+  }, [t, showToast]);
+
+  const pickScan = useCallback(async (source: PictureSource) => {
+    setScanError(null);
+    // Getting the picture and reading it fail for different reasons and are
+    // told differently (pickPicture.ts says why).
+    // The camera is the phone's document scanner, as on Home: it frames the
+    // list itself and straightens it.
+    const picked = await pickPicture(source, { where: '/shopping/scan', scanner: { maxPages: 1 } });
+    if (!picked) return;
+    if ('problem' in picked) {
+      setScanError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
+      return;
+    }
+    // An iPhone's scanner lets more pages be shot than are read here.
+    if (picked.dropped > 0) showToast(t('scan_first_page_only'), 'info');
+    try {
+      await readScan('photo', () => api.scanShoppingList(picked.base64));
     } catch (e: any) {
-      setScanPhase('idle');
-      // Out of AI allowance is not a failure of the app, and it must not be a
-      // dead end: the sheet closes and the manual add takes over, because the
-      // allowance buys the SORTING, never the doing. Same decision the document
-      // scan already makes when it runs out.
-      if (isAiAllowanceError(e)) {
-        setShowScan(false);
-        setScanError(null);
-        showToast(t('err_ai_allowance'), 'info');
+      // A 4xx answer, kept for the admin panel: the server does not log it as
+      // an error, and request() already reports a 5xx.
+      if (e?.status >= 400 && e.status < 500 && e.status !== 402) {
+        reportPictureProblem('/shopping/scan', `${source} read: status ${e.status}`);
+      }
+      scanFailed(e, 'scan_failed');
+    }
+  }, [t, readScan, scanFailed, showToast]);
+
+  // A list that arrived as a FILE: a PDF (an email, a school or club list,
+  // one typed on a computer) or a picture that is not in the gallery (saved
+  // from an email, in Files, in Drive). Read the same way, into the same
+  // ticked review; which reader is decided by what the file is.
+  const pickScanFile = useCallback(async () => {
+    setScanError(null);
+    let picked: Awaited<ReturnType<typeof pickListFile>>;
+    try {
+      picked = await pickListFile();
+    } catch (e: any) {
+      // Opening the file failed on this phone (an iCloud file not downloaded,
+      // a provider that went away): nothing was sent, so it is not the
+      // network's fault and must not be told as "no connection".
+      logger.warn('pickListFile failed:', e?.message || e);
+      setScanError(t('scan_file_open_failed'));
+      return;
+    }
+    if (!picked) return;
+    if ('problem' in picked) {
+      setScanError(t({
+        too_large: 'scan_file_too_large',
+        not_supported: 'scan_file_not_supported',
+        heic: 'scan_file_heic',
+        update_needed: 'vault_files_update_needed',
+      }[picked.problem]));
+      return;
+    }
+    const { kind, base64 } = picked;
+    try {
+      if (kind === 'pdf') await readScan('pdf', () => api.scanShoppingPdf(base64));
+      else await readScan('image_file', () => api.scanShoppingList(base64));
+    } catch (e: any) {
+      // The server's own reasons, said in the sheet's words: too big (or too
+      // many pages); not something it can open after all.
+      if (e?.status === 413 || e?.status === 400) {
+        setScanPhase('idle');
+        setScanError(t(e.status === 413 ? 'scan_file_too_large' : 'scan_file_not_supported'));
         return;
       }
-      setScanError(apiErrorText(e, t, 'scan_failed'));
+      scanFailed(e, kind === 'pdf' ? 'scan_pdf_failed' : 'scan_failed');
     }
-  }, [t, showToast]);
+  }, [t, readScan, scanFailed]);
 
   const toggleScanItem = useCallback((idx: number) => {
     setScanItems((prev) => prev.map((it, i) => (i === idx ? { ...it, checked: !it.checked } : it)));
@@ -516,35 +580,25 @@ export default function Kitchen() {
     setShowCapture(true);
   }, []);
 
-  const pickCapture = useCallback(async (source: 'camera' | 'library') => {
+  const pickCapture = useCallback(async (source: PictureSource) => {
     setCaptureError(null);
+    const picked = await pickPicture(source, { where: '/meals/capture', scanner: { maxPages: 1 } });
+    if (!picked) return;
+    if ('problem' in picked) {
+      setCaptureError(t(picked.problem === 'camera_denied' ? 'cam_camera_permission_denied' : 'scan_photo_open_failed'));
+      return;
+    }
+    if (picked.dropped > 0) showToast(t('scan_first_page_only'), 'info');
     try {
-      if (Platform.OS !== 'web') {
-        if (source === 'camera') {
-          const p = await ImagePicker.requestCameraPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_camera_permission_denied'));
-        } else {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) throw new Error(t('cam_gallery_permission_denied'));
-        }
-      }
-      const res = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.55, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-      if (res.canceled || !res.assets?.[0]) return;
-      const asset = res.assets[0];
-      const base64 = asset.base64 ?? (asset.uri?.startsWith('data:') ? asset.uri.split(',')[1] : null);
-      if (!base64) return;
-
       setCapturePhase('reading');
-      const { captured: recipe } = await api.captureRecipe(base64);
+      const { captured: recipe } = await api.captureRecipe(picked.base64);
       setCaptured(recipe);
       setCapturePhase('review');
     } catch (e: any) {
       setCapturePhase('idle');
       setCaptureError(apiErrorText(e, t, 'capture_failed'));
     }
-  }, [t]);
+  }, [t, showToast]);
 
   const addCapturedMeal = useCallback(async () => {
     if (!captured || captureAdding) return;
@@ -678,12 +732,14 @@ export default function Kitchen() {
   const deleteShopItem = useCallback(async (itemId: string) => {
     setShopItems((prev) => prev.filter((i) => i.item_id !== itemId));
     try {
-      await api.deleteShoppingItem(itemId);
+      const res = await api.deleteShoppingItem(itemId);
+      // In Recently deleted for 30 days; "Annuler" brings it straight back.
+      offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] }, load);
     } catch {
       showToast(t('vault_could_not_delete_restored'), 'error');
       load();
     }
-  }, [load, showToast]);
+  }, [load, showToast, t]);
 
   // Multi-select: pick a few items and delete just those, instead of the
   // all-or-nothing "clear the whole list". Plain functions — a manual
@@ -711,8 +767,9 @@ export default function Kitchen() {
     setShopItems((prev) => prev.filter((i) => !selectedIds.has(i.item_id)));
     exitSelect();
     try {
-      await Promise.all(ids.map((id) => api.deleteShoppingItem(id)));
-      showToast(`${ids.length} ${t('kitchen_items_removed')}`, 'success');
+      const results = await Promise.all(ids.map((id) => api.deleteShoppingItem(id)));
+      offerUndo(showToast, t, `${ids.length} ${t('kitchen_items_removed')}`,
+        { trashIds: results.map((r) => r?.trash_id) }, load);
     } catch {
       showToast(t('vault_could_not_delete_restored'), 'error');
       load();
@@ -724,12 +781,13 @@ export default function Kitchen() {
     if (checkedIds.size === 0) return;
     setShopItems((prev) => prev.filter((i) => !checkedIds.has(i.item_id)));
     try {
-      await api.clearCheckedShopping();
+      const res = await api.clearCheckedShopping();
+      offerUndo(showToast, t, t('trash_moved_n', { n: checkedIds.size }), { batchIds: [res?.batch_id] }, load);
     } catch {
       showToast(t('vault_could_not_clear_restored'), 'error');
       load();
     }
-  }, [shopItems, load, showToast]);
+  }, [shopItems, load, showToast, t]);
 
   const clearAllShop = useCallback(() => {
     if (shopItems.length === 0) return;
@@ -750,8 +808,10 @@ export default function Kitchen() {
             const clearedMeals = meals;
             if (hasPlan) setMeals([]);
             try {
-              await api.clearAllShopping();
+              const cleared = await api.clearAllShopping();
+              let mealsBatch: string | null | undefined = null;
               let planSaved = false;
+              let snapshotId: string | null = null;
               if (hasPlan) {
                 // Snapshot the current plan under a dated name, then clear it.
                 // saveMealPlan reads the live meals server-side, so save before
@@ -761,12 +821,12 @@ export default function Kitchen() {
                 });
                 planSaved = await api
                   .saveMealPlan(dated)
-                  .then(() => true)
+                  .then((plan) => { snapshotId = plan?.plan_id ?? null; return true; })
                   .catch(() => false);
                 // Only clear the planner if the plan was safely saved. If the
                 // save failed, keep the meals rather than deleting them unsaved.
                 if (planSaved) {
-                  await api.clearAllMeals();
+                  mealsBatch = (await api.clearAllMeals())?.batch_id;
                   setSavedPlans(await api.listSavedPlans().catch(() => savedPlans));
                 } else {
                   // Put the optimistically-cleared meals back on screen.
@@ -776,14 +836,23 @@ export default function Kitchen() {
               setShopHistory(await api.listShoppingHistory().catch(() => []));
               // Only promise the plan was saved when it really was; if a plan
               // existed but couldn't be saved, it's been kept, not lost.
-              showToast(
+              // "Annuler" puts the whole list (and the plan cleared with it)
+              // back; Recently deleted has every line for 30 days.
+              offerUndo(showToast, t,
                 hasPlan && planSaved
                   ? t('kitchen_shop_cleared_plan_saved')
                   : hasPlan
                     ? t('kitchen_shop_cleared_plan_kept')
                     : t('kitchen_cleared'),
-                'success',
-              );
+                { batchIds: [cleared?.batch_id, mealsBatch] }, load,
+                // The plan is back on the planner, so its dated copy goes:
+                // erased, not filed, as it was never anything but a copy.
+                snapshotId
+                  ? async () => {
+                    const gone = await api.deleteSavedPlan(snapshotId as string);
+                    if (gone?.trash_id) await api.purgeTrash(gone.trash_id);
+                  }
+                  : undefined);
             } catch {
               showToast(t('vault_could_not_update'), 'error');
               if (hasPlan) setMeals(clearedMeals);
@@ -805,8 +874,8 @@ export default function Kitchen() {
         onPress: async () => {
           setMeals([]);
           try {
-            await api.clearAllMeals();
-            showToast(t('kitchen_cleared'), 'success');
+            const res = await api.clearAllMeals();
+            offerUndo(showToast, t, t('kitchen_cleared'), { batchIds: [res?.batch_id] }, load);
           } catch {
             showToast(t('vault_could_not_update'), 'error');
             load();
@@ -839,8 +908,11 @@ export default function Kitchen() {
 
   const deleteMeal = useCallback(async (id: string) => {
     setMeals((prev) => prev.filter((m) => m.meal_id !== id));
-    try { await api.deleteMeal(id); } catch { showToast(t('vault_could_not_delete_restored'), 'error'); load(); }
-  }, [load, showToast]);
+    try {
+      const res = await api.deleteMeal(id);
+      offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] }, load);
+    } catch { showToast(t('vault_could_not_delete_restored'), 'error'); load(); }
+  }, [load, showToast, t]);
 
   const syncMealsToShopping = useCallback(async () => {
     try {
@@ -1365,7 +1437,11 @@ export default function Kitchen() {
   const deletePlan = useCallback(async (id: string) => {
     let previous: typeof savedPlans = [];
     setSavedPlans((prev) => { previous = prev; return prev.filter((p) => p.plan_id !== id); });
-    try { await api.deleteSavedPlan(id); } catch {
+    try {
+      const res = await api.deleteSavedPlan(id);
+      offerUndo(showToast, t, t('trash_moved_one'), { trashIds: [res?.trash_id] },
+        () => { api.listSavedPlans().then(setSavedPlans).catch(() => undefined); });
+    } catch {
       setSavedPlans(previous);
       showToast(t('vault_could_not_delete_restored'), 'error');
     }
@@ -1578,7 +1654,7 @@ export default function Kitchen() {
 
         {/* SHOPPING LIST */}
         {view === 'spend' ? (
-          <SpendingView embedded />
+          <SpendingView embedded showToast={showToast} />
         ) : view === 'shop' ? (
           <>
             <View style={styles.secHead}>
@@ -3065,6 +3141,16 @@ export default function Kitchen() {
         ) : scanPhase === 'review' ? (
           <>
             <Text style={styles.suggestSub}>{scanItems.length === 1 ? t('scan_sub_one') : t('scan_sub', { n: scanItems.length })}</Text>
+            {scanLeftOut > 0 && scanItems.length > 0 ? (
+              // Information on a read that worked, not a failure: the amber
+              // of "hard to read", not the red of an error. Names the last
+              // item read, so it is plain where to carry on by hand.
+              <Text testID="scan-left-out" style={styles.scanUnsure}>
+                {scanLeftOut === 1
+                  ? t('scan_left_out_one', { last: scanItems[scanItems.length - 1].name })
+                  : t('scan_left_out', { n: scanLeftOut, last: scanItems[scanItems.length - 1].name })}
+              </Text>
+            ) : null}
             {scanItems.map((item, idx) => (
               <PressScale
                 key={`${item.name}-${idx}`}
@@ -3108,11 +3194,11 @@ export default function Kitchen() {
               onPress={() => { setScanPhase('idle'); setScanItems([]); }}
               style={styles.scanRetake}
             >
-              <Text style={styles.scanRetakeText}>{t('scan_retake')}</Text>
+              <Text style={styles.scanRetakeText}>{t(scanSource === 'photo' ? 'scan_retake' : 'scan_file_again')}</Text>
             </PressScale>
             <View style={styles.cookAllergen}>
               <AlertTriangle color={ui.muted} size={14} />
-              <Text style={styles.cookAllergenText}>{t('scan_note')}</Text>
+              <Text style={styles.cookAllergenText}>{t(scanSource === 'pdf' ? 'scan_note_pdf' : scanSource === 'image_file' ? 'scan_note_file' : 'scan_note')}</Text>
             </View>
           </>
         ) : (
@@ -3127,6 +3213,11 @@ export default function Kitchen() {
               <ImageIcon color={ui.orange} size={18} />
               <Text style={styles.scanSourceText}>{t('scan_gallery')}</Text>
             </PressScale>
+            <PressScale testID="scan-file" accessibilityRole="button" onPress={pickScanFile} style={styles.scanSourceBtn}>
+              <FileText color={ui.orange} size={18} />
+              <Text style={styles.scanSourceText}>{t('scan_file')}</Text>
+            </PressScale>
+            <Text style={styles.scanFileHint}>{t('scan_file_hint')}</Text>
           </>
         )}
       </KeyboardAwareBottomSheet>
@@ -3356,7 +3447,7 @@ export default function Kitchen() {
         onPick={(aisle) => { if (aisleItem) moveToAisle(aisleItem, aisle); }}
         onClose={() => setAisleItem(null)}
       />
-      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} />
+      <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />
     </SwipeableTabView>
   );
 }
@@ -3478,6 +3569,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   scanError: { color: ui.danger, fontFamily: 'Figtree_500Medium', fontSize: 13, marginBottom: 10 },
   scanSourceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: ui.orange, borderRadius: 999, paddingVertical: 13, marginTop: 10 },
   scanSourceText: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
+  scanFileHint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 8 },
   captureTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 22, letterSpacing: -0.4, lineHeight: 27 },
   shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Figtree_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
   // Same 42/14 as shopScanBtn beside it: they were 38/12 vs 42/14, so the two
