@@ -6,7 +6,8 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { SERVER_STAR_REASONS, starReasonText } from '../starReason';
+import { APP_STAR_REASON_KEYS, SERVER_STAR_REASONS, starReasonText } from '../starReason';
+import { TRANSLATIONS } from '../i18n';
 
 const root = path.join(__dirname, '..', '..');
 const I18N = fs.readFileSync(path.join(root, 'src', 'i18n.ts'), 'utf8');
@@ -20,9 +21,12 @@ describe('a health example is never mistaken for something recorded', () => {
     for (const line of lines) expect(line).toMatch(/: '(e\.g\. |Ej\.: |Ex\. : |z\. B\. )/);
   });
 
-  it('is in italics while the field is empty', () => {
+  it('is in italics while the field is empty, with the italic face loaded', () => {
+    // fontStyle alone is ignored on iOS for a custom font, so the face itself.
     expect(MEMBER).toContain('style={[styles.recInput, !draft && styles.recExample]}');
-    expect(MEMBER).toContain("recExample: { fontStyle: 'italic' },");
+    expect(MEMBER).toContain("recExample: { fontFamily: 'Figtree_500Medium_Italic' },");
+    const LAYOUT = fs.readFileSync(path.join(root, 'app', '_layout.tsx'), 'utf8');
+    expect((LAYOUT.match(/Figtree_500Medium_Italic,/g) || []).length).toBe(2); // imported, and loaded
   });
 });
 
@@ -37,12 +41,25 @@ describe('a star history line is in the reader\'s language', () => {
   });
 
   it('knows every fixed line the server writes', () => {
-    // "reason": "Starting stars", and `reason or ("Parent added stars" if …)`.
+    // Every capitalised literal on a line that writes a reason.
     const fixed = new Set<string>();
-    for (const m of SERVER.matchAll(/"reason":\s*"([A-Z][^"]+)"/g)) fixed.add(m[1]);
-    for (const m of SERVER.matchAll(/"reason":[^\n]*?\bor \(?"([A-Z][^"]+)"/g)) fixed.add(m[1]);
-    for (const m of SERVER.matchAll(/else "(Parent [a-z]+ stars)"/g)) fixed.add(m[1]);
+    for (const line of SERVER.split('\n').filter((l) => l.includes('"reason"'))) {
+      for (const m of line.matchAll(/"([A-Z][A-Za-z ]+)"/g)) fixed.add(m[1]);
+    }
     expect([...fixed].sort()).toEqual(Object.keys(SERVER_STAR_REASONS).sort());
+  });
+
+  it('knows every fixed line the app saves, in whatever language it was saved', () => {
+    const files = ['app/member.tsx', 'app/(tabs)/kids.tsx', 'src/components/KidPageTop.tsx']
+      .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+    const saved = new Set<string>();
+    for (const m of files.matchAll(/(?:reason: [^\n]*?|give\(\w+, )t\('([a-z_]+)'\)/g)) saved.add(m[1]);
+    for (const m of files.matchAll(/reason: reason \|\| \(?[^\n]*?t\('([a-z_]+)'\)[^\n]*?t\('([a-z_]+)'\)/g)) { saved.add(m[1]); saved.add(m[2]); }
+    for (const key of saved) expect([key, APP_STAR_REASON_KEYS.includes(key)]).toEqual([key, true]);
+    // A French parent's "+3" read by an English-speaking co-parent.
+    const fr = (TRANSLATIONS.fr as Record<string, string>).kids_parent_added_stars;
+    expect(starReasonText(fr, t, 'empty')).toBe('T(kids_parent_added_stars)');
+    expect(starReasonText('Bravo !', t, 'empty')).toBe('T(hub_well_done)');
   });
 
   it('has each translation in all four languages', () => {

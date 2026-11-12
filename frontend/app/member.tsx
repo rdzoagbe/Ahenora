@@ -1517,7 +1517,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   medTimeText: { fontFamily: 'Figtree_700Bold', fontSize: 12, color: ui.text },
   vaxRemove: { padding: 6 },
   // An example in an empty field, never mistaken for a recorded value.
-  recExample: { fontStyle: 'italic' },
+  // The italic face itself: fontStyle alone is ignored on iOS for a custom
+  // font, and only faked on Android.
+  recExample: { fontFamily: 'Figtree_500Medium_Italic' },
   medActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   medStop: {
     height: 30, paddingHorizontal: 10, borderRadius: 15, borderWidth: 1, borderColor: ui.line,
