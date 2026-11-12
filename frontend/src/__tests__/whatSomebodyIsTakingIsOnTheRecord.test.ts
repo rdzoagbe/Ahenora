@@ -141,7 +141,8 @@ describe('the strings ship everywhere', () => {
   it('shows the time format in the placeholder rather than explaining it', () => {
     // "08:00, 14:00, 20:00" teaches the format in the place the mistake
     // would be made; a paragraph above the field does not.
-    expect(I18N).toContain("rec_med_ph_times: '08:00, 14:00, 20:00'");
+    // Marked as an example since 2026-11-12, so it cannot pass for a value.
+    expect(I18N).toContain("rec_med_ph_times: 'e.g. 08:00, 14:00, 20:00'");
   });
 });
 

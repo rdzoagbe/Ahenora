@@ -11,6 +11,7 @@ import { useFonts } from 'expo-font';
 import {
   Figtree_400Regular,
   Figtree_500Medium,
+  Figtree_500Medium_Italic,
   Figtree_600SemiBold,
   Figtree_700Bold,
   Figtree_800ExtraBold,
@@ -253,6 +254,9 @@ export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Figtree_400Regular,
     Figtree_500Medium,
+    // Example text in an empty health field (member.tsx recExample). A
+    // fontStyle alone does nothing on iOS without the italic face loaded.
+    Figtree_500Medium_Italic,
     Figtree_600SemiBold,
     Figtree_700Bold,
     Figtree_800ExtraBold,
