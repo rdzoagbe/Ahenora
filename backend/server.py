@@ -879,6 +879,9 @@ _gemini_state = {"model": None, "last_error": None, "errors": {}, "discovered": 
                  "client": None}
 
 
+GEMINI_API_VERSION = "v1beta"
+
+
 def _gemini_client():
     """The one client for this process, built on first use.
 
@@ -893,7 +896,13 @@ def _gemini_client():
     if not GOOGLE_API_KEY or not genai:
         return None
     try:
-        _gemini_state["client"] = genai.Client(api_key=GOOGLE_API_KEY)
+        # The API version pinned, not left to the SDK's default: google-genai
+        # 3.0 moved that default from v1beta to v1 (its changelog, 2026-11-06),
+        # and the models and the Files API the scans rely on are served on
+        # v1beta. Upgrading a library must not quietly change the API.
+        _gemini_state["client"] = genai.Client(
+            api_key=GOOGLE_API_KEY,
+            http_options=genai_types.HttpOptions(api_version=GEMINI_API_VERSION))
     except Exception as exc:  # noqa: BLE001 — surfaced by /api/health/ai
         _gemini_state["last_error"] = f"client: {exc}"[:300]
         log.warning("gemini client could not be created: %s", exc)
