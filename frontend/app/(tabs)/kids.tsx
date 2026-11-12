@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { starReasonText } from '../../src/starReason';
 import {
   View,
   Text,
@@ -3436,7 +3437,7 @@ function RecentActivity({ items, loading, expanded }: { items: StarTransaction[]
                   {positive ? <Check color={ui.mintText} size={17} /> : <Minus color={ui.danger} size={17} />}
                 </IconTile>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.activityReason} numberOfLines={1}>{item.reason || t('kids_star_adjustment')}</Text>
+                  <Text style={styles.activityReason} numberOfLines={1}>{starReasonText(item.reason, t, 'kids_star_adjustment')}</Text>
                   <Text style={styles.activityDate}>{formatActivityDate(item.created_at, localeFor(lang))}</Text>
                 </View>
                 <View style={styles.activityDeltaRow}>

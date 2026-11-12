@@ -16,6 +16,7 @@ import { api, FamilyMember, Medicine, MemberJob, MemberJobsToday, MemberRecord, 
 import { KidPageTop } from '../src/components/KidPageTop';
 import { personTone } from '../src/homeFamily';
 import { localDayIso, localeFor } from '../src/utils/date';
+import { starReasonText } from '../src/starReason';
 import { dueState } from '../src/vaccinations';
 import { logger } from '../src/logger';
 import { apiErrorText } from '../src/apiError';
@@ -137,7 +138,10 @@ function RecordField({ testID, label, value, placeholder, editable, saving, onSa
           onBlur={() => { setFocused(false); onSave(draft.trim()); }}
           placeholder={placeholder}
           placeholderTextColor={ui.muted}
-          style={styles.recInput}
+          // Empty, the example is in italics, so it cannot pass for something
+          // recorded: "Arachides — EpiPen…" read as a real allergy (found
+          // 2026-11-12).
+          style={[styles.recInput, !draft && styles.recExample]}
           maxLength={400}
         />
       ) : (
@@ -726,7 +730,7 @@ export default function MemberProfile() {
           {history.map((h) => (
             <View key={h.transaction_id} style={styles.histRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.histReason} numberOfLines={1}>{h.reason || t('hub_stars_adjustment')}</Text>
+                <Text style={styles.histReason} numberOfLines={1}>{starReasonText(h.reason, t, 'hub_stars_adjustment')}</Text>
                 {h.created_at ? (
                   <Text style={styles.histDate}>
                     {new Date(h.created_at).toLocaleDateString(localeFor(lang), { month: 'short', day: 'numeric' })}
@@ -1037,7 +1041,7 @@ export default function MemberProfile() {
                       onChangeText={(x) => setNewMed((p) => ({ ...p, name: x }))}
                       placeholder={t('rec_med_ph_name')}
                       placeholderTextColor={ui.muted}
-                      style={[styles.recInput, styles.vaxInputName]}
+                      style={[styles.recInput, styles.vaxInputName, !newMed.name && styles.recExample]}
                       maxLength={120}
                     />
                     <View style={styles.vaxDates}>
@@ -1049,7 +1053,7 @@ export default function MemberProfile() {
                           onChangeText={(x) => setNewMed((p) => ({ ...p, dose: x }))}
                           placeholder={t('rec_med_ph_dose')}
                           placeholderTextColor={ui.muted}
-                          style={styles.recInput}
+                          style={[styles.recInput, !newMed.dose && styles.recExample]}
                           maxLength={80}
                         />
                       </View>
@@ -1061,7 +1065,7 @@ export default function MemberProfile() {
                           onChangeText={(x) => setNewMed((p) => ({ ...p, times: x }))}
                           placeholder={t('rec_med_ph_times')}
                           placeholderTextColor={ui.muted}
-                          style={styles.recInput}
+                          style={[styles.recInput, !newMed.times && styles.recExample]}
                           autoCapitalize="none"
                           maxLength={40}
                         />
@@ -1221,7 +1225,7 @@ export default function MemberProfile() {
                       onChangeText={(x) => setNewVax((p) => ({ ...p, name: x }))}
                       placeholder={t('rec_vax_ph_name')}
                       placeholderTextColor={ui.muted}
-                      style={[styles.recInput, styles.vaxInputName]}
+                      style={[styles.recInput, styles.vaxInputName, !newVax.name && styles.recExample]}
                       maxLength={120}
                     />
                     <View style={styles.vaxDates}>
@@ -1512,6 +1516,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
              backgroundColor: ui.bg, borderWidth: 1, borderColor: '#E7E3DC' },
   medTimeText: { fontFamily: 'Figtree_700Bold', fontSize: 12, color: ui.text },
   vaxRemove: { padding: 6 },
+  // An example in an empty field, never mistaken for a recorded value.
+  recExample: { fontStyle: 'italic' },
   medActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   medStop: {
     height: 30, paddingHorizontal: 10, borderRadius: 15, borderWidth: 1, borderColor: ui.line,
