@@ -54,6 +54,17 @@ describe('release notes', () => {
     expect(a.key.startsWith(newest)).toBe(true);
   });
 
+  it('names the dated release in its key only when its notes are shown', () => {
+    // 1.3.0 fills all three lines itself, so the dated notes are left out and
+    // must not be recorded as seen.
+    const newest = newestStoreVersion();
+    const a = announcement(newest);
+    const datedShown = (RELEASE_NOTES[CURRENT_RELEASE] || []).some((k) => a.items.includes(k));
+    expect(a.key).toBe(datedShown ? `${newest}+${CURRENT_RELEASE}` : newest);
+    expect(WHATS_NEW[newest].length).toBe(3);
+    expect(a.key).toBe(newest);
+  });
+
   it('knows which store version is newest', () => {
     expect(newestStoreVersion()).toBe('1.3.0');
   });

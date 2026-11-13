@@ -33,6 +33,14 @@ const REPO = path.join(__dirname, '..');
 const FRONTEND = path.join(REPO, 'frontend');
 const LOCK = 'frontend/package-lock.json';
 const MARKERS = ['expo-module.config.json', 'android', 'ios'];
+// Packages with no native code of their own that GENERATE the native build:
+// the Gradle plugin and codegen for Android, and the config plugins that
+// write the iOS project (there is no committed ios/; EAS prebuilds it). A new
+// version of one changes the binary as surely as a native module does.
+const NATIVE_BUILD_TOOLS = new Set([
+  '@react-native/gradle-plugin', '@react-native/codegen',
+  '@expo/config-plugins', '@expo/prebuild-config',
+]);
 const isNative = (dir) =>
   MARKERS.some((m) => fs.existsSync(path.join(dir, m)))
   || fs.readdirSync(dir).some((f) => f.endsWith('.podspec'));
@@ -68,10 +76,9 @@ function installedNames() {
       for (const dir of dirs) {
         if (seen.has(dir) || !fs.existsSync(path.join(dir, 'package.json'))) continue;
         seen.add(dir);
-        all.add(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name);
-        if (isNative(dir)) {
-          names.add(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name);
-        }
+        const { name } = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+        all.add(name);
+        if (NATIVE_BUILD_TOOLS.has(name) || isNative(dir)) names.add(name);
         walk(path.join(dir, 'node_modules'));
       }
     }
