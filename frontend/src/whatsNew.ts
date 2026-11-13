@@ -15,6 +15,14 @@
  * A version with no entry here simply shows nothing.
  */
 export const WHATS_NEW: Record<string, string[]> = {
+  // The 2026-11 store build. Its own changes are invisible, so it says what
+  // arrived over the air since 1.2.2 and was never announced. "Recently
+  // deleted" has its own notice (PolicyNotice).
+  '1.3.0': [
+    'wn_130_scan',
+    'wn_130_health',
+    'wn_130_digest',
+  ],
   // 1.2.1's notes never showed: the dated release outranked them (see
   // announcement). Invitation links opening the app is still news to most.
   '1.2.2': [
@@ -94,7 +102,11 @@ export function announcement(version: string): { key: string; items: string[]; b
   // their store notes were announced (or skipped) long ago.
   if (own.length && version === newestStoreVersion()) {
     const items = Array.from(new Set([...own, ...dated])).slice(0, 3);
-    return { key: dated.length ? `${version}+${CURRENT_RELEASE}` : version, items, byDate: false };
+    // The key names the dated release only if one of its notes made the list:
+    // otherwise somebody who never saw those notes would be recorded as
+    // having seen them.
+    const datedShown = dated.some((k) => items.includes(k));
+    return { key: datedShown ? `${version}+${CURRENT_RELEASE}` : version, items, byDate: false };
   }
   if (dated.length) {
     return { key: CURRENT_RELEASE, items: dated, byDate: true };

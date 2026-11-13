@@ -172,7 +172,9 @@ describe('the photo is cropped before it is uploaded', () => {
     // The thing that makes this safe is that JS built for the scanner can
     // never reach a binary without it — which is what runtimeVersion is for.
     const app = JSON.parse(readFileSync(join(__dirname, '..', '..', 'app.json'), 'utf8')).expo;
-    expect(app.runtimeVersion).toBe('3.0.0');
+    // The scanner arrived at 3.0.0 and every runtime since carries it. Pinned
+    // exactly, so a runtime change is always a deliberate edit here too.
+    expect(app.runtimeVersion).toBe('4.0.0');
     expect(app.plugins.some((p: unknown) =>
       (Array.isArray(p) ? p[0] : p) === 'react-native-document-scanner-plugin')).toBe(true);
   });

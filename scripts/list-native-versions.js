@@ -18,7 +18,10 @@
  * answer does not depend on what happens to be installed, and it sees every
  * install path, nested copies included (node_modules/expo/node_modules/...).
  * Whether a package is native is read from the installed tree, with the same
- * markers check-native-deps.js uses (expo-module.config.json, android/, ios/).
+ * markers check-native-deps.js uses (expo-module.config.json, android/, ios/),
+ * plus a .podspec at the package's root. react-native itself has none of the
+ * first three (its code is in ReactAndroid/ and React/), so without the podspec
+ * marker 0.86.0 -> 0.86.3 went unreported on 2026-11-13.
  * A changed package that is not installed here cannot be classified and is
  * reported as such, never assumed safe.
  */
@@ -30,6 +33,17 @@ const REPO = path.join(__dirname, '..');
 const FRONTEND = path.join(REPO, 'frontend');
 const LOCK = 'frontend/package-lock.json';
 const MARKERS = ['expo-module.config.json', 'android', 'ios'];
+// Packages with no native code of their own that GENERATE the native build:
+// the Gradle plugin and codegen for Android, and the config plugins that
+// write the iOS project (there is no committed ios/; EAS prebuilds it). A new
+// version of one changes the binary as surely as a native module does.
+const NATIVE_BUILD_TOOLS = new Set([
+  '@react-native/gradle-plugin', '@react-native/codegen',
+  '@expo/config-plugins', '@expo/prebuild-config',
+]);
+const isNative = (dir) =>
+  MARKERS.some((m) => fs.existsSync(path.join(dir, m)))
+  || fs.readdirSync(dir).some((f) => f.endsWith('.podspec'));
 
 function die(msg) {
   console.error(`list-native-versions: ${msg}`);
@@ -62,10 +76,9 @@ function installedNames() {
       for (const dir of dirs) {
         if (seen.has(dir) || !fs.existsSync(path.join(dir, 'package.json'))) continue;
         seen.add(dir);
-        all.add(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name);
-        if (MARKERS.some((m) => fs.existsSync(path.join(dir, m)))) {
-          names.add(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name);
-        }
+        const { name } = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+        all.add(name);
+        if (NATIVE_BUILD_TOOLS.has(name) || isNative(dir)) names.add(name);
         walk(path.join(dir, 'node_modules'));
       }
     }
