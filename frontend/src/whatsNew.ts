@@ -15,6 +15,14 @@
  * A version with no entry here simply shows nothing.
  */
 export const WHATS_NEW: Record<string, string[]> = {
+  // The 2026-11 store build (Expo 57.0.33, runtime 4.0.0). Its own changes
+  // are invisible, so it says what arrived over the air since 1.2.2 and was
+  // never announced. "Recently deleted" has its own notice (PolicyNotice).
+  '1.3.0': [
+    'wn_130_scan',
+    'wn_130_health',
+    'wn_130_digest',
+  ],
   // 1.2.1's notes never showed: the dated release outranked them (see
   // announcement). Invitation links opening the app is still news to most.
   '1.2.2': [

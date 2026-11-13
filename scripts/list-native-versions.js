@@ -18,7 +18,10 @@
  * answer does not depend on what happens to be installed, and it sees every
  * install path, nested copies included (node_modules/expo/node_modules/...).
  * Whether a package is native is read from the installed tree, with the same
- * markers check-native-deps.js uses (expo-module.config.json, android/, ios/).
+ * markers check-native-deps.js uses (expo-module.config.json, android/, ios/),
+ * plus a .podspec at the package's root. react-native itself has none of the
+ * first three (its code is in ReactAndroid/ and React/), so without the podspec
+ * marker 0.86.0 -> 0.86.3 went unreported on 2026-11-13.
  * A changed package that is not installed here cannot be classified and is
  * reported as such, never assumed safe.
  */
@@ -30,6 +33,9 @@ const REPO = path.join(__dirname, '..');
 const FRONTEND = path.join(REPO, 'frontend');
 const LOCK = 'frontend/package-lock.json';
 const MARKERS = ['expo-module.config.json', 'android', 'ios'];
+const isNative = (dir) =>
+  MARKERS.some((m) => fs.existsSync(path.join(dir, m)))
+  || fs.readdirSync(dir).some((f) => f.endsWith('.podspec'));
 
 function die(msg) {
   console.error(`list-native-versions: ${msg}`);
@@ -63,7 +69,7 @@ function installedNames() {
         if (seen.has(dir) || !fs.existsSync(path.join(dir, 'package.json'))) continue;
         seen.add(dir);
         all.add(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name);
-        if (MARKERS.some((m) => fs.existsSync(path.join(dir, m)))) {
+        if (isNative(dir)) {
           names.add(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name);
         }
         walk(path.join(dir, 'node_modules'));

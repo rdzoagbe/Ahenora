@@ -55,7 +55,7 @@ describe('release notes', () => {
   });
 
   it('knows which store version is newest', () => {
-    expect(newestStoreVersion()).toBe('1.2.2');
+    expect(newestStoreVersion()).toBe('1.3.0');
   });
 
   it('store versions keep their own notes', () => {

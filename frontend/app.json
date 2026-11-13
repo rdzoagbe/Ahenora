@@ -2,12 +2,12 @@
   "expo": {
     "name": "Ahenora",
     "slug": "household-coo",
-    "version": "1.2.2",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "householdcoo",
     "userInterfaceStyle": "automatic",
-    "runtimeVersion": "3.0.0",
+    "runtimeVersion": "4.0.0",
     "updates": {
       "url": "https://u.expo.dev/e84e02e4-5335-433f-a39c-3539c473a0dd"
     },
