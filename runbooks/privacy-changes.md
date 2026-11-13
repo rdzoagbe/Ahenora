@@ -24,9 +24,10 @@ WP260 rev.01 sets no number of days. What it does say:
 
 Our own rule, a choice and not a legal number: the in-app notice
 (`frontend/src/components/PolicyNotice.tsx`) goes out **at least 30 days
-before** a material change takes effect. It says what changes, the likely
-effect on people, and what they can do about it. Ship the notice first, the
-change later. Record each change below.
+before** a material change takes effect. It says what will change, on which
+date, the likely effect on people, and what they can do about it. On that
+date the change and the updated policy ship together. Record both dates
+below. The steps are in PolicyNotice.tsx.
 
 ## 2026-11-10: Recently deleted
 
@@ -38,9 +39,11 @@ plan's storage. Health details never go there: they are erased at once, with
 a 10-second undo. Privacy policy dated 10 November 2026, "Security and
 retention" and "Your controls".
 
-**How it was told.** A card on Home, in the person's language, devoted to
-this change only, shown until it is acknowledged on that device ("Compris");
-reading the policy does not count as acknowledging. It links to the policy.
+**How it was told.** A card on Home, in the person's language (English,
+French, Spanish or German), devoted to this change only, shown until it is
+acknowledged on that device ("Got it" / "Compris" / "Entendido" /
+"Verstanden"); reading the policy does not count as acknowledging. It links
+to the policy.
 
 **When.** The same day the change took effect, not before it.
 
@@ -57,8 +60,12 @@ reading the policy does not count as acknowledging. It links to the policy.
   health details are excluded; nothing is kept past 30 days. The notice was
   of the kind paragraph 29 asks for (devoted, explicit, in-app).
 - Paragraph 31 asks the notice to explain the likely impact. It said what
-  changes and where; from 2026-11-13 it also says that anything there can be
-  erased for good at any time.
+  changes and where to find it, not that anything there can be erased for
+  good. From 2026-11-13 the notice says that too, but only people who had not
+  yet acknowledged it see the new wording: the card is not shown again to
+  those who had. Not shown again on purpose: every row of the bin has an
+  "Erase now" button and the bin has "Empty Recently deleted", so anyone who
+  goes to look at what was kept sees how to remove it.
 
 **Decision.** Roland delegated the call on 2026-11-13 ("materiel change I
 trust your judgement, go ahead"). No further notice is sent for this change;

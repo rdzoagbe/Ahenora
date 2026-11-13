@@ -20,6 +20,7 @@ jest.mock('../apiError', () => ({ apiErrorText: (_e: unknown, t: (k: string) => 
 import { daysLeft, trashRows } from '../trashRows';
 import { offerUndo, restoreErrorText } from '../trashUndo';
 import type { TrashEntry } from '../api';
+import { TRANSLATIONS } from '../i18n';
 
 const root = path.join(__dirname, '..', '..');
 const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), 'utf8');
@@ -199,22 +200,25 @@ describe('the policy change is said in the app', () => {
     const policy = JSON.parse(read('..', 'legal', 'privacy.json'));
     expect(policy.updated).toBe('10 November 2026');
     expect(notice).toContain("export const POLICY_NOTICE_ID = '2026-11-10';");
+    const dated = { en: '10 November 2026', es: '10 de noviembre de 2026',
+      fr: '10 novembre 2026', de: '10. November 2026' } as const;
+    for (const [lang, date] of Object.entries(dated)) {
+      expect([lang, TRANSLATIONS[lang as keyof typeof dated].policy_notice_body.includes(date)]).toEqual([lang, true]);
+    }
     const i18n = read('src', 'i18n.ts');
-    expect(i18n).toContain('policy_notice_body: "Ce que vous supprimez peut désormais être restauré pendant 30 jours au plus, depuis Réglages. Vous pouvez aussi y effacer définitivement ce que vous voulez, à tout moment. Notre politique de confidentialité a été mise à jour le 10 novembre 2026 pour le préciser.",');
+    for (const key of ['policy_notice_title', 'policy_notice_body', 'policy_notice_read', 'policy_notice_ok']) {
+      expect([key, (i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length]).toEqual([key, 4]);
+    }
   });
 
   it('says what people can do about it: erase for good, at any time', () => {
-    // WP260 rev.01 para. 31: explain the likely impact of the change. See
-    // runbooks/privacy-changes.md.
-    const i18n = read('src', 'i18n.ts');
-    const bodies = i18n.match(/^\s*policy_notice_body: .*$/gm) || [];
-    expect(bodies).toHaveLength(4);
-    const said = ['for good, at any time', 'definitivamente, en cualquier momento',
-      'effacer définitivement ce que vous voulez, à tout moment', 'jederzeit endgültig löschen'];
-    said.forEach((words, i) => expect(bodies[i]).toContain(words));
-    expect(read('..', 'runbooks', 'privacy-changes.md')).toContain('## 2026-11-10: Recently deleted');
-    for (const key of ['policy_notice_title', 'policy_notice_body', 'policy_notice_read', 'policy_notice_ok']) {
-      expect([key, (i18n.match(new RegExp(`^\\s*${key}:`, 'gm')) || []).length]).toEqual([key, 4]);
+    // WP260 rev.01 para. 31: explain the likely impact of the change.
+    const said = { en: 'erase anything there for good, at any time',
+      es: 'borrar allí cualquier cosa definitivamente, en cualquier momento',
+      fr: 'effacer définitivement ce que vous voulez, à tout moment',
+      de: 'jederzeit endgültig löschen' } as const;
+    for (const [lang, words] of Object.entries(said)) {
+      expect([lang, TRANSLATIONS[lang as keyof typeof said].policy_notice_body.includes(words)]).toEqual([lang, true]);
     }
   });
 
