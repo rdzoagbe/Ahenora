@@ -5,6 +5,7 @@
  */
 import type { FamilyMember, Turn } from './api';
 import { firstNameOf } from './calendarPeople';
+import { TRANSLATIONS } from './i18n';
 
 /** Who can be in a rotation: the children and teens, as the Family tab lists them. */
 export function turnPeople(members: FamilyMember[]): FamilyMember[] {
@@ -61,4 +62,36 @@ export function turnWhen(iso: string, t: Translate, now: number = Date.now()): s
   const hours = Math.round(mins / 60);
   if (hours < 24) return t('when_hours', { n: String(hours) });
   return t('when_days', { n: String(Math.round(hours / 24)) });
+}
+
+export type TurnIdea = (typeof TURN_IDEAS)[number];
+
+/**
+ * Which starter a rotation is, by its name, in any of the app's languages:
+ * a rotation is stored under the words it was created with, so "Place devant"
+ * made in French is still the front seat when the phone turns to English.
+ * Null for a name the family wrote themselves.
+ */
+export function turnIdeaFor(name: string): TurnIdea | null {
+  const wanted = (name || '').trim().toLowerCase();
+  if (!wanted) return null;
+  for (const key of TURN_IDEAS) {
+    for (const dict of Object.values(TRANSLATIONS)) {
+      if (((dict as Record<string, string>)[key] || '').trim().toLowerCase() === wanted) return key;
+    }
+  }
+  return null;
+}
+
+/**
+ * The order as the row draws it: whose turn it is first, then everyone after
+ * them, round to the one who has just been. Only people still in the family.
+ */
+export function turnOrderFrom(turn: Turn, members: FamilyMember[]): FamilyMember[] {
+  const ids = turn.member_ids.filter((id) => members.some((m) => m.member_id === id));
+  // Whose turn it is points at somebody who has left: the order as stored,
+  // and the caller marks nobody (the first face is not "now").
+  const at = turn.current_member_id ? ids.indexOf(turn.current_member_id) : -1;
+  const rotated = at > 0 ? [...ids.slice(at), ...ids.slice(0, at)] : ids;
+  return rotated.map((id) => members.find((m) => m.member_id === id)!).filter(Boolean);
 }

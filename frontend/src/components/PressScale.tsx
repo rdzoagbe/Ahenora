@@ -50,6 +50,10 @@ interface Props {
    *  it a screen reader reads a row of dates and never says which one is
    *  chosen, which makes a picker unusable rather than merely unlabelled. */
   accessibilityState?: { selected?: boolean; disabled?: boolean; checked?: boolean };
+  /** A second thing this control does, offered to a screen reader: a button
+   *  drawn inside another button cannot be reached by one on a phone. */
+  accessibilityActions?: { name: string; label?: string }[];
+  onAccessibilityAction?: (e: { nativeEvent: { actionName: string } }) => void;
   /**
    * Expands the touchable area beyond the visual bounds without affecting
    * layout — used to bring small icon buttons up to a comfortable target size.
@@ -82,7 +86,7 @@ function slopInsets(hitSlop?: number | Insets) {
            left: n(hitSlop.left), right: n(hitSlop.right) };
 }
 
-export function PressScale({ onPress, onLongPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint, accessibilityState, hitSlop }: Props) {
+export function PressScale({ onPress, onLongPress, children, style, testID, disabled, accessibilityLabel, accessibilityRole, accessibilityHint, accessibilityState, accessibilityActions, onAccessibilityAction, hitSlop }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
   const { layout, visual } = splitStyles(style);
   const webSlop = Platform.OS === 'web' ? slopInsets(hitSlop) : null;
@@ -111,6 +115,8 @@ export function PressScale({ onPress, onLongPress, children, style, testID, disa
       accessibilityRole={accessibilityRole}
       accessibilityHint={accessibilityHint}
       accessibilityState={accessibilityState}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
     >
       {webSlop ? (
         // A direct child of the Pressable, NOT of the styled view below. The

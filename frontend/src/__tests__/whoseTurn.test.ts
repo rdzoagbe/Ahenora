@@ -99,7 +99,7 @@ describe('the card', () => {
   it('lets a helper say done but not change the rules', () => {
     expect(kids).toContain('canEdit={!viewerIsHelper}');
     expect(card).toContain('if (!canEdit) return;');
-    expect(card).toMatch(/\{canEdit \? \(\s*<View style=\{styles\.ideas\}>/);
+    expect(card).toMatch(/\{canEdit \? \(\s*<>\s*<View style=\{styles\.ideaGrid\}>/);
   });
 
   // Review of 2026-11-09, after release.
