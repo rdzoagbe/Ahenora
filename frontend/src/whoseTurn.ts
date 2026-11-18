@@ -89,6 +89,8 @@ export function turnIdeaFor(name: string): TurnIdea | null {
  */
 export function turnOrderFrom(turn: Turn, members: FamilyMember[]): FamilyMember[] {
   const ids = turn.member_ids.filter((id) => members.some((m) => m.member_id === id));
+  // Whose turn it is points at somebody who has left: the order as stored,
+  // and the caller marks nobody (the first face is not "now").
   const at = turn.current_member_id ? ids.indexOf(turn.current_member_id) : -1;
   const rotated = at > 0 ? [...ids.slice(at), ...ids.slice(0, at)] : ids;
   return rotated.map((id) => members.find((m) => m.member_id === id)!).filter(Boolean);

@@ -60,7 +60,7 @@ import { formatMoney } from '../../src/money';
 import { memberRoute } from '../../src/memberRoute';
 import { personTone } from '../../src/homeFamily';
 import { activityPhrase } from '../../src/activityPhrase';
-import { allowanceDue, childTileLine, headerFaces, needsFace, peopleCount, starsEarnedThisWeek } from '../../src/familyScreen';
+import { allowanceDue, childTileLine, headerFaces, headerShowsFaces, needsFace, peopleCount, starsEarnedThisWeek } from '../../src/familyScreen';
 import FamilyFaces from '../../src/components/FamilyFaces';
 import FacePickerSheet from '../../src/components/FacePickerSheet';
 import { api, logEvent, ActivityEntry, AllowanceConfig, AllowanceTxn, ChatThreadSummary, Chore, FamilyMember, Redemption, Reward, Routine, StarTransaction } from '../../src/api';
@@ -242,6 +242,9 @@ export default function Kids() {
   const [jobsToday, setJobsToday] = useState<Record<string, { done: number; total: number }>>({});
   // The child being given a face from their tile; null keeps the sheet shut.
   const [faceChild, setFaceChild] = useState<FamilyMember | null>(null);
+  // Two loads can overlap (coming back to the tab, a pull to refresh): only
+  // the newest one's counts are kept, so a tile never goes back in time.
+  const jobsSeqRef = useRef(0);
   // Two tiles across, measured rather than a percentage: a percentage of a
   // wrapping row resolved to a sliver on the web build.
   const { width: windowWidth } = useWindowDimensions();
@@ -548,6 +551,10 @@ export default function Kids() {
                   onPress={() => (isKid ? openChild(m) : openMember(m))}
                   accessibilityRole="button"
                   accessibilityLabel={`${m.name} · ${sub}`}
+                  // The button inside the tile cannot be reached by a screen
+                  // reader on a phone, so the tile offers it as an action too.
+                  accessibilityActions={offerFace ? [{ name: 'chooseFace', label: t('fam_choose_face') }] : undefined}
+                  onAccessibilityAction={offerFace ? (e: { nativeEvent: { actionName: string } }) => { if (e.nativeEvent.actionName === 'chooseFace') setFaceChild(m); } : undefined}
                   style={[styles.tile, { width: tileWidth, backgroundColor: ui[tone.bg] }]}
                 >
                   <View style={[styles.tileFace, { borderColor: ui[tone.fg] }, offerFace && styles.tileFaceEmpty]}>
@@ -567,6 +574,11 @@ export default function Kids() {
                     ) : null}
                   </View>
                   <Text style={styles.tileName} numberOfLines={1}>{m.name}</Text>
+                  <Text
+                    testID={notJoined ? `hub-not-joined-${m.member_id}` : undefined}
+                    style={[styles.tileSub, notJoined && { color: ui.orangeText }]}
+                    numberOfLines={notJoined ? 2 : 1}
+                  >{sub}</Text>
                   {offerFace ? (
                     <PressScale
                       testID={`child-choose-face-${m.member_id}`}
@@ -578,13 +590,7 @@ export default function Kids() {
                       <Pencil color={ui.orangeText} size={13} />
                       <Text style={styles.tileFaceBtnText} numberOfLines={1}>{t('fam_choose_face')}</Text>
                     </PressScale>
-                  ) : (
-                  <Text
-                    testID={notJoined ? `hub-not-joined-${m.member_id}` : undefined}
-                    style={[styles.tileSub, notJoined && { color: ui.orangeText }]}
-                    numberOfLines={notJoined ? 2 : 1}
-                  >{sub}</Text>
-                  )}
+                  ) : null}
                   {hasThread ? (
                     <PressScale
                       testID={`hub-message-${m.member_id}`}
@@ -675,12 +681,23 @@ export default function Kids() {
       api.chatThreads().then((r) => setThreads(r.threads)).catch(() => setThreads([]));
       api.familyJobsWeek().then(setWeekJobs).catch(() => setWeekJobs(null));
       api.listActivity(3).then(setLatest).catch(() => setLatest([]));
-      Promise.allSettled(m.filter((x) => ['child', 'teen'].includes((x.role || '').toLowerCase()))
+      // Not asked for at all while the children's side is put away.
+      const jobsSeq = ++jobsSeqRef.current;
+      const kidsForJobs = kidsHidden ? [] : m.filter((x) => ['child', 'teen'].includes((x.role || '').toLowerCase()));
+      Promise.allSettled(kidsForJobs
         .map((x) => api.memberJobs(x.member_id).then((j) => [x.member_id, { done: j.done, total: j.total }] as const)))
         .then((rows) => {
-          const next: Record<string, { done: number; total: number }> = {};
-          for (const r of rows) if (r.status === 'fulfilled') next[r.value[0]] = r.value[1];
-          setJobsToday(next);
+          if (jobsSeq !== jobsSeqRef.current) return;
+          // A count that failed to load keeps the one already on the tile.
+          setJobsToday((prev) => {
+            const next: Record<string, { done: number; total: number }> = {};
+            kidsForJobs.forEach((x, i) => {
+              const r = rows[i];
+              if (r.status === 'fulfilled') next[x.member_id] = r.value[1];
+              else if (prev[x.member_id]) next[x.member_id] = prev[x.member_id];
+            });
+            return next;
+          });
         });
 
       const currentChildStillExists = selectedChild && m.some((x) => x.member_id === selectedChild);
@@ -1837,7 +1854,7 @@ export default function Kids() {
                 // The household's own faces, once anybody has one; until
                 // then the painting, so the corner is never a row of letters.
                 const faces = headerFaces(members);
-                if (!faces.shown.some((m) => (m.avatar || '').trim())) return undefined;
+                if (!headerShowsFaces(faces.shown)) return undefined;
                 return (
                   <FamilyFaces
                     testID="family-header-faces"
@@ -3460,7 +3477,7 @@ export default function Kids() {
       <FacePickerSheet
         member={faceChild}
         onClose={() => setFaceChild(null)}
-        onSaved={(memberId, avatar) => setMembers((prev) => prev.map((m) => (m.member_id === memberId ? { ...m, avatar } : m)))}
+        onSaved={(saved) => setMembers((prev) => prev.map((m) => (m.member_id === saved.member_id ? { ...m, ...saved } : m)))}
         showToast={showToast}
       />
 
@@ -3531,7 +3548,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   tileFace: { width: 76, height: 76, borderRadius: 38, borderWidth: 3, borderColor: ui.card, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.card },
   tileFaceEmpty: { borderStyle: 'dashed' },
   // 44 high: it is a button inside the tile, and a thumb has to find it.
-  tileFaceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 44, paddingHorizontal: 10, marginTop: -6, marginBottom: -8, maxWidth: '100%' },
+  tileFaceBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 44, paddingHorizontal: 10, marginTop: -8, marginBottom: -10, maxWidth: '100%' },
   tileFaceBtnText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.orangeText, flexShrink: 1 },
   tileAddFace: { width: 56, height: 56, borderRadius: 28, backgroundColor: ui.orangeSoft, borderColor: ui.orangeSoft },
   tileName: { fontFamily: 'Figtree_800ExtraBold', fontSize: 16, color: ui.text, maxWidth: '100%' },

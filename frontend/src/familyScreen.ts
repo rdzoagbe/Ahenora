@@ -76,3 +76,13 @@ export function headerFaces(members: FamilyMember[], max = 4): { shown: FamilyMe
   const named = familyFaces(members).filter((m) => (m.name || '').trim());
   return { shown: named.slice(0, max), more: Math.max(0, named.length - max) };
 }
+
+/**
+ * Whether the header draws the faces or keeps the painting: faces once two of
+ * the people shown have a picture (or the one person there is, alone). One
+ * face among letters is a row of letters, which is what the painting is for.
+ */
+export function headerShowsFaces(shown: FamilyMember[]): boolean {
+  const withPicture = shown.filter((m) => (m.avatar || '').trim()).length;
+  return shown.length > 0 && withPicture >= Math.min(2, shown.length);
+}

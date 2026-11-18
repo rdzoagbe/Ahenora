@@ -248,6 +248,9 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
           const look = idea ? IDEA_LOOK[idea] : null;
           const BadgeIcon = look ? look.Icon : Repeat;
           const order = turnOrderFrom(turn, members);
+          // Marked as "now" only when the first face really is whose turn it is.
+          const firstIsNow = order[0]?.member_id === turn.current_member_id;
+          const orderLabel = [nextName ? t('turn_then', { name: nextName }) : '', last ? t('turn_last', { name: nameOf(members, last.member_id), when: turnWhen(last.at, t) }) : ''].filter(Boolean).join(' · ');
           return (
             <View key={turn.turn_id} style={[styles.row, i > 0 && styles.rowLine]}>
               <PressScale
@@ -274,17 +277,18 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
                   <View
                     style={styles.strip}
                     testID={`turn-order-${turn.turn_id}`}
-                    accessible
-                    accessibilityLabel={[nextName ? t('turn_then', { name: nextName }) : '', last ? t('turn_last', { name: nameOf(members, last.member_id), when: turnWhen(last.at, t) }) : ''].filter(Boolean).join(' · ')}
+                    accessible={orderLabel.length > 0}
+                    accessibilityLabel={orderLabel || undefined}
                   >
                     {order.slice(0, 4).map((p, k) => (
                       <React.Fragment key={p.member_id}>
                         {k > 0 ? <ChevronRight color={ui.muted} size={12} /> : null}
-                        <View style={[styles.stripFace, k === 0 && { borderColor: ui[tone.fg] }, k > 0 && { opacity: 0.85 }]}>
+                        <View style={[styles.stripFace, k === 0 && firstIsNow && { borderColor: ui[tone.fg] }, k > 0 && { opacity: 0.85 }]}>
                           <PersonAvatar name={p.name} avatar={p.avatar} size={20} ring={false} />
                         </View>
                       </React.Fragment>
                     ))}
+                    {order.length > 4 ? <Text style={styles.stripMore}>+{order.length - 4}</Text> : null}
                     {last ? (
                       <Text style={styles.stripLast} numberOfLines={1}>
                         {t('turn_last_short', { name: nameOf(members, last.member_id), when: turnWhen(last.at, t) })}
@@ -420,6 +424,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   rowBadge: { position: 'absolute', right: -6, bottom: -4, width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: ui.card, alignItems: 'center', justifyContent: 'center' },
   strip: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   stripFace: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  stripMore: { color: ui.muted, fontFamily: 'Figtree_800ExtraBold', fontSize: 11 },
   stripLast: { flexShrink: 1, color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12, marginLeft: 2 },
   first: { paddingVertical: 14, gap: 14 },
   firstTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },

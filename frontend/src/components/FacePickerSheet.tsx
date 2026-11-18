@@ -6,7 +6,7 @@
  * ones their own page offers (AvatarPicker); here nothing is saved until
  * "Choose", so trying faces on costs nothing, and "Later" leaves the letter.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { X } from 'lucide-react-native';
 import { api, FamilyMember } from '../api';
@@ -24,8 +24,8 @@ type Props = {
   /** The child being given a face; null keeps the sheet closed. */
   member: FamilyMember | null;
   onClose: () => void;
-  /** After a save: the Family tab reloads so every row shows the new face. */
-  onSaved: (memberId: string, avatar: string) => void;
+  /** After a save: the member as the server stored them, for the tab to show. */
+  onSaved: (saved: FamilyMember) => void;
   showToast: (message: string, kind?: 'success' | 'error' | 'info') => void;
 };
 
@@ -36,9 +36,21 @@ export default function FacePickerSheet({ member, onClose, onSaved, showToast }:
   const [picked, setPicked] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // The child last shown stays on the sheet while it slides shut: without it
+  // the title read "A face for" nobody for a moment on every close.
+  const [shown, setShown] = useState<FamilyMember | null>(member);
+  // Which child the sheet is open on now, read when a save comes back.
+  const openFor = useRef<string | null>(null);
+
   // Each child starts from their own picture (none, here), not from the face
   // tried on for the child before.
-  useEffect(() => { setPicked(member?.avatar || null); setSaving(false); }, [member?.member_id, member?.avatar]);
+  useEffect(() => {
+    openFor.current = member?.member_id ?? null;
+    if (!member) return;
+    setShown(member);
+    setPicked(member.avatar || null);
+    setSaving(false);
+  }, [member]);
 
   const changed = !!member && (picked || '') !== (member.avatar || '');
 
@@ -47,13 +59,15 @@ export default function FacePickerSheet({ member, onClose, onSaved, showToast }:
     setSaving(true);
     try {
       // The API takes a string; '' is how a picture goes back to the letter.
-      await api.updateFamilyMember(member.member_id, { avatar: picked ?? '' });
-      onSaved(member.member_id, picked ?? '');
-      onClose();
+      const saved = await api.updateFamilyMember(member.member_id, { avatar: picked ?? '' });
+      onSaved(saved);
+      // Closed and opened on another child while this was saving: that
+      // child's sheet stays as it is.
+      if (openFor.current === member.member_id) onClose();
     } catch (e) {
       showToast(apiErrorText(e, t, 'face_sheet_failed'), 'error');
     } finally {
-      setSaving(false);
+      if (openFor.current === member.member_id) setSaving(false);
     }
   };
 
@@ -61,14 +75,14 @@ export default function FacePickerSheet({ member, onClose, onSaved, showToast }:
     <KeyboardAwareBottomSheet visible={!!member} onClose={onClose} contentStyle={styles.sheet}>
       <View style={styles.header}>
         <Text style={styles.title} testID="face-sheet-title" accessibilityRole="header">
-          {t('face_sheet_title', { name: member?.name || '' })}
+          {t('face_sheet_title', { name: shown?.name || '' })}
         </Text>
         <PressScale accessibilityRole="button" accessibilityLabel={t('close')} testID="face-sheet-close" onPress={onClose} style={styles.iconBtn}>
           <X color={ui.text} size={20} />
         </PressScale>
       </View>
       <Text style={styles.body}>{t('face_sheet_body')}</Text>
-      <AvatarPicker name={member?.name || ''} value={picked} onPick={setPicked} busy={saving} forChild groups={CHILD_GROUPS} />
+      <AvatarPicker name={shown?.name || ''} value={picked} onPick={setPicked} busy={saving} forChild groups={CHILD_GROUPS} />
       <View style={styles.footer}>
         <PressScale testID="face-sheet-later" accessibilityRole="button" onPress={onClose} style={styles.laterBtn}>
           <Text style={styles.laterText}>{t('face_sheet_later')}</Text>
