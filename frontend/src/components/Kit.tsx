@@ -108,6 +108,7 @@ export function ScreenHeader({
   titleSize = 30,
   showAdd = true,
   art,
+  artNode,
 }: {
   eyebrow: string;
   title: string;
@@ -115,6 +116,9 @@ export function ScreenHeader({
   titleSize?: number;
   /** The page's painting (src/sectionArt.ts), a tile beside the brand and section name. */
   art?: ImageSourcePropType | null;
+  /** Something drawn in the painting's place: the Family tab's own faces.
+   *  It speaks for itself to a screen reader, so it is not hidden. */
+  artNode?: React.ReactNode;
   /** Off where "add" has no obvious meaning — Settings, Search, Chat. More is
    *  in the tab bar now, so those headers simply carry nothing on the right. */
   showAdd?: boolean;
@@ -126,13 +130,14 @@ export function ScreenHeader({
       {/* With a painting, the brand and the section's name sit beside it and
           the title gets the full width under them: beside the title it cut
           "October 2026" to "October 2…" on a phone. */}
-      {art ? (
+      {art || artNode ? (
         <View style={kit.headerTop}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
             <Text style={[kit.eyebrow, { color: ui.muted }]}>{eyebrow}</Text>
           </View>
-          {/* Decoration only: screen readers skip it. */}
+          {artNode ? artNode : art ? (
+          /* Decoration only: screen readers skip it. */
           <View
             style={[kit.headerArt, { borderColor: ui.line }]}
             accessibilityElementsHidden
@@ -141,6 +146,7 @@ export function ScreenHeader({
           >
             <Image source={art} style={kit.headerArtImg} resizeMode="cover" />
           </View>
+          ) : null}
         </View>
       ) : (
         <Text style={[kit.brand, { color: ui.orangeText }]}>Ahenora</Text>
