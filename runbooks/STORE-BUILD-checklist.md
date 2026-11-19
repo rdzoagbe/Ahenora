@@ -88,6 +88,14 @@ module, so this section is the only real test.
 
 ## 3. Release
 
+- [ ] **3.0** Pause the automatic test-phone updates **before** anything
+      goes to the stores: commit an empty file `.github/store-build-sync.paused`
+      to `main`. Until now only test phones carried the new runtime, and
+      `.github/workflows/store-build-sync.yml` sent them every app change by
+      itself. From 3.1 on, real families and Apple's reviewer carry it too, so
+      nothing reaches that runtime unless somebody sends it on purpose
+      (Actions → **Frontend CI and Expo update** → the store-build branch →
+      "publish now"). Delete the file when the next store build starts.
 - [ ] **3.1** Google Play: in Play Console, promote the internal release to
       Production as a **staged rollout** (e.g. 20%), not 100%. A staged
       rollout can be halted (see section 5).
