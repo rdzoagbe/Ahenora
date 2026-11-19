@@ -40,17 +40,19 @@ function fail(lines) {
 }
 
 /**
- * A package ships native code if it declares an Expo module or carries an
- * android/ or ios/ directory. Checked against what is actually installed
- * rather than guessed from the name: react-native-svg is native, and
- * react-native-web is not.
+ * A package ships native code if it declares an Expo module, carries an
+ * android/ or ios/ directory, or has a .podspec at its root (react-native
+ * itself has only that: its code is in ReactAndroid/ and React/). Checked
+ * against what is actually installed rather than guessed from the name:
+ * react-native-svg is native, and react-native-web is not.
+ * scripts/list-native-versions.js uses the same markers.
  */
 function isNative(name) {
   const base = path.join(MODULES, name);
   for (const marker of ['expo-module.config.json', 'android', 'ios']) {
     if (fs.existsSync(path.join(base, marker))) return true;
   }
-  return false;
+  return fs.existsSync(base) && fs.readdirSync(base).some((f) => f.endsWith('.podspec'));
 }
 
 const pkg = JSON.parse(fs.readFileSync(PKG, 'utf8'));
