@@ -150,7 +150,33 @@ class TheSchedule(unittest.TestCase):
         # Feature branches run this workflow too (push: claude/**). The
         # push trigger must never let one of them reach a phone.
         cond = " ".join(workflow()["jobs"]["expo-update"]["if"].split())
-        self.assertTrue(cond.startswith("github.ref == 'refs/heads/main' &&"), cond)
+        self.assertTrue(cond.startswith("(github.ref == 'refs/heads/main' &&"), cond)
+        # Nothing publishes on a push or on the schedule except from main.
+        main_part, _, branch_part = cond.partition(" || (startsWith(")
+        self.assertIn("github.event_name == 'push'", main_part)
+        self.assertNotIn("'push'", branch_part)
+        self.assertNotIn("'schedule'", branch_part)
+
+    def test_a_store_build_branch_publishes_by_hand_and_never_for_the_live_runtime(self):
+        # 2026-11-19: test phones on the next store build (a new runtime) got
+        # nothing until its branch merged. The one exception: a store-build
+        # branch, by hand, and only for a runtime main does not publish for.
+        job = workflow()["jobs"]["expo-update"]
+        cond = " ".join(job["if"].split())
+        self.assertTrue(cond.endswith(
+            "(startsWith(github.ref, 'refs/heads/claude/store-build-') && "
+            "github.event_name == 'workflow_dispatch' && inputs.publish_now)"), cond)
+        steps = job["steps"]
+        names = [s.get("name", "") for s in steps]
+        guard = next(s for s in steps if s.get("name", "").startswith("A store-build branch publishes only"))
+        self.assertIn("github.ref != 'refs/heads/main'", guard["if"])
+        self.assertIn('[ "$mine" = "$live" ]', guard["run"])
+        self.assertIn("exit 1", guard["run"])
+        # The refusal comes before anything is published.
+        self.assertLess(names.index(guard["name"]), names.index("Publish update to the Expo production branch"))
+        # The tag describes main: a branch publish leaves it alone.
+        tag = next(s for s in steps if s.get("name") == "Remember what was published")
+        self.assertIn("github.ref == 'refs/heads/main'", tag["if"])
 
     def test_the_web_app_still_goes_out_on_merge(self):
         # ahenora.com reloads itself and carries its own update banner, so it
