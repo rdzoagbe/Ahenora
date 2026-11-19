@@ -16,8 +16,16 @@ name: Store build sync
 # main's (see the expo-update job there), so nothing here can reach a phone on
 # the store version.
 #
-# A merge that conflicts stops here, loudly: it is resolved by hand on the
+# A merge that conflicts fails this run, loudly: it is resolved by hand on the
 # branch, as any conflict is.
+#
+# THE OFF SWITCH: the file .github/store-build-sync.paused on main. From the
+# day the new build goes to the stores (staged rollout, App Review), real
+# families and Apple's reviewer carry that runtime too, and an update nobody
+# has tried on the new build must not reach them by itself. Commit the file
+# then; from there test-phone updates are sent by hand (Frontend CI and Expo
+# update, on the branch, "publish now") until the branch merges. Delete the
+# file when the next store build starts.
 on:
   push:
     branches: [main]
@@ -53,8 +61,17 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          runtime() { git show "$1:frontend/app.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).expo.runtimeVersion"; }
+          if [ -e .github/store-build-sync.paused ]; then
+            echo "Paused (.github/store-build-sync.paused is on main): the store build is with the stores. Nothing merged or published." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Empty for a branch with no app.json, or no runtime in it.
+          runtime() { git show "$1:frontend/app.json" 2>/dev/null | node -e "try{process.stdout.write(String(JSON.parse(require('fs').readFileSync(0,'utf8')).expo.runtimeVersion||''))}catch(e){}" || true; }
+          # A store build is AHEAD of main: 4.0.0 against 3.0.0. A branch left
+          # behind after its build merged (3.0.0 once main is 4.0.0) is not one.
+          newer() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ] && [ "$1" != "$2" ]; }
           live=$(runtime origin/main)
+          failed=0
           branches=$(git for-each-ref --format='%(refname:lstrip=3)' 'refs/remotes/origin/claude/store-build-*')
           if [ -z "$branches" ]; then
             echo "No store-build branch is open: nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -62,9 +79,10 @@ jobs:
           fi
           for branch in $branches; do
             mine=$(runtime "origin/$branch")
-            if [ -z "$mine" ] || [ "$mine" = "$live" ]; then
-              # Merged already (or never bumped): main publishes for it.
-              echo "$branch has main's runtime ($live): skipped." | tee -a "$GITHUB_STEP_SUMMARY"
+            if [ -z "$mine" ] || ! newer "$mine" "$live"; then
+              # Merged already, never bumped, or left behind: main publishes
+              # for the phones it has, or nobody carries it.
+              echo "$branch (runtime ${mine:-none}) is not ahead of main's $live: skipped." | tee -a "$GITHUB_STEP_SUMMARY"
               continue
             fi
             git checkout -q -B "$branch" "origin/$branch"
@@ -74,16 +92,20 @@ jobs:
             fi
             if ! git merge --no-edit origin/main; then
               git merge --abort || true
-              echo "::error title=Store build sync::main does not merge cleanly into $branch. Merge it by hand on that branch; test phones on runtime $mine stay on the last update until then."
-              exit 1
+              echo "::error title=Store build sync::main does not merge cleanly into $branch. Merge it by hand on that branch, then run Frontend CI and Expo update there with publish now; test phones on runtime $mine stay on the last update until then."
+              failed=1
+              continue
             fi
             # The store build's own versions must survive the merge.
             after=$(node -p "require('./frontend/app.json').expo.runtimeVersion")
             if [ "$after" != "$mine" ]; then
               echo "::error title=Store build sync::Merging main changed $branch's runtime from $mine to $after. Not pushed."
-              exit 1
+              failed=1
+              continue
             fi
             git push origin "HEAD:refs/heads/$branch"
             gh workflow run frontend-ci-eas-update.yml --ref "$branch" -f publish_now=true
             echo "$branch: main merged in, and an update for runtime $mine is being published (after lint, typecheck and tests)." | tee -a "$GITHUB_STEP_SUMMARY"
           done
+          # One branch in trouble does not stop the others, and still fails the run.
+          exit "$failed"
