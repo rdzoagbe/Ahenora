@@ -122,6 +122,7 @@ export function AvatarPicker({
   onPick,
   busy = false,
   forChild = false,
+  groups,
 }: {
   name?: string | null;
   value?: string | null;
@@ -129,6 +130,10 @@ export function AvatarPicker({
   busy?: boolean;
   /** A child's page: their faces come first. */
   forChild?: boolean;
+  /** Only these groups (the Family tab's sheet for a child: children and
+   *  teens). A face already chosen from another group is still shown, so the
+   *  picker never hides the picture somebody has. */
+  groups?: FaceGroup[];
 }) {
   const { theme, t } = useStore();
   const ui = theme.colors;
@@ -168,6 +173,7 @@ export function AvatarPicker({
   return (
     <View style={pickerStyles.wrap}>
       {faceGroupOrder(forChild).map((g) => {
+        if (groups && !groups.includes(g) && faceFor(value)?.group !== g) return null;
         const faces = FACES.filter((f) => f.group === g);
         return (
           <View key={g} style={pickerStyles.group}>

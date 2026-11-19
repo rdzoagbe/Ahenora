@@ -11,7 +11,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { Check, Plus, Repeat, Trash2, X } from 'lucide-react-native';
+import { Car, Check, ChevronRight, CircleDot, Clapperboard, Plus, Repeat, Trash2, Utensils, X } from 'lucide-react-native';
 import { api, FamilyMember, Turn } from '../api';
 import { useStore } from '../store';
 import { apiErrorText } from '../apiError';
@@ -20,7 +20,17 @@ import { Card, useUI, UIColors } from './Kit';
 import { PersonAvatar } from './PersonAvatar';
 import { PressScale } from './PressScale';
 import KeyboardAwareBottomSheet from './KeyboardAwareBottomSheet';
-import { advanceLocally, nameOf, toggleInOrder, turnPeople, turnWhen, TURN_IDEAS } from '../whoseTurn';
+import { advanceLocally, nameOf, toggleInOrder, turnIdeaFor, turnOrderFrom, turnPeople, turnWhen, TURN_IDEAS, type TurnIdea } from '../whoseTurn';
+import { personTone } from '../homeFamily';
+import FamilyFaces from './FamilyFaces';
+
+/** Each starter's picture and colour: the car, the film, the menu, the table. */
+const IDEA_LOOK: Record<TurnIdea, { Icon: typeof Car; bg: 'blue' | 'lavender' | 'gold' | 'mint'; fg: 'blueText' | 'lavenderText' | 'goldText' | 'mintText' }> = {
+  turn_idea_front_seat: { Icon: Car, bg: 'blue', fg: 'blueText' },
+  turn_idea_film: { Icon: Clapperboard, bg: 'lavender', fg: 'lavenderText' },
+  turn_idea_dinner: { Icon: Utensils, bg: 'gold', fg: 'goldText' },
+  turn_idea_table: { Icon: CircleDot, bg: 'mint', fg: 'mintText' },
+};
 
 type Props = {
   members: FamilyMember[];
@@ -178,7 +188,7 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
   return (
     <View testID="whose-turn">
       <View style={styles.header}>
-        <Repeat color={ui.lavenderText} size={18} />
+        <Repeat color={ui.lavenderText} size={20} />
         <Text style={styles.headerText}>{t('turn_title')}</Text>
         {canEdit && shown.length > 0 ? (
           <PressScale testID="turn-add" accessibilityRole="button" onPress={() => openNew()} style={styles.headerBtn}>
@@ -189,27 +199,40 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
       </View>
       <Card style={styles.card}>
         {shown.length === 0 ? (
-          <View>
-            <Text style={styles.empty}>{t('turn_empty')}</Text>
+          <View style={styles.first}>
+            <View style={styles.firstTop}>
+              <FamilyFaces people={people.slice(0, 3)} more={Math.max(0, people.length - 3)} size={36} ground={ui.card} label={people.map((p) => p.name).join(', ')} />
+              <Text style={styles.firstText}>{canEdit ? t('turn_intro') : t('turn_empty')}</Text>
+            </View>
             {canEdit ? (
-              <View style={styles.ideas}>
-                {TURN_IDEAS.map((key) => (
-                  <PressScale
-                    key={key}
-                    testID={`turn-idea-${key}`}
-                    accessibilityRole="button"
-                    onPress={() => quickCreate(key)}
-                    disabled={saving}
-                    style={styles.idea}
-                  >
-                    <Plus color={ui.lavenderText} size={13} />
-                    <Text style={styles.ideaText}>{t(key)}</Text>
-                  </PressScale>
-                ))}
-                <PressScale testID="turn-idea-other" accessibilityRole="button" onPress={() => openNew()} style={styles.idea}>
-                  <Text style={styles.ideaText}>{t('turn_idea_other')}</Text>
+              <>
+                <View style={styles.ideaGrid}>
+                  {TURN_IDEAS.map((key) => {
+                    const look = IDEA_LOOK[key];
+                    return (
+                      <PressScale
+                        key={key}
+                        testID={`turn-idea-${key}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t(key)}, ${t(`${key}_sub`)}`}
+                        onPress={() => quickCreate(key)}
+                        disabled={saving}
+                        style={styles.ideaCard}
+                      >
+                        <View style={[styles.ideaIcon, { backgroundColor: ui[look.bg] }]}>
+                          <look.Icon color={ui[look.fg]} size={22} />
+                        </View>
+                        <Text style={styles.ideaCardTitle} numberOfLines={2}>{t(key)}</Text>
+                        <Text style={styles.ideaCardSub} numberOfLines={1}>{t(`${key}_sub`)}</Text>
+                      </PressScale>
+                    );
+                  })}
+                </View>
+                <PressScale testID="turn-idea-other" accessibilityRole="button" onPress={() => openNew()} style={styles.otherBtn}>
+                  <Text style={styles.otherText}>{t('turn_idea_other')}</Text>
                 </PressScale>
-              </View>
+                <Text style={styles.firstNote}>{t('turn_one_tap', { n: people.length })}</Text>
+              </>
             ) : null}
           </View>
         ) : null}
@@ -220,6 +243,14 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
           // The last turn, by somebody still in the family: a name that would
           // come out blank is not shown at all.
           const last = turn.history.find((h) => nameOf(members, h.member_id));
+          const tone = personTone(who?.name || whoName, members);
+          const idea = turnIdeaFor(turn.name);
+          const look = idea ? IDEA_LOOK[idea] : null;
+          const BadgeIcon = look ? look.Icon : Repeat;
+          const order = turnOrderFrom(turn, members);
+          // Marked as "now" only when the first face really is whose turn it is.
+          const firstIsNow = order[0]?.member_id === turn.current_member_id;
+          const orderLabel = [nextName ? t('turn_then', { name: nextName }) : '', last ? t('turn_last', { name: nameOf(members, last.member_id), when: turnWhen(last.at, t) }) : ''].filter(Boolean).join(' · ');
           return (
             <View key={turn.turn_id} style={[styles.row, i > 0 && styles.rowLine]}>
               <PressScale
@@ -230,14 +261,40 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
                 disabled={!canEdit}
                 style={styles.rowMain}
               >
-                <PersonAvatar name={who?.name || whoName || '?'} avatar={who?.avatar} size={44} />
+                <View>
+                  <View style={[styles.rowFace, { borderColor: ui[tone.fg] }]}>
+                    <PersonAvatar name={who?.name || whoName || '?'} avatar={who?.avatar} size={50} ring={false} />
+                  </View>
+                  <View style={[styles.rowBadge, { backgroundColor: ui[look ? look.bg : 'soft'] }]}>
+                    <BadgeIcon color={ui[look ? look.fg : 'muted']} size={13} />
+                  </View>
+                </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.rowName} numberOfLines={1}>{turn.name}</Text>
                   <Text style={styles.rowWho} numberOfLines={1} testID={`turn-who-${turn.turn_id}`}>{t('turn_now', { name: whoName })}</Text>
-                  <Text style={styles.rowSub} numberOfLines={1}>
-                    {nextName ? t('turn_then', { name: nextName }) : ''}
-                    {last ? ` · ${t('turn_last', { name: nameOf(members, last.member_id), when: turnWhen(last.at, t) })}` : ''}
-                  </Text>
+                  {/* The order, as faces: a child sees when they are next
+                      without reading. Read aloud as "then Isaiah". */}
+                  <View
+                    style={styles.strip}
+                    testID={`turn-order-${turn.turn_id}`}
+                    accessible={orderLabel.length > 0}
+                    accessibilityLabel={orderLabel || undefined}
+                  >
+                    {order.slice(0, 4).map((p, k) => (
+                      <React.Fragment key={p.member_id}>
+                        {k > 0 ? <ChevronRight color={ui.muted} size={12} /> : null}
+                        <View style={[styles.stripFace, k === 0 && firstIsNow && { borderColor: ui[tone.fg] }, k > 0 && { opacity: 0.85 }]}>
+                          <PersonAvatar name={p.name} avatar={p.avatar} size={20} ring={false} />
+                        </View>
+                      </React.Fragment>
+                    ))}
+                    {order.length > 4 ? <Text style={styles.stripMore}>+{order.length - 4}</Text> : null}
+                    {last ? (
+                      <Text style={styles.stripLast} numberOfLines={1}>
+                        {t('turn_last_short', { name: nameOf(members, last.member_id), when: turnWhen(last.at, t) })}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
               </PressScale>
               <PressScale
@@ -348,12 +405,11 @@ export default function WhoseTurnCard({ members, canEdit, refreshKey, showToast 
 }
 
 const createStyles = (ui: UIColors) => StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 10 },
-  headerText: { flex: 1, color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17 },
-  headerBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: ui.line },
-  headerBtnText: { fontFamily: 'Figtree_700Bold', fontSize: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 22, marginBottom: 10 },
+  headerText: { flex: 1, color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 19 },
+  headerBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.line },
+  headerBtnText: { fontFamily: 'Figtree_700Bold', fontSize: 13 },
   card: { paddingHorizontal: 16, paddingVertical: 4 },
-  empty: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13.5, lineHeight: 19, paddingTop: 12 },
   ideas: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 12 },
   idea: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   ideaOn: { backgroundColor: ui.lavender, borderColor: ui.lavenderText },
@@ -364,7 +420,23 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   rowMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
   rowName: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
   rowWho: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17, letterSpacing: -0.2, marginTop: 1 },
-  rowSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, marginTop: 2 },
+  rowFace: { width: 56, height: 56, borderRadius: 28, borderWidth: 3, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: ui.card },
+  rowBadge: { position: 'absolute', right: -6, bottom: -4, width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  strip: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  stripFace: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  stripMore: { color: ui.muted, fontFamily: 'Figtree_800ExtraBold', fontSize: 11 },
+  stripLast: { flexShrink: 1, color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12, marginLeft: 2 },
+  first: { paddingVertical: 14, gap: 14 },
+  firstTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  firstText: { flex: 1, color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14, lineHeight: 19 },
+  ideaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  ideaCard: { flexBasis: '47%', flexGrow: 1, minHeight: 120, borderRadius: 18, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, padding: 12, gap: 8, alignItems: 'flex-start' },
+  ideaIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  ideaCardTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
+  ideaCardSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12, marginTop: -4 },
+  otherBtn: { minHeight: 48, borderRadius: 16, borderWidth: 1, borderStyle: 'dashed', borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+  otherText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15 },
+  firstNote: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, lineHeight: 17, textAlign: 'center' },
   doneBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: ui.orangeDeep, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 99, flexShrink: 0, minHeight: 44 },
   doneText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },

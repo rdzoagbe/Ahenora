@@ -1,5 +1,5 @@
 import type { AllowanceConfig, FamilyMember } from './api';
-import { isChild } from './homeFamily';
+import { familyFaces, isChild } from './homeFamily';
 
 /**
  * What the Family tab says about the household. Pure, so it can be tested
@@ -49,4 +49,40 @@ export function allowanceDue(allowances: AllowanceConfig[], now: Date): Allowanc
 export function childLine(m: FamilyMember, t: TFunc): string {
   const stars = `${Math.max(0, m.stars || 0)}★`;
   return m.age ? `${t('fam_years', { n: m.age })} · ${stars}` : stars;
+}
+
+/**
+ * The line under a child's name on their tile: the stars, and today's jobs
+ * once the chore wheel has given them any ("★ 12 · 2/3 today"). The age gives
+ * its place to the jobs: a tile has one line, and today is what a parent
+ * looks for. With no jobs today it is the line it always was.
+ */
+export function childTileLine(m: FamilyMember, jobs: { done: number; total: number } | null | undefined, t: TFunc): string {
+  if (!jobs || jobs.total <= 0) return childLine(m, t);
+  return `★ ${Math.max(0, m.stars || 0)} · ${t('fam_today_n_of_m', { done: jobs.done, total: jobs.total })}`;
+}
+
+/** A child or teen with no picture yet: their tile offers "Choose a face". */
+export function needsFace(m: FamilyMember): boolean {
+  return isChild(m) && !(m.avatar || '').trim();
+}
+
+/**
+ * The faces over the title: the household as Home orders it (you first), up
+ * to `max`, and how many more there are. People without a name are left out,
+ * as they are from the count beside it.
+ */
+export function headerFaces(members: FamilyMember[], max = 4): { shown: FamilyMember[]; more: number } {
+  const named = familyFaces(members).filter((m) => (m.name || '').trim());
+  return { shown: named.slice(0, max), more: Math.max(0, named.length - max) };
+}
+
+/**
+ * Whether the header draws the faces or keeps the painting: faces once two of
+ * the people shown have a picture (or the one person there is, alone). One
+ * face among letters is a row of letters, which is what the painting is for.
+ */
+export function headerShowsFaces(shown: FamilyMember[]): boolean {
+  const withPicture = shown.filter((m) => (m.avatar || '').trim()).length;
+  return shown.length > 0 && withPicture >= Math.min(2, shown.length);
 }

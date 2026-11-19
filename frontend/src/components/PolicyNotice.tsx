@@ -7,8 +7,14 @@
  * shows on Home until it is acknowledged on this device; reading the policy
  * does not count as acknowledging it.
  *
- * For the next change: set POLICY_NOTICE_ID to the policy's new "updated"
- * date and write its own wording (policy_notice_* in i18n).
+ * For the next change, announce first (runbooks/privacy-changes.md has the
+ * rule and the EU guidance it rests on):
+ *   1. at least 30 days before the change, ship a new notice: a new
+ *      POLICY_NOTICE_ID (any value not used before; the date it ships is
+ *      fine) and its own wording (policy_notice_* in i18n) saying what will
+ *      change, ON WHICH DATE, its likely effect, and what people can do;
+ *   2. on that date, ship the change and the updated policy together;
+ *   3. record both dates in runbooks/privacy-changes.md.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
