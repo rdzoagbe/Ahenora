@@ -55,6 +55,35 @@ def font_css() -> str:
     return "\n".join(rules)
 
 
+MM = 72 / 25.4
+
+
+def mark_trim(path):
+    """Tell the print shop where the A5 is.
+
+    Chrome writes the sheet a fraction of a point off 154 x 216mm and says
+    nothing about bleed. This sets the sheet to exactly 154 x 216mm and adds
+    the boxes a prepress check reads: the TrimBox is the A5 itself, 3mm in
+    from every edge, and the BleedBox is the whole sheet. Nothing is moved or
+    scaled; only the edges are stated.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import RectangleObject
+
+    reader = PdfReader(path)
+    writer = PdfWriter()
+    sheet = RectangleObject([0, 0, 154 * MM, 216 * MM])
+    trim = RectangleObject([3 * MM, 3 * MM, 151 * MM, 213 * MM])
+    for page in reader.pages:
+        page.mediabox = sheet
+        page.cropbox = sheet
+        page.bleedbox = sheet
+        page.trimbox = trim
+        writer.add_page(page)
+    with open(path, "wb") as fh:
+        writer.write(fh)
+
+
 async def main(only):
     css = font_css()
     sheets = sorted(glob.glob(os.path.join(PRINT, "*.html")))
@@ -77,10 +106,16 @@ async def main(only):
         for sheet in sheets:
             await page.goto("file://" + sheet)
             await page.evaluate("document.fonts.ready")
-            size = "A3" if "-a3-" in os.path.basename(sheet) else "A5"
             out = sheet[:-5] + ".pdf"
-            await page.pdf(path=out, format=size, print_background=True,
-                           prefer_css_page_size=True)
+            if os.path.basename(sheet).startswith("glossy-"):
+                # The print-shop sheet: A5 plus 3mm of bleed on every side.
+                await page.pdf(path=out, width="154mm", height="216mm",
+                               print_background=True, prefer_css_page_size=True)
+                mark_trim(out)
+            else:
+                size = "A3" if "-a3-" in os.path.basename(sheet) else "A5"
+                await page.pdf(path=out, format=size, print_background=True,
+                               prefer_css_page_size=True)
             print("wrote", os.path.relpath(out, ROOT))
         await browser.close()
 
