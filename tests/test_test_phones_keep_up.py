@@ -30,12 +30,36 @@ class TheSync(unittest.TestCase):
     def test_a_branch_with_mains_runtime_is_left_alone(self):
         # Merged, or never bumped: main already publishes for it, and a second
         # publish from here would reach every phone on the store version.
-        self.assertIn('if [ -z "$mine" ] || [ "$mine" = "$live" ]; then', RUN)
+        self.assertIn('if [ -z "$mine" ] || ! newer "$mine" "$live"; then', RUN)
+
+    def test_a_branch_left_behind_is_not_a_store_build(self):
+        # Once 1.3.0 merges, main is 4.0.0 and an old claude/store-build-*
+        # branch still says 3.0.0: only a runtime AHEAD of main's is synced.
+        import subprocess
+        newer = next(l for l in RUN.splitlines() if l.strip().startswith("newer()"))
+        def ahead(a, b):
+            return subprocess.run(["bash", "-c", f'{newer}\nnewer "{a}" "{b}"']).returncode == 0
+        self.assertTrue(ahead("4.0.0", "3.0.0"))
+        self.assertTrue(ahead("10.0.0", "9.0.0"))
+        self.assertFalse(ahead("3.0.0", "4.0.0"))
+        self.assertFalse(ahead("4.0.0", "4.0.0"))
+
+    def test_it_can_be_switched_off_for_the_release(self):
+        # With the stores, real families carry the new runtime too.
+        paused = RUN.index("if [ -e .github/store-build-sync.paused ]; then")
+        self.assertLess(paused, RUN.index("git for-each-ref"))
+        self.assertIn("exit 0", RUN[paused:RUN.index("runtime()")])
+
+    def test_one_branch_in_trouble_does_not_stop_the_others(self):
+        self.assertNotIn("exit 1", RUN)
+        self.assertEqual(RUN.count("failed=1"), 2)
+        self.assertIn('exit "$failed"', RUN)
 
     def test_a_conflict_stops_loudly_and_pushes_nothing(self):
         conflict = RUN.index("if ! git merge --no-edit origin/main; then")
         self.assertLess(conflict, RUN.index("git push origin"))
-        self.assertIn("exit 1", RUN[conflict:RUN.index("git push origin")])
+        between = RUN[conflict:RUN.index("git push origin")]
+        self.assertRegex(between, r"failed=1\s+continue")
 
     def test_the_merge_must_not_change_the_store_builds_runtime(self):
         self.assertIn('if [ "$after" != "$mine" ]; then', RUN)
