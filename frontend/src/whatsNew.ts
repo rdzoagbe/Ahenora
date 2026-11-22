@@ -92,24 +92,51 @@ export const RELEASE_NOTES: Record<string, string[]> = {
 
 export const CURRENT_RELEASE = '2026-10-01';
 
+/**
+ * The day a store version reached the stores.
+ *
+ * It decides which is the news: the store version's own notes, or a dated
+ * release. A dated release LATER than the store version supersedes its notes;
+ * one from before it does not come back. Add the date with the notes when a
+ * store build ships. A version with no date here keeps the older behaviour
+ * (its notes first, dated ones in whatever room is left).
+ */
+export const STORE_RELEASED: Record<string, string> = {
+  // Google Play at 100%; the App Store followed within the week.
+  '1.3.0': '2026-11-14',
+};
+
 /** What the banner announces: the current release if one is set, else the store version. */
-export function announcement(version: string): { key: string; items: string[]; byDate: boolean } {
-  const dated = CURRENT_RELEASE ? RELEASE_NOTES[CURRENT_RELEASE] || [] : [];
+export function announcement(
+  version: string,
+  // The release in force. Only the tests pass another one, to see what the
+  // next dated release will do before it is written.
+  release: string = CURRENT_RELEASE,
+): { key: string; items: string[]; byDate: boolean } {
+  const dated = release ? RELEASE_NOTES[release] || [] : [];
   const own = WHATS_NEW[version] || [];
   // The NEWEST store version announces its own notes too. A dated release used
   // to outrank them completely, so 1.2.1's "invitation links open the app"
   // never reached anybody. Older store versions keep the dated notes only:
   // their store notes were announced (or skipped) long ago.
   if (own.length && version === newestStoreVersion()) {
+    // 1.3.0 has three notes of its own, which is all the banner holds: a
+    // dated release set after it found no room, the key stayed "1.3.0", and
+    // somebody who had dismissed the 1.3.0 notes was never told anything
+    // again. Dates compare as text (YYYY-MM-DD).
+    const released = STORE_RELEASED[version];
+    if (released && dated.length && release > released) {
+      return { key: release, items: dated, byDate: true };
+    }
     const items = Array.from(new Set([...own, ...dated])).slice(0, 3);
     // The key names the dated release only if one of its notes made the list:
     // otherwise somebody who never saw those notes would be recorded as
     // having seen them.
     const datedShown = dated.some((k) => items.includes(k));
-    return { key: datedShown ? `${version}+${CURRENT_RELEASE}` : version, items, byDate: false };
+    return { key: datedShown ? `${version}+${release}` : version, items, byDate: false };
   }
   if (dated.length) {
-    return { key: CURRENT_RELEASE, items: dated, byDate: true };
+    return { key: release, items: dated, byDate: true };
   }
   return { key: version, items: own, byDate: false };
 }

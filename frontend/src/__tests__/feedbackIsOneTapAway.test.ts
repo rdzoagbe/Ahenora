@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
-import { announcement, newestStoreVersion, CURRENT_RELEASE, RELEASE_NOTES, WHATS_NEW } from '../whatsNew';
+import { announcement, newestStoreVersion, CURRENT_RELEASE, RELEASE_NOTES, STORE_RELEASED, WHATS_NEW } from '../whatsNew';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
 const read = (...p: string[]) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
@@ -63,6 +63,37 @@ describe('release notes', () => {
     expect(a.key).toBe(datedShown ? `${newest}+${CURRENT_RELEASE}` : newest);
     expect(WHATS_NEW[newest].length).toBe(3);
     expect(a.key).toBe(newest);
+  });
+
+  it('a dated release after the newest store version is the news on it', () => {
+    // 1.3.0 fills the banner with its own three notes. A later dated release
+    // found no room and no new key, so it announced nothing to anybody who
+    // had already dismissed the 1.3.0 notes.
+    const newest = newestStoreVersion();
+    const later = '2099-01-01';
+    RELEASE_NOTES[later] = ['wn_aisles'];
+    try {
+      const a = announcement(newest, later);
+      expect(a).toEqual({ key: later, items: ['wn_aisles'], byDate: true });
+      // A new key, so the banner shows again for somebody who saw the store notes.
+      expect(a.key).not.toBe(announcement(newest).key);
+    } finally {
+      delete RELEASE_NOTES[later];
+    }
+  });
+
+  it('a dated release from before the newest store version does not come back', () => {
+    // 2026-10-01 was announced long ago. Nobody on 1.3.0 who dismissed its
+    // notes is shown the banner again because of it.
+    const newest = newestStoreVersion();
+    expect(STORE_RELEASED[newest]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(CURRENT_RELEASE <= STORE_RELEASED[newest]).toBe(true);
+    expect(announcement(newest).key).toBe(newest);
+  });
+
+  it('the newest store version says when it shipped', () => {
+    // Without the date a later dated release cannot take over (see above).
+    expect(STORE_RELEASED[newestStoreVersion()]).toBeTruthy();
   });
 
   it('knows which store version is newest', () => {
