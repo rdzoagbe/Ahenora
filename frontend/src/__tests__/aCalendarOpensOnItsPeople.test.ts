@@ -14,8 +14,11 @@
  *  - narrowing to a person keeps only their cards; "Everyone" keeps all;
  *  - a day's dots are one per colour, in the cards' order, three at most,
  *    with a card nobody is named on counted as the household's;
- *  - the screen reads the week ahead only while today is the day it opened
- *    on, and asks for one day alone once a day is picked;
+ *  - the list under the calendar is the shown day alone. It ran a week ahead
+ *    until 2026-11-22, when Roland chose the page that opens on the week
+ *    strip and on today (agendaOpensOnToday.test.ts has the rest of that);
+ *  - the faces are behind one button beside the day's name since the same
+ *    day: a sheet with a row per person, where a row of chips ran;
  *  - every new string exists in all four languages.
  */
 import fs from 'fs';
@@ -107,10 +110,12 @@ describe('the dots under a day', () => {
 });
 
 describe('the screen', () => {
-  it('reads the week ahead only while today is the day it opened on', () => {
+  it('lists the shown day alone, today included', () => {
+    // It ran seven days ahead while today was the day; the week is in the
+    // strip above now, and what comes next is one card under the list.
     expect(screen).toContain('const weekAhead = selectedDay === todayKey;');
-    expect(screen).toContain('groupByDay(visibleCards, null).filter((g) => g.day >= todayKey && g.day <= horizonKey)');
-    expect(screen).toContain('return groupByDay(visibleCards, selectedDay);');
+    expect(screen).toContain('const groups = useMemo(() => groupByDay(visibleCards, selectedDay), [visibleCards, selectedDay]);');
+    expect(screen).not.toContain('horizonKey');
   });
 
   it('narrows the month and the list, and never the agenda panel', () => {
@@ -121,7 +126,7 @@ describe('the screen', () => {
     expect(screen).toMatch(/const ahead = cards\n\s+\.filter/);
   });
 
-  it('offers the row of faces from two people, and a chip per person', () => {
+  it('offers the faces from two people, and a row per person in the sheet', () => {
     expect(screen).toContain('people.length > 1 ? (');
     expect(screen).toContain('testID="calendar-person-all"');
     expect(screen).toContain('testID={`calendar-person-${m.member_id}`}');
@@ -134,10 +139,11 @@ describe('the screen', () => {
     expect(screen).toContain('tone ? ui[tone.fg] : ui.orange');
   });
 
-  it('heads a week by its days, and a picked day by its name alone', () => {
-    expect(screen).toContain('{weekAhead || !selectedDay ? (');
+  it('heads the undated list by its days, and a picked day by its name alone', () => {
+    // Only the undated list runs over several days now, so only it heads them.
+    expect(screen).toContain('{!selectedDay ? (');
     expect(screen).toContain("if (diffDays === 0) return t('feed_today');");
-    expect(screen).toContain("{weekAhead ? t('cal_next_days') : selectedDay ? formatDayFull(selectedDay) : t('upcoming')}");
+    expect(screen).toContain("{weekAhead ? t('feed_today') : selectedDay ? formatDayFull(selectedDay) : t('upcoming')}");
   });
 
   it('says every new thing in all four languages', () => {

@@ -84,6 +84,13 @@ async def main():
         r["agenda_shows_what_is_ahead"] = "School trip soon" in body0
         r["agenda_is_not_showing_the_past"] = (
             "Bins yesterday" not in body0 and "Dentist last month" not in body0)
+        # The page opens on the week since 2026-11-22, where the arrows move a
+        # week and keep a day picked. The month is behind the dates in the
+        # card's head; paging it is what clears the day.
+        r["opens_on_the_week"] = await page.locator('[data-testid^="calendar-day-20"]').count() == 7
+        await page.click('[data-testid="cal-view-toggle"]')
+        await page.wait_for_timeout(600)
+        r["the_month_is_one_tap_away"] = await page.locator('[data-testid^="calendar-day-20"]').count() >= 28
         await page.click('[data-testid="next-month"]')
         await page.wait_for_timeout(500)
         await page.click('[data-testid="prev-month"]')
