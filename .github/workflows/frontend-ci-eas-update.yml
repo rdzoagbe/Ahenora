@@ -347,12 +347,24 @@ jobs:
     # That is safe either way: the tag only moves after a publish succeeds,
     # so the second run (or tonight's slot) publishes both changes, at worst
     # staging one bundle twice.
+    #
+    # ONE EXCEPTION, by hand only: a store-build branch (claude/store-build-*),
+    # run with "publish now". Test phones carrying the NEXT store build have a
+    # new runtime, and nothing publishes for it until that branch merges, so
+    # they would sit on the build's own JavaScript for as long as the stores
+    # take (2026-11-19: Roland's test phones on 1.3.0 never got the Family
+    # redesign). The step below refuses unless the branch's runtime differs
+    # from main's, so it can never reach a phone on the store version, and the
+    # ota-published tag is left alone: it describes main.
     if: >-
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' ||
-       github.event_name == 'schedule' ||
-       (github.event_name == 'workflow_dispatch' &&
-        inputs.publish_now))
+      (github.ref == 'refs/heads/main' &&
+       (github.event_name == 'push' ||
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' &&
+         inputs.publish_now))) ||
+      (startsWith(github.ref, 'refs/heads/claude/store-build-') &&
+       github.event_name == 'workflow_dispatch' &&
+       inputs.publish_now)
     # Moves the `ota-published` tag after a successful publish, so tomorrow
     # night knows whether anything has changed.
     permissions:
@@ -413,10 +425,28 @@ jobs:
       # compares ids rather than contents — so republishing an unchanged bundle
       # stages a real update on every device, and with silent apply that is
       # every user's app relaunching once a day for nothing.
+      - name: A store-build branch publishes only for a runtime main does not have
+        if: steps.expo_config.outputs.publish == 'true' && github.ref != 'refs/heads/main'
+        run: |
+          git fetch --no-tags origin main
+          mine=$(node -p "require('./frontend/app.json').expo.runtimeVersion")
+          live=$(git show origin/main:frontend/app.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).expo.runtimeVersion")
+          echo "This branch: runtime $mine. main (what the stores serve): runtime $live."
+          if [ -z "$mine" ] || [ -z "$live" ] || [ "$mine" = "$live" ]; then
+            echo "::error title=Refused::This branch has the runtime main publishes for ($live). Publishing from here would reach every phone on the store version. Merge to main instead."
+            exit 1
+          fi
+
       - name: Has the app changed since the last publish?
         id: changed
         if: steps.expo_config.outputs.publish == 'true'
-        run: ./scripts/ota_should_publish.sh "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            ./scripts/ota_should_publish.sh "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # By hand, for test phones: always publish what was asked for.
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Node.js
         if: steps.expo_config.outputs.publish == 'true' && steps.changed.outputs.publish == 'true'
@@ -507,7 +537,8 @@ jobs:
       # leave the tag where it was, so tomorrow night picks the same work up
       # again instead of deciding nothing has changed and skipping it forever.
       - name: Remember what was published
-        if: steps.expo_config.outputs.publish == 'true' && steps.changed.outputs.publish == 'true'
+        # main only: the tag says what main last published.
+        if: steps.expo_config.outputs.publish == 'true' && steps.changed.outputs.publish == 'true' && github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
