@@ -1310,7 +1310,7 @@ export default function MetricsScreen() {
                 </View>
               </View>
               <Text style={styles.hint}>
-                Only devices on runtime {adoption.current_runtime} (store build {adoption.store_version}) receive over-the-air updates. Others update via the Play Store.
+                Only devices on runtime {adoption.current_runtime} (store build {adoption.store_version}) receive over-the-air updates. Others update from their app store.
               </Text>
               <View style={styles.card}>
                 {Object.entries(adoption.by_app_version).map(([ver, n], i) => (
