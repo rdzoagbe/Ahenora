@@ -29,11 +29,13 @@ export function isEarlier(card: Dated, now: Date): boolean {
 
 /**
  * Where the "Now" line sits in today's list: before the first timed event
- * still to come. With none left it goes after the last one; with nothing on
- * the day there is no line (-1).
+ * still to come. With none left it goes after the last one; with nothing
+ * timed on the day there is no line (-1). The screen lists all-day events
+ * first, so they sit above the line without ever being "gone by".
  */
 export function nowIndex(items: Dated[], now: Date): number {
-  if (items.length === 0) return -1;
+  // A day of all-day events only has no "before" and "after" to mark.
+  if (!items.some(hasClock)) return -1;
   const at = items.findIndex((c) => hasClock(c) && !isEarlier(c, now));
   return at === -1 ? items.length : at;
 }
@@ -62,6 +64,7 @@ export function nextAfter<T extends Dated>(
   shownDay: string,
   todayKey: string,
   keyOf: (card: T) => string,
+  now?: Date,
 ): T | null {
   let best: T | null = null;
   let bestAt = Infinity;
@@ -70,6 +73,8 @@ export function nextAfter<T extends Dated>(
     // After the shown day, and not before today: looking back at last
     // Thursday, what comes next is today's, not last Friday's.
     if (!key || key <= shownDay || key < todayKey) continue;
+    // Today's 08:30 is not "next" at three in the afternoon.
+    if (now && isEarlier(card, now)) continue;
     const at = new Date(card.due_date || '').getTime();
     if (Number.isNaN(at)) continue;
     if (at < bestAt) { best = card; bestAt = at; }

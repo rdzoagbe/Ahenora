@@ -39,8 +39,10 @@ describe('where the day has got to', () => {
     expect(nowIndex([timed(8), timed(10)], now)).toBe(2);
   });
 
-  it('draws no line on a day with nothing on it', () => {
+  it('draws no line on a day with nothing on it, or nothing timed', () => {
     expect(nowIndex([], now)).toBe(-1);
+    // All-day events only: there is no before and after to mark.
+    expect(nowIndex([allDay(), allDay()], now)).toBe(-1);
   });
 
   it('never counts an all-day event as gone by', () => {
@@ -95,6 +97,14 @@ describe('what comes next', () => {
 
   it('is never from the past: looking back, what is next is today\u2019s', () => {
     expect(nextAfter(cards, '2026-11-05', '2026-11-22', key)?.title).toBe('football');
+  });
+
+  it('is not something from earlier today', () => {
+    // At three in the afternoon, today's 08:30 is not what comes next.
+    const today = [on('2026-11-22', '08:30', 'this morning'), on('2026-11-22', '17:00', 'football'), on('2026-11-23', '08:30', 'trip')];
+    const three = new Date('2026-11-22T15:00:00.000Z');
+    expect(nextAfter(today, '2026-11-19', '2026-11-22', key, three)?.title).toBe('football');
+    expect(nextAfter(today, '2026-11-19', '2026-11-22', key)?.title).toBe('this morning');
   });
 
   it('is nothing when nothing is ahead', () => {
@@ -154,9 +164,37 @@ describe('the screen', () => {
     expect(screen).not.toContain("t('custody_setup')");
   });
 
-  it('still lets a sync be stopped', () => {
+  it('says what a sync is doing above the day, and still lets it be stopped', () => {
+    // The header carried the spinner and the cancel. With one Add in that
+    // corner they sit under the calendar, seen without scrolling.
     expect(screen).toContain('testID="cancel-calendar-sync"');
     expect(screen).toContain('onPress={cancelSync}');
+    expect(screen.indexOf('testID="calendar-sync-card"')).toBeLessThan(screen.indexOf('{/* The day */}'));
+  });
+
+  it('lists all-day events first, so they never fall under the line', () => {
+    expect(screen).toContain('const allA = a.time_set === false ? 0 : 1;');
+    expect(screen).toContain('if (allA !== allB) return allA - allB;');
+  });
+
+  it('does not call a day free for everyone when it shows one person', () => {
+    expect(screen).toContain('{selectedDay && person ? null : (');
+  });
+
+  it('names the arrows for what they move', () => {
+    expect(screen).toContain("viewMode === 'week' ? t('a11y_prev_week') : t('a11y_prev_month')");
+    expect(screen).toContain("viewMode === 'week' ? t('a11y_next_week') : t('a11y_next_month')");
+  });
+
+  it('reads the gift pot out with the birthday', () => {
+    expect(screen).toContain("pot ? [who, when, potText].filter(Boolean).join(', ') : sub");
+  });
+
+  it('keeps the minute on the minute, and again when the app comes back', () => {
+    expect(screen).toContain('60_000 - (Date.now() % 60_000) + 50');
+    expect(screen).toContain("if (state === 'active') setNow(new Date());");
+    expect(screen).toContain('clearTimeout(first);');
+    expect(screen).toContain('back.remove();');
   });
 
   it('leads an event with its time, and draws the line only on today', () => {
@@ -168,7 +206,8 @@ describe('the screen', () => {
 
   it('shows one card for what comes next, under the day', () => {
     expect(screen).toContain('testID="calendar-next-up"');
-    expect(screen).toContain('nextAfter(visibleCards, selectedDay, todayKey, cardDateKey)');
+    expect(screen).toContain('nextAfter(visibleCards, selectedDay, todayKey, cardDateKey, now)');
+    expect(screen).toContain("if (diff === 0) return t('feed_today').toLowerCase();");
   });
 
   it('offers to add to an empty day, by its name', () => {
@@ -184,7 +223,7 @@ describe('the screen', () => {
   it('says every new thing in all four languages', () => {
     const keys = ['cal_back_to_today', 'cal_week_n_see_month', 'cal_fold_to_week', 'cal_whose', 'cal_now', 'cal_past',
       'cal_in_min', 'cal_in_hm', 'cal_next_up', 'cal_nothing_today', 'cal_nothing_on', 'cal_free_day', 'cal_add_for',
-      'cal_import_short'];
+      'cal_import_short', 'cal_all_short', 'a11y_prev_week', 'a11y_next_week'];
     for (const key of keys) {
       for (const lang of LANGS) {
         expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);

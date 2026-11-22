@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
@@ -121,7 +121,15 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
     .sort()
     .map((day) => ({
       day,
-      items: groups[day].sort((a, b) => new Date(a.due_date || '').getTime() - new Date(b.due_date || '').getTime()),
+      // An all-day event leads its day: it has a day and no moment, and the
+      // hour it is stored at (noon) used to drop it between the morning and
+      // the afternoon, under the "Now" line with what had gone by.
+      items: groups[day].sort((a, b) => {
+        const allA = a.time_set === false ? 0 : 1;
+        const allB = b.time_set === false ? 0 : 1;
+        if (allA !== allB) return allA - allB;
+        return new Date(a.due_date || '').getTime() - new Date(b.due_date || '').getTime();
+      }),
     }));
 }
 
@@ -332,10 +340,24 @@ export default function Calendar() {
   // Whose agenda: the sheet behind the faces beside the day's name.
   const [peopleOpen, setPeopleOpen] = useState(false);
   // The minute, for the "Now" line and "in 1 h 20". Re-read each minute.
+  // On the minute rather than sixty seconds from whenever the page mounted
+  // (which left the line up to a minute behind), and again when the app
+  // comes back from the background, where timers do not run.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
+    let every: ReturnType<typeof setInterval> | undefined;
+    const first = setTimeout(() => {
+      setNow(new Date());
+      every = setInterval(() => setNow(new Date()), 60_000);
+    }, 60_000 - (Date.now() % 60_000) + 50);
+    const back = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setNow(new Date());
+    });
+    return () => {
+      clearTimeout(first);
+      if (every) clearInterval(every);
+      back.remove();
+    };
   }, []);
   // Add an event to the day the calendar is already on, instead of leaving for
   // the Feed to capture it — the gesture everyone expects here.
@@ -718,8 +740,8 @@ export default function Calendar() {
   const groups = useMemo(() => groupByDay(visibleCards, selectedDay), [visibleCards, selectedDay]);
   // What comes after the shown day, soonest first: "Next".
   const nextUp = useMemo(
-    () => (selectedDay ? nextAfter(visibleCards, selectedDay, todayKey, cardDateKey) : null),
-    [visibleCards, selectedDay, todayKey],
+    () => (selectedDay ? nextAfter(visibleCards, selectedDay, todayKey, cardDateKey, now) : null),
+    [visibleCards, selectedDay, todayKey, now],
   );
 
   // Past days, held back.
@@ -1184,10 +1206,11 @@ export default function Calendar() {
   const weekRange = weekRangeLabel(weekDays, locale);
   const weekNumber = isoWeek(weekDays[0]).week;
   const weekdayOf = (day: string) => new Date(`${day}T00:00:00`).toLocaleDateString(locale, { weekday: 'long' });
-  // "tomorrow", else "Fri 27": the day over the time on the "Next" card.
+  // "today", "tomorrow", else "Fri 27": the day over the time on the "Next" card.
   const shortDay = (day: string) => {
     const date = new Date(`${day}T00:00:00`);
     const diff = Math.round((startOfLocalDay(date).getTime() - startOfLocalDay(new Date()).getTime()) / 86_400_000);
+    if (diff === 0) return t('feed_today').toLowerCase();
     if (diff === 1) return t('feed_tomorrow').toLowerCase();
     return date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric' });
   };
@@ -1227,7 +1250,17 @@ export default function Calendar() {
     const sub = [who, when, cleanText(card.description) || (isGoogle ? t('cal_google_calendar') : '')]
       .filter(Boolean).join(' · ');
     const glyph = glyphFor(card.icon);
-    const spoken = [opts.dayLabel, clock ? `${clock}${lang === 'en' && ampm ? ` ${ampm}` : ''}` : t('feed_all_day'), cleanText(card.title), sub]
+    // A birthday with a gift pot shows the pot where the line of detail goes.
+    const pot = card.type === 'BIRTHDAY' ? giftPotByCard[card.card_id] : undefined;
+    const potText = pot
+      ? t('gp_chip', {
+        total: String(pot.total_pledged),
+        target: String(Math.round(pot.target_total ?? pot.per_head * Math.max(pot.contributor_count, 2))),
+      })
+      : '';
+    // Read out whole: the time column is hidden from a screen reader, and a
+    // label of its own replaces what the card's children would have said.
+    const spoken = [opts.dayLabel, clock ? `${clock}${lang === 'en' && ampm ? ` ${ampm}` : ''}` : t('feed_all_day'), cleanText(card.title), pot ? [who, when, potText].filter(Boolean).join(', ') : sub]
       .filter(Boolean).join(', ');
     return (
       <View style={styles.eventRow}>
@@ -1281,16 +1314,10 @@ export default function Calendar() {
               {card.source === 'CALENDAR' ? <CalendarDays color={ui.muted} size={12} /> : null}
               <Text style={[styles.eventTitle, { flexShrink: 1 }]} numberOfLines={2}>{cleanText(card.title)}</Text>
             </View>
-            {card.type === 'BIRTHDAY' && giftPotByCard[card.card_id] ? (
+            {pot ? (
               <View style={styles.potChip}>
                 <Gift color={ui.orangeText} size={11} />
-                <Text style={styles.potChipText}>
-                  {t('gp_chip', {
-                    total: String(giftPotByCard[card.card_id].total_pledged),
-                    target: String(Math.round(giftPotByCard[card.card_id].target_total
-                      ?? giftPotByCard[card.card_id].per_head * Math.max(giftPotByCard[card.card_id].contributor_count, 2))),
-                  })}
-                </Text>
+                <Text style={styles.potChipText}>{potText}</Text>
               </View>
             ) : sub ? (
               <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
@@ -1351,7 +1378,7 @@ export default function Calendar() {
               </PressScale>
             }
             title={monthTitle}
-            titleSize={30}
+            titleSize={28}
             // One Add on this page, and it adds to the day being looked at.
             showAdd={false}
             right={
@@ -1397,7 +1424,7 @@ export default function Calendar() {
           {/* Week / Month */}
           <KitCard style={styles.calCard}>
             <View style={styles.monthHeader}>
-              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={t('a11y_prev_month')} onPress={() => (viewMode === 'week' ? shiftWeek(-1) : shiftMonth(-1))} style={styles.monthNav}>
+              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={viewMode === 'week' ? t('a11y_prev_week') : t('a11y_prev_month')} onPress={() => (viewMode === 'week' ? shiftWeek(-1) : shiftMonth(-1))} style={styles.monthNav}>
                 <ChevronLeft color={ui.text} size={20} />
               </PressScale>
               {/* The dates are the switch: the week opens into the month, the
@@ -1421,7 +1448,7 @@ export default function Calendar() {
                   {viewMode === 'week' ? t('cal_week_n_see_month', { n: weekNumber }) : t('cal_fold_to_week')}
                 </Text>
               </PressScale>
-              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={t('a11y_next_month')} onPress={() => (viewMode === 'week' ? shiftWeek(1) : shiftMonth(1))} style={styles.monthNav}>
+              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={viewMode === 'week' ? t('a11y_next_week') : t('a11y_next_month')} onPress={() => (viewMode === 'week' ? shiftWeek(1) : shiftMonth(1))} style={styles.monthNav}>
                 <ChevronRight color={ui.text} size={20} />
               </PressScale>
             </View>
@@ -1514,7 +1541,7 @@ export default function Calendar() {
                       key={key}
                       testID={`calendar-day-${key}`}
                       onPress={() => onSelectDay(key, date)}
-                      style={[styles.weekDayCell, { width: Math.floor(gridWidth / 7) - 4 }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
+                      style={[styles.weekDayCell, { width: Math.floor(gridWidth / 7) }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
                     >
                       <Text style={[styles.weekDayLabel, { color: selected ? '#FFFFFF' : ui.muted }]}>
                         {date.toLocaleDateString(locale, { weekday: 'short' }).charAt(0).toUpperCase()}
@@ -1533,6 +1560,23 @@ export default function Calendar() {
               </View>
             )}
           </KitCard>
+
+          {/* What a sync is doing or found, where it is seen without
+              scrolling, and the way to stop one that is running. The header
+              carried this before the page had one Add in that corner. */}
+          {syncing || calendarSyncStatus || syncResult ? (
+            <View style={styles.syncRow}>
+              {syncing ? <ActivityIndicator color={ui.orangeText} size="small" /> : null}
+              <Text testID="calendar-sync-card" style={styles.syncNote} numberOfLines={2}>
+                {calendarSyncStatus || (syncResult ? syncSummary(syncResult) : t('cal_syncing'))}
+              </Text>
+              {syncing ? (
+                <PressScale testID="cancel-calendar-sync" accessibilityRole="button" onPress={cancelSync} style={styles.syncCancel}>
+                  <Text style={styles.quietLinkText}>{t('cal_cancel')}</Text>
+                </PressScale>
+              ) : null}
+            </View>
+          ) : null}
 
           {/* The day */}
           <View style={styles.dayHead}>
@@ -1571,7 +1615,7 @@ export default function Calendar() {
                   </View>
                 )}
                 <Text style={styles.peopleBtnText} numberOfLines={1}>
-                  {person ? (person.is_me ? t('home_you') : firstNameOf(person.name)) : t('cal_everyone')}
+                  {person ? (person.is_me ? t('home_you') : firstNameOf(person.name)) : t('cal_all_short')}
                 </Text>
                 <ChevronDown color={ui.muted} size={15} />
               </PressScale>
@@ -1588,7 +1632,10 @@ export default function Calendar() {
               <Text style={styles.emptyText}>
                 {weekAhead ? t('cal_nothing_today') : selectedDay ? t('cal_nothing_on', { day: weekdayOf(selectedDay) }) : t('no_events')}
               </Text>
-              <Text style={styles.emptyHint}>{selectedDay ? t('cal_free_day') : t('cal_empty_hint')}</Text>
+              {/* Narrowed to one person, the day may be full for the others. */}
+              {selectedDay && person ? null : (
+                <Text style={styles.emptyHint}>{selectedDay ? t('cal_free_day') : t('cal_empty_hint')}</Text>
+              )}
               <PressScale testID="calendar-empty-add" accessibilityRole="button" onPress={openAddEvent} style={styles.emptyAddBtn}>
                 <Plus color="#FFFFFF" size={17} />
                 <Text style={styles.emptyAddText}>
@@ -1659,29 +1706,17 @@ export default function Calendar() {
           ) : null}
 
           {/* Import and custody: two quiet links where a banner and a pill
-              were. What a sync found is said in a line above them. */}
-          {calendarSyncStatus || syncResult ? (
-            <Text testID="calendar-sync-card" style={styles.syncNote} numberOfLines={2}>
-              {calendarSyncStatus || (syncResult ? syncSummary(syncResult) : '')}
-            </Text>
-          ) : null}
+              were. What a sync is doing is said under the calendar, above. */}
           <View style={styles.quietLinks}>
-            {syncing ? (
-              <PressScale testID="cancel-calendar-sync" accessibilityRole="button" onPress={cancelSync} style={styles.quietLink}>
-                <ActivityIndicator color={ui.orangeText} size="small" />
-                <Text style={styles.quietLinkText}>{t('cal_cancel')}</Text>
-              </PressScale>
-            ) : (
-              <PressScale
-                testID="calendar-sync-card-button"
-                accessibilityRole="button"
-                onPress={() => { setMorningNotice(false); openImportPicker(); }}
-                disabled={syncDisabled}
-                style={[styles.quietLink, syncDisabled && { opacity: 0.55 }]}
-              >
-                <Text style={styles.quietLinkText}>{t('cal_import_short')}</Text>
-              </PressScale>
-            )}
+            <PressScale
+              testID="calendar-sync-card-button"
+              accessibilityRole="button"
+              onPress={() => { setMorningNotice(false); openImportPicker(); }}
+              disabled={syncDisabled}
+              style={[styles.quietLink, syncDisabled && { opacity: 0.55 }]}
+            >
+              <Text style={styles.quietLinkText}>{syncing ? t('cal_syncing') : t('cal_import_short')}</Text>
+            </PressScale>
             {isParent && !kidsHidden ? (
               <>
                 <Text style={styles.quietDot} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">·</Text>
@@ -2361,7 +2396,6 @@ export default function Calendar() {
 const createStyles = (ui: UIColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
-  syncIconBtn: { width: 40, height: 40, borderRadius: 99, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeDeep },
   pendingPill: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.line,
@@ -2379,9 +2413,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   morningNoticeText: { flex: 1, color: ui.mintText, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, lineHeight: 17 },
   morningDismiss: { padding: 2 },
   bannerGap: { marginTop: 18 },
-  banner: { padding: 14 },
-  bannerInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  bannerText: { flex: 1, color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18 },
 
   calCard: { marginTop: 16, padding: 16, alignItems: 'center' },
   monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 14 },
@@ -2407,8 +2438,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   custodySwatch: { width: 12, height: 12, borderRadius: 4 },
   custodyLegendText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12, color: ui.muted, flexShrink: 1 },
   custodyEditBtn: { width: 30, height: 30, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.soft },
-  custodySetupBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'center', marginBottom: 12, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999, backgroundColor: ui.lavender },
-  custodySetupText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.lavenderText },
   custodyModalSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
   custodyToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   custodyToggleLabel: { flex: 1, color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15 },
@@ -2441,9 +2470,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekStrip: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'center', paddingVertical: 2 },
   weekDayCell: { alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, borderRadius: 14 },
   weekDayLabel: { fontFamily: 'Figtree_700Bold', fontSize: 11 },
-  dayHeadRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  addEventBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 9999, paddingHorizontal: 11, paddingVertical: 6 },
-  addEventText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
   dayNumber: { fontFamily: 'Figtree_700Bold', fontSize: 15.5, includeFontPadding: false, textAlign: 'center' },
   // A fixed-height row, so a day with nothing on it stands as tall as one
   // with three people's dots.
@@ -2451,15 +2477,8 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   dayDot: { width: 5, height: 5, borderRadius: 99 },
 
   // The row of faces above the month.
-  peopleRow: { marginTop: 16, marginHorizontal: -20 },
-  peopleRowInner: { paddingHorizontal: 20, gap: 8 },
-  chip: { height: 38, paddingHorizontal: 14, borderRadius: 19, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
-  chipFace: { paddingLeft: 5 },
   // The chosen one is ink on the page's own colour: readable in both themes
   // without a third colour to keep in step.
-  chipOn: { backgroundColor: ui.text, borderColor: ui.text },
-  chipText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14 },
-  chipTextOn: { color: ui.bg },
 
   // flex-start, not baseline: a day name that wraps to two lines would drag
   // "Add event" down to sit beside the second line.
@@ -2478,7 +2497,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   rangeTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rangeSub: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12.5, marginTop: 1 },
   // Whose agenda.
-  peopleBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingLeft: 6, paddingRight: 12, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, maxWidth: 190 },
+  peopleBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingLeft: 6, paddingRight: 12, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, maxWidth: 160 },
   peopleFaces: { flexDirection: 'row', alignItems: 'center' },
   peopleFace: { borderRadius: 99, borderWidth: 2, borderColor: ui.card },
   peopleBtnText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14, flexShrink: 1 },
@@ -2503,7 +2522,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   nextUpLabel: { color: ui.muted, fontFamily: 'Figtree_800ExtraBold', fontSize: 13, letterSpacing: 0.4, textTransform: 'uppercase' },
   emptyAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 48, paddingHorizontal: 20, borderRadius: 9999, backgroundColor: ui.orangeDeep, marginTop: 16 },
   emptyAddText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
-  syncNote: { marginTop: 18, textAlign: 'center', color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18 },
+  syncRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14, minHeight: 44 },
+  syncNote: { flex: 1, color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18 },
+  syncCancel: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' },
   quietLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 },
   quietLink: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 10, justifyContent: 'center' },
   quietLinkText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 14 },
