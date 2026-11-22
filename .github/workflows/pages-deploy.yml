@@ -93,7 +93,8 @@ jobs:
       # UTC) it asked 0.3 seconds after "successfully finalized", was told
       # "Found 0 artifact(s)", and the site stayed one deploy behind with a
       # red run. Nothing was wrong with the site or the artifact: the list had
-      # not caught up. So ask until the artifact is listed, then deploy.
+      # not caught up (the artifact of 04:02:59 is in the run's list today).
+      # So ask until the artifact is listed, then deploy.
       - name: Wait until GitHub lists the artifact
         env:
           GH_TOKEN: ${{ github.token }}
@@ -106,7 +107,11 @@ jobs:
             fi
             sleep 3
           done
-          echo "::error::GitHub still does not list the github-pages artifact after a minute. Re-run this job; the site is unchanged."
+          # A NEW run, not "Re-run failed jobs": a re-run uploads a second
+          # artifact under the same name into the same run, and the deploy
+          # step then stops on "Multiple artifacts named github-pages" (seen
+          # on the re-run of 2026-11-22 06:56 UTC).
+          echo "::error::GitHub still does not list the github-pages artifact after a minute. The site is unchanged. Start a new run (Actions, Deploy docs to Pages, Run workflow); re-running this one cannot work."
           exit 1
 
       - name: Deploy to GitHub Pages
