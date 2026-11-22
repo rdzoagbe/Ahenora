@@ -211,7 +211,7 @@ describe('the screen', () => {
   });
 
   it('offers to add to an empty day, by its name', () => {
-    expect(screen).toContain('testID="calendar-empty-add"');
+    expect(screen).toContain('testID="calendar-add-event"');
     expect(screen).toContain("t('cal_add_for', { day: weekdayOf(selectedDay) })");
     expect(screen).toContain('testID="calendar-empty-sync"');
   });

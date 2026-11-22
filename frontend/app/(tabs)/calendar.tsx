@@ -134,7 +134,7 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
 }
 
 export default function Calendar() {
-  const { t, lang, dataVersion, user, subscription, refreshSubscription, custodyRequested, clearCustodyRequest } = useStore();
+  const { t, lang, dataVersion, user, subscription, refreshSubscription, custodyRequested, clearCustodyRequest, openQuickAdd } = useStore();
   const { toast, showToast } = useToast();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const router = useRouter();
@@ -1379,10 +1379,14 @@ export default function Calendar() {
             }
             title={monthTitle}
             titleSize={28}
-            // One Add on this page, and it adds to the day being looked at.
+            // One Add on this page: the same picker every screen's corner
+            // opens (same testID), drawn as this page's button. It leads with
+            // a new event on the day being looked at, and still offers a task
+            // or something for the shop. The generic one is off, or there
+            // would be two.
             showAdd={false}
             right={
-              <PressScale testID="calendar-add-event" accessibilityRole="button" accessibilityLabel={t('a11y_add')} onPress={openAddEvent} style={styles.addBtn}>
+              <PressScale testID="tab-add" accessibilityRole="button" accessibilityLabel={t('a11y_add')} onPress={openQuickAdd} style={styles.addBtn}>
                 <Plus color="#FFFFFF" size={17} />
                 <Text style={styles.addBtnText}>{t('a11y_add')}</Text>
               </PressScale>
@@ -1636,7 +1640,7 @@ export default function Calendar() {
               {selectedDay && person ? null : (
                 <Text style={styles.emptyHint}>{selectedDay ? t('cal_free_day') : t('cal_empty_hint')}</Text>
               )}
-              <PressScale testID="calendar-empty-add" accessibilityRole="button" onPress={openAddEvent} style={styles.emptyAddBtn}>
+              <PressScale testID="calendar-add-event" accessibilityRole="button" onPress={openAddEvent} style={styles.emptyAddBtn}>
                 <Plus color="#FFFFFF" size={17} />
                 <Text style={styles.emptyAddText}>
                   {weekAhead || !selectedDay ? t('cal_add_event') : t('cal_add_for', { day: weekdayOf(selectedDay) })}
