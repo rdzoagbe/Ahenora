@@ -37,6 +37,8 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # To ask GitHub whether it lists the artifact yet (see the wait step below).
+  actions: read
 
 # Never run two Pages deploys at once; let an in-flight deploy finish.
 concurrency:
@@ -84,6 +86,28 @@ jobs:
           # hidden files out unless told otherwise, and a missing file fails
           # nothing: the phone just opens the browser instead.
           include-hidden-files: true
+
+      # The upload above returns the moment the artifact is stored. The deploy
+      # step then asks GitHub's API for this run's artifacts, once, and gives
+      # up if the list is empty. Twice (2026-11-21 11:58 and 2026-11-22 04:02
+      # UTC) it asked 0.3 seconds after "successfully finalized", was told
+      # "Found 0 artifact(s)", and the site stayed one deploy behind with a
+      # red run. Nothing was wrong with the site or the artifact: the list had
+      # not caught up. So ask until the artifact is listed, then deploy.
+      - name: Wait until GitHub lists the artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 20); do
+            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=github-pages" --jq '.total_count' 2>/dev/null || echo 0)
+            if [ "${count:-0}" -ge 1 ]; then
+              echo "The artifact is listed (attempt $attempt)."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::GitHub still does not list the github-pages artifact after a minute. Re-run this job; the site is unchanged."
+          exit 1
 
       - name: Deploy to GitHub Pages
         id: deployment
