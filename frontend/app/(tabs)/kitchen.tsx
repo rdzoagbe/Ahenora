@@ -3775,7 +3775,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   recipeAiLabelText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 11.5, letterSpacing: 0.8, textTransform: 'uppercase' },
   recipeAiRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   recipeAiInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, fontFamily: 'Figtree_600SemiBold', fontSize: 14.5, color: ui.text, backgroundColor: ui.soft },
-  recipeAiBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 78, justifyContent: 'center', backgroundColor: ui.orange, paddingHorizontal: 13, paddingVertical: 11, borderRadius: 12 },
+  recipeAiBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 78, justifyContent: 'center', backgroundColor: ui.orangeDeep, paddingHorizontal: 13, paddingVertical: 11, borderRadius: 12 },
   recipeAiBtnText: { color: '#fff', fontFamily: 'Figtree_800ExtraBold', fontSize: 13.5 },
   recipeAiHint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 11.5, marginTop: 8 },
   browseRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ui.line },

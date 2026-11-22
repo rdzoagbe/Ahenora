@@ -12,9 +12,11 @@
  * bar's own". It was moved next to a different duplicate.
  *
  * So: a screen whose own header control is an Add must turn the generic one
- * off. Screens whose control means something else — Calendar's import, the
- * Family tab's invite — keep both, because two buttons that do two things and
- * say so are not the same problem.
+ * off. A screen whose control means something else — the Family tab's invite
+ * — keeps both, because two buttons that do two things and say so are not the
+ * same problem. (The Calendar was one of those while its corner held Import.
+ * Since 2026-11-22 the corner is this page's own button for the same picker,
+ * so it turns the generic one off.)
  */
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
@@ -61,10 +63,22 @@ describe('the top-right corner', () => {
     expect(h).not.toContain("t('a11y_add')");
   });
 
+  it('gives the Calendar one Add, and it is the picker', () => {
+    // The page draws its own button, so the generic one is off. It opens the
+    // same picker under the same testID: a first version added events only,
+    // and adding a task or something for the shop from here was gone.
+    const [, calendar] = screens().find(([name]) => name === 'calendar.tsx')!;
+    const h = header(calendar);
+    expect(h).toContain('showAdd={false}');
+    expect(h).toContain('testID="tab-add"');
+    expect(h).toContain('onPress={openQuickAdd}');
+    expect(h).not.toContain('onPress={openAddEvent}');
+  });
+
   it('leaves screens whose control means something else alone', () => {
     // Two buttons that do two things and say so are not the problem. The
-    // Calendar imports, the Family tab invites — both keep the quick-add.
-    for (const name of ['calendar.tsx', 'kids.tsx']) {
+    // Family tab invites, and keeps the quick-add.
+    for (const name of ['kids.tsx']) {
       const found = screens().find(([f]) => f === name);
       if (!found) continue;
       const h = header(found[1]);

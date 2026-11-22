@@ -68,7 +68,7 @@ MODALS = [
     ("kids", ["css:[data-testid^='child-']", "kids-show-more"], "kids-add-reward", "add-reward"),
     ("kids", ["css:[data-testid^='child-']", "kids-show-more"], "kids-add-routine", "add-routine"),
     ("kids", ["css:[data-testid^='child-']", "kids-show-more"], "kids-assign-task", "assign-task"),
-    ("calendar", [], "calendar-add-event", "add-event"),
+    ("calendar", [], "tab-add", "add"),
     # Carpool Coordinator is a PAID feature that shipped with no way to create
     # a run — the section rendered only once one existed. Photographed from
     # here on, because a sheet nobody looks at is how that went unnoticed.

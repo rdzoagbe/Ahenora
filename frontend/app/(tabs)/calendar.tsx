@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Linking, Platform, Pressable, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
@@ -7,7 +7,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { googleClientIds } from '../../src/googleClientIds';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { CalendarDays, Car, CheckCircle2, ChevronLeft, ChevronRight, Clock, ExternalLink, Eye, Gift, Lock, MapPin, Plus, RefreshCw, Trash2, User, Users, Video, X, Pencil } from 'lucide-react-native';
+import { CalendarDays, Car, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, ExternalLink, Eye, Gift, Lock, MapPin, Plus, Trash2, User, Users, Video, X, Pencil } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import KeyboardAwareBottomSheet from '../../src/components/KeyboardAwareBottomSheet';
@@ -25,6 +25,7 @@ import { api, logEvent, CalendarImportResult, Card, Carpool, FamilyMember, GiftP
 import { PersonAvatar } from '../../src/components/PersonAvatar';
 import { personTone } from '../../src/homeFamily';
 import { calendarPeople, dayTones, firstNameOf, isTheirs, onlyTheirs } from '../../src/calendarPeople';
+import { isEarlier, minutesUntil, nextAfter, nowIndex, to24, untilParts, weekRangeLabel } from '../../src/agendaDay';
 import { usePremiumGate, LockBadge, PremiumPreviewBanner } from '../../src/components/PremiumGate';
 import { AddCardModal } from '../../src/components/AddCardModal';
 import AppToast from '../../src/components/AppToast';
@@ -62,6 +63,8 @@ const MS_SCOPES = ['openid', 'profile', 'email', 'offline_access', 'Calendars.Re
 const AUTOSYNC_DAY_KEY = 'coo_cal_autosync_day';   // YYYY-MM-DD of the last morning pull
 const CAL_SEEN_KEY = 'coo_cal_seen_ids';
 const MORNING_HOUR = 7;
+// Week or month, as last chosen on this device.
+const CAL_VIEW_KEY = 'coo_cal_view';
 
 function localDayKey(date: Date) {
   const y = date.getFullYear();
@@ -118,12 +121,20 @@ function groupByDay(cards: Card[], selectedDay: string | null) {
     .sort()
     .map((day) => ({
       day,
-      items: groups[day].sort((a, b) => new Date(a.due_date || '').getTime() - new Date(b.due_date || '').getTime()),
+      // An all-day event leads its day: it has a day and no moment, and the
+      // hour it is stored at (noon) used to drop it between the morning and
+      // the afternoon, under the "Now" line with what had gone by.
+      items: groups[day].sort((a, b) => {
+        const allA = a.time_set === false ? 0 : 1;
+        const allB = b.time_set === false ? 0 : 1;
+        if (allA !== allB) return allA - allB;
+        return new Date(a.due_date || '').getTime() - new Date(b.due_date || '').getTime();
+      }),
     }));
 }
 
 export default function Calendar() {
-  const { t, lang, dataVersion, user, subscription, refreshSubscription, custodyRequested, clearCustodyRequest } = useStore();
+  const { t, lang, dataVersion, user, subscription, refreshSubscription, custodyRequested, clearCustodyRequest, openQuickAdd } = useStore();
   const { toast, showToast } = useToast();
   const { isLocked, promptUpgrade } = usePremiumGate();
   const router = useRouter();
@@ -309,9 +320,45 @@ export default function Calendar() {
   // the calendar's own `cards`, split by whether an item was shared to me.
   const [agendaTab, setAgendaTab] = useState<'mine' | 'shared'>('mine');
   const [makingPrivate, setMakingPrivate] = useState<string | null>(null);
-  // Month vs week. Month is the grid; week is a 7-day strip of the selected
-  // week — the span busy parents actually scan.
-  const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  // Week or month. The page opens on the week (Roland, 2026-11-22): a strip
+  // of seven days leaves room for today's events on the first screen, where
+  // the month grid used to fill it. The month is one tap away, and whichever
+  // was last chosen is what the page opens on next time.
+  const [viewMode, setViewMode] = useState<'month' | 'week'>('week');
+  useEffect(() => {
+    AsyncStorage.getItem(CAL_VIEW_KEY)
+      .then((v) => { if (v === 'month' || v === 'week') setViewMode(v); })
+      .catch(() => undefined);
+  }, []);
+  const toggleView = () => {
+    setViewMode((v) => {
+      const next = v === 'week' ? 'month' : 'week';
+      AsyncStorage.setItem(CAL_VIEW_KEY, next).catch(() => undefined);
+      return next;
+    });
+  };
+  // Whose agenda: the sheet behind the faces beside the day's name.
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  // The minute, for the "Now" line and "in 1 h 20". Re-read each minute.
+  // On the minute rather than sixty seconds from whenever the page mounted
+  // (which left the line up to a minute behind), and again when the app
+  // comes back from the background, where timers do not run.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    let every: ReturnType<typeof setInterval> | undefined;
+    const first = setTimeout(() => {
+      setNow(new Date());
+      every = setInterval(() => setNow(new Date()), 60_000);
+    }, 60_000 - (Date.now() % 60_000) + 50);
+    const back = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setNow(new Date());
+    });
+    return () => {
+      clearTimeout(first);
+      if (every) clearInterval(every);
+      back.remove();
+    };
+  }, []);
   // Add an event to the day the calendar is already on, instead of leaving for
   // the Feed to capture it — the gesture everyone expects here.
   const [addOpen, setAddOpen] = useState(false);
@@ -685,23 +732,17 @@ export default function Calendar() {
   }, [visibleCards, members]);
 
   const todayKey = dateKey(new Date());
-  // Opening the calendar asks "what is coming?", and the answer is more than
-  // one day. So while today is the day — the one the screen opens on, not one
-  // anybody picked — the list below runs a week ahead, headed Today, Tomorrow,
-  // then the date. Picking any other day, today included once you have moved
-  // off it and back, still answers with that day alone.
+  // Today is the day the screen opens on. Until 2026-11-22 the list under it
+  // ran a week ahead (Today, Tomorrow, then the dates); it is now today
+  // alone, with one card for what comes next. The week is in the strip
+  // above, a dot per person on each day.
   const weekAhead = selectedDay === todayKey;
-  const horizonKey = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 6);
-    return dateKey(d);
-  }, [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const groups = useMemo(() => {
-    if (weekAhead) {
-      return groupByDay(visibleCards, null).filter((g) => g.day >= todayKey && g.day <= horizonKey);
-    }
-    return groupByDay(visibleCards, selectedDay);
-  }, [visibleCards, selectedDay, weekAhead, todayKey, horizonKey]);
+  const groups = useMemo(() => groupByDay(visibleCards, selectedDay), [visibleCards, selectedDay]);
+  // What comes after the shown day, soonest first: "Next".
+  const nextUp = useMemo(
+    () => (selectedDay ? nextAfter(visibleCards, selectedDay, todayKey, cardDateKey, now) : null),
+    [visibleCards, selectedDay, todayKey, now],
+  );
 
   // Past days, held back.
   //
@@ -1150,6 +1191,143 @@ export default function Calendar() {
   const syncDisabled = syncing || (Platform.OS === 'web' && !calendarRequest);
   const totalSelectedEvents = groups.reduce((sum, g) => sum + g.items.length, 0);
 
+  // Today, three ways: on the tile in the corner, and under "Today".
+  const todayDate = new Date();
+  const todayMonth = todayDate.toLocaleDateString(locale, { month: 'short' }).replace('.', '').toUpperCase();
+  const todayWeekday = todayDate.toLocaleDateString(locale, { weekday: 'short' });
+  // "Sunday 22": the weekday, then the day. Asked for together, English
+  // answers "22 Sunday".
+  const todayLong = `${todayDate.toLocaleDateString(locale, { weekday: 'long' })} ${todayDate.getDate()}`;
+  const goToday = () => {
+    const d = new Date();
+    setSelectedDay(dateKey(d));
+    setActiveMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+  };
+  const weekRange = weekRangeLabel(weekDays, locale);
+  const weekNumber = isoWeek(weekDays[0]).week;
+  const weekdayOf = (day: string) => new Date(`${day}T00:00:00`).toLocaleDateString(locale, { weekday: 'long' });
+  // "today", "tomorrow", else "Fri 27": the day over the time on the "Next" card.
+  const shortDay = (day: string) => {
+    const date = new Date(`${day}T00:00:00`);
+    const diff = Math.round((startOfLocalDay(date).getTime() - startOfLocalDay(new Date()).getTime()) / 86_400_000);
+    if (diff === 0) return t('feed_today').toLowerCase();
+    if (diff === 1) return t('feed_tomorrow').toLowerCase();
+    return date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric' });
+  };
+
+  // Where today has got to.
+  const nowLine = (
+    <View style={styles.nowLine} testID="calendar-now-line" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Text style={styles.nowClock}>
+        {lang === 'en'
+          ? now.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
+          : `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`}
+      </Text>
+      <View style={styles.nowDot} />
+      <View style={styles.nowRule} />
+      <Text style={styles.nowText}>{t('cal_now')}</Text>
+    </View>
+  );
+
+  // One event: its time on the left, then the card. `today` marks the ones
+  // already gone by; `soon` says how long until the next one; `dayLabel`
+  // puts a day over the time (the "Next" card is not on the shown day).
+  const renderEvent = (card: Card, opts: { today?: boolean; soon?: boolean; dayLabel?: string } = {}) => {
+    const who = (card.assignee || '').trim();
+    const member = who ? people.find((m) => isTheirs(card, m)) || members.find((m) => isTheirs(card, m)) || null : null;
+    const tone = who ? personTone(who, members) : null;
+    const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
+    const { time, ampm } = timeParts(card.due_date, card.time_set);
+    const clock = time ? (lang === 'en' ? time : to24(time, ampm)) : '';
+    const gone = !!opts.today && isEarlier(card, now);
+    const until = opts.soon ? untilParts(minutesUntil(card, now)) : null;
+    const when = gone
+      ? t('cal_past')
+      : until
+        ? (until.h > 0 ? t('cal_in_hm', { h: until.h, m: String(until.m).padStart(2, '0') }) : t('cal_in_min', { m: until.m }))
+        : '';
+    // Who, then how soon, and only then what else there is to say.
+    const sub = [who, when, cleanText(card.description) || (isGoogle ? t('cal_google_calendar') : '')]
+      .filter(Boolean).join(' · ');
+    const glyph = glyphFor(card.icon);
+    // A birthday with a gift pot shows the pot where the line of detail goes.
+    const pot = card.type === 'BIRTHDAY' ? giftPotByCard[card.card_id] : undefined;
+    const potText = pot
+      ? t('gp_chip', {
+        total: String(pot.total_pledged),
+        target: String(Math.round(pot.target_total ?? pot.per_head * Math.max(pot.contributor_count, 2))),
+      })
+      : '';
+    // Read out whole: the time column is hidden from a screen reader, and a
+    // label of its own replaces what the card's children would have said.
+    const spoken = [opts.dayLabel, clock ? `${clock}${lang === 'en' && ampm ? ` ${ampm}` : ''}` : t('feed_all_day'), cleanText(card.title), pot ? [who, when, potText].filter(Boolean).join(', ') : sub]
+      .filter(Boolean).join(', ');
+    return (
+      <View style={styles.eventRow}>
+        <View style={styles.eventTime} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {opts.dayLabel ? <Text style={styles.eventDayLabel} numberOfLines={1}>{opts.dayLabel}</Text> : null}
+          {clock ? (
+            <>
+              <Text style={[styles.eventClock, gone && { color: ui.muted }]}>{clock}</Text>
+              {lang === 'en' && ampm ? <Text style={styles.eventAmpm}>{ampm}</Text> : null}
+            </>
+          ) : (
+            <Text style={styles.eventAllDay}>{t('feed_all_day')}</Text>
+          )}
+        </View>
+        <PressScale
+          testID={`calendar-card-${card.card_id}`}
+          accessibilityRole="button"
+          accessibilityLabel={spoken}
+          onPress={() => setSelectedCard(card)}
+          style={[styles.eventCard, tone ? { backgroundColor: ui[tone.bg] } : styles.eventCardPlain]}
+        >
+          {/* The person's face when the event is somebody's;
+              the event's own picture rides on its corner. An
+              event nobody is named on shows its picture alone. */}
+          <View style={styles.eventFace}>
+            {who ? (
+              <PersonAvatar name={member?.name || who} avatar={member?.avatar} size={42} ring={false} />
+            ) : (
+              <View
+                testID={glyph ? `calendar-icon-${card.card_id}` : undefined}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={styles.eventIcon}
+              >
+                {glyph ? <Text style={styles.eventIconGlyph}>{glyph}</Text> : <CalendarDays color={ui.muted} size={20} />}
+              </View>
+            )}
+            {glyph && who ? (
+              <View
+                testID={`calendar-icon-${card.card_id}`}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={styles.eventBadge}
+              >
+                <Text style={styles.eventBadgeGlyph}>{glyph}</Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {card.source === 'CALENDAR' ? <CalendarDays color={ui.muted} size={12} /> : null}
+              <Text style={[styles.eventTitle, { flexShrink: 1 }]} numberOfLines={2}>{cleanText(card.title)}</Text>
+            </View>
+            {pot ? (
+              <View style={styles.potChip}>
+                <Gift color={ui.orangeText} size={11} />
+                <Text style={styles.potChipText}>{potText}</Text>
+              </View>
+            ) : sub ? (
+              <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
+            ) : null}
+          </View>
+        </PressScale>
+      </View>
+    );
+  };
+
   // The web build PRERENDERS this route, and this screen is made of today:
   // the month grid, the week strip, which cell is highlighted. All of it is
   // seeded from new Date() at first render — so the HTML carries the day the
@@ -1180,21 +1358,38 @@ export default function Calendar() {
           <ScreenHeader
             eyebrow={t('cal_family_calendar')}
             art={SECTION_ART.calendar}
+            // Today's date where the painting of a calendar was: the same
+            // corner, saying something, and the way back to today.
+            artNode={
+              <PressScale
+                testID="calendar-today"
+                accessibilityRole="button"
+                accessibilityLabel={t('cal_back_to_today', { day: todayLong })}
+                onPress={goToday}
+                style={styles.todayTile}
+              >
+                <View style={styles.todayTileTop}>
+                  <Text style={styles.todayTileMonth} numberOfLines={1}>{todayMonth}</Text>
+                </View>
+                <View style={styles.todayTileBody}>
+                  <Text style={styles.todayTileDay}>{new Date().getDate()}</Text>
+                  <Text style={styles.todayTileWeekday} numberOfLines={1}>{todayWeekday}</Text>
+                </View>
+              </PressScale>
+            }
             title={monthTitle}
-            titleSize={30}
+            titleSize={28}
+            // One Add on this page: the same picker every screen's corner
+            // opens (same testID), drawn as this page's button. It leads with
+            // a new event on the day being looked at, and still offers a task
+            // or something for the shop. The generic one is off, or there
+            // would be two.
+            showAdd={false}
             right={
-              // Compact icon button — the labelled "Import from Google or Outlook"
-              // card below is the primary entry, so the header stays uncluttered
-              // and the month title keeps its room (incl. longer languages).
-              syncing ? (
-                <PressScale testID="cancel-calendar-sync" onPress={cancelSync} accessibilityRole="button" accessibilityLabel={t('cal_cancel')} style={[styles.syncIconBtn, { backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line }]}>
-                  <ActivityIndicator color={ui.orangeText} size="small" />
-                </PressScale>
-              ) : (
-                <PressScale testID="sync-google-calendar" onPress={openImportPicker} disabled={syncDisabled} accessibilityRole="button" accessibilityLabel={t('cal_import')} style={[styles.syncIconBtn, syncDisabled && { opacity: 0.55 }]}>
-                  <RefreshCw color="#FFFFFF" size={18} />
-                </PressScale>
-              )
+              <PressScale testID="tab-add" accessibilityRole="button" accessibilityLabel={t('a11y_add')} onPress={openQuickAdd} style={styles.addBtn}>
+                <Plus color="#FFFFFF" size={17} />
+                <Text style={styles.addBtnText}>{t('a11y_add')}</Text>
+              </PressScale>
             }
           />
 
@@ -1230,73 +1425,41 @@ export default function Calendar() {
             </View>
           ) : null}
 
-          {/* Whose calendar: everyone's, or one person's. The faces are the
-              household's, in Home's order and Home's colours, so the month
-              below can be read one person at a time. */}
-          {people.length > 1 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.peopleRow}
-              contentContainerStyle={styles.peopleRowInner}
-              testID="calendar-people"
-              accessibilityRole="tablist"
-            >
-              <PressScale
-                testID="calendar-person-all"
-                accessibilityRole="tab"
-                accessibilityState={{ selected: !person }}
-                onPress={() => setPersonId(null)}
-                style={[styles.chip, !person && styles.chipOn]}
-              >
-                <Text style={[styles.chipText, !person && styles.chipTextOn]}>{t('cal_everyone')}</Text>
-              </PressScale>
-              {people.map((m) => {
-                const on = person?.member_id === m.member_id;
-                return (
-                  <PressScale
-                    key={m.member_id}
-                    testID={`calendar-person-${m.member_id}`}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: on }}
-                    accessibilityLabel={m.name}
-                    onPress={() => setPersonId(on ? null : m.member_id)}
-                    style={[styles.chip, styles.chipFace, on && styles.chipOn]}
-                  >
-                    <PersonAvatar name={m.name} avatar={m.avatar} size={26} ring={false} />
-                    <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>
-                      {m.is_me ? t('home_you') : firstNameOf(m.name)}
-                    </Text>
-                  </PressScale>
-                );
-              })}
-            </ScrollView>
-          ) : null}
-
-          {/* Month / Week */}
+          {/* Week / Month */}
           <KitCard style={styles.calCard}>
             <View style={styles.monthHeader}>
-              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={t('a11y_prev_month')} onPress={() => (viewMode === 'week' ? shiftWeek(-1) : shiftMonth(-1))} style={styles.monthNav}>
+              <PressScale testID="prev-month" accessibilityRole="button" accessibilityLabel={viewMode === 'week' ? t('a11y_prev_week') : t('a11y_prev_month')} onPress={() => (viewMode === 'week' ? shiftWeek(-1) : shiftMonth(-1))} style={styles.monthNav}>
                 <ChevronLeft color={ui.text} size={20} />
               </PressScale>
-              <Text style={styles.monthTitle}>{monthTitle}</Text>
-              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={t('a11y_next_month')} onPress={() => (viewMode === 'week' ? shiftWeek(1) : shiftMonth(1))} style={styles.monthNav}>
+              {/* The dates are the switch: the week opens into the month, the
+                  month folds back to the week. */}
+              <PressScale
+                testID="cal-view-toggle"
+                accessibilityRole="button"
+                accessibilityLabel={viewMode === 'week'
+                  ? `${weekRange}. ${t('cal_week_n_see_month', { n: weekNumber })}`
+                  : `${monthTitle}. ${t('cal_fold_to_week')}`}
+                onPress={toggleView}
+                style={styles.rangeBtn}
+              >
+                <View style={styles.rangeTop}>
+                  <Text style={styles.monthTitle} numberOfLines={1}>{viewMode === 'week' ? weekRange : monthTitle}</Text>
+                  {viewMode === 'week'
+                    ? <ChevronDown color={ui.orangeText} size={16} />
+                    : <ChevronUp color={ui.orangeText} size={16} />}
+                </View>
+                <Text style={styles.rangeSub} numberOfLines={1}>
+                  {viewMode === 'week' ? t('cal_week_n_see_month', { n: weekNumber }) : t('cal_fold_to_week')}
+                </Text>
+              </PressScale>
+              <PressScale testID="next-month" accessibilityRole="button" accessibilityLabel={viewMode === 'week' ? t('a11y_next_week') : t('a11y_next_month')} onPress={() => (viewMode === 'week' ? shiftWeek(1) : shiftMonth(1))} style={styles.monthNav}>
                 <ChevronRight color={ui.text} size={20} />
               </PressScale>
             </View>
 
-            <View style={styles.viewToggle}>
-              <PressScale testID="cal-view-month" onPress={() => setViewMode('month')} style={[styles.viewToggleBtn, viewMode === 'month' && styles.viewToggleOn]}>
-                <Text style={[styles.viewToggleText, viewMode === 'month' && styles.viewToggleTextOn]}>{t('cal_view_month')}</Text>
-              </PressScale>
-              <PressScale testID="cal-view-week" onPress={() => setViewMode('week')} style={[styles.viewToggleBtn, viewMode === 'week' && styles.viewToggleOn]}>
-                <Text style={[styles.viewToggleText, viewMode === 'week' && styles.viewToggleTextOn]}>{t('cal_view_week')}</Text>
-              </PressScale>
-            </View>
-
-            {/* Alternating-custody legend. When on, the two swatches name what the
-                mint/lavender week tints mean; when off, a parent gets a quiet way
-                in to set it up. Hidden entirely for helpers and non-custody kids. */}
+            {/* Alternating-custody legend: the two swatches name what the
+                mint/lavender week tints mean. Setting it up is a quiet link at
+                the foot of the list, no longer a pill over every family's week. */}
             {custodyOn ? (
               <View style={styles.custodyLegend}>
                 <View style={styles.custodyLegendItem}>
@@ -1313,11 +1476,6 @@ export default function Calendar() {
                   </PressScale>
                 ) : null}
               </View>
-            ) : isParent && !kidsHidden ? (
-              <PressScale testID="custody-setup" accessibilityRole="button" onPress={openCustody} style={styles.custodySetupBtn}>
-                <Users color={ui.lavenderText} size={16} />
-                <Text style={styles.custodySetupText}>{t('custody_setup')}</Text>
-              </PressScale>
             ) : null}
 
             {viewMode === 'month' ? (
@@ -1376,9 +1534,6 @@ export default function Calendar() {
               </>
             ) : (
               <View style={[styles.weekStrip, { width: gridWidth }]}>
-                <View style={[styles.weekNumCell, { width: WEEK_GUTTER }]}>
-                  <Text style={styles.weekNumText}>S{isoWeek(weekDays[0]).week}</Text>
-                </View>
                 {weekDays.map((date) => {
                   const key = dateKey(date);
                   const tones = tonesByDay[key] || [];
@@ -1390,7 +1545,7 @@ export default function Calendar() {
                       key={key}
                       testID={`calendar-day-${key}`}
                       onPress={() => onSelectDay(key, date)}
-                      style={[styles.weekDayCell, { width: daySize + 2 }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
+                      style={[styles.weekDayCell, { width: Math.floor(gridWidth / 7) }, custTint && !selected ? { backgroundColor: custTint } : null, selected && styles.dayCellSelected]}
                     >
                       <Text style={[styles.weekDayLabel, { color: selected ? '#FFFFFF' : ui.muted }]}>
                         {date.toLocaleDateString(locale, { weekday: 'short' }).charAt(0).toUpperCase()}
@@ -1410,39 +1565,97 @@ export default function Calendar() {
             )}
           </KitCard>
 
-          {/* Day events */}
-          <View style={styles.dayHead}>
-            <Text style={[styles.dayHeadTitle, { flex: 1 }]} numberOfLines={2}>
-              {weekAhead ? t('cal_next_days') : selectedDay ? formatDayFull(selectedDay) : t('upcoming')}
-            </Text>
-            <View style={styles.dayHeadRight}>
-              {selectedDay && totalSelectedEvents > 0 ? <Text style={styles.dayHeadCount}>{totalSelectedEvents} {totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}</Text> : null}
-              <PressScale testID="calendar-add-event" onPress={openAddEvent} style={styles.addEventBtn}>
-                <Plus color={ui.orangeText} size={15} />
-                <Text style={styles.addEventText}>{t('cal_add_event')}</Text>
-              </PressScale>
+          {/* What a sync is doing or found, where it is seen without
+              scrolling, and the way to stop one that is running. The header
+              carried this before the page had one Add in that corner. */}
+          {syncing || calendarSyncStatus || syncResult ? (
+            <View style={styles.syncRow}>
+              {syncing ? <ActivityIndicator color={ui.orangeText} size="small" /> : null}
+              <Text testID="calendar-sync-card" style={styles.syncNote} numberOfLines={2}>
+                {calendarSyncStatus || (syncResult ? syncSummary(syncResult) : t('cal_syncing'))}
+              </Text>
+              {syncing ? (
+                <PressScale testID="cancel-calendar-sync" accessibilityRole="button" onPress={cancelSync} style={styles.syncCancel}>
+                  <Text style={styles.quietLinkText}>{t('cal_cancel')}</Text>
+                </PressScale>
+              ) : null}
             </View>
+          ) : null}
+
+          {/* The day */}
+          <View style={styles.dayHead}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.dayHeadTitle, { flex: 1 }]} numberOfLines={2}>
+                {weekAhead ? t('feed_today') : selectedDay ? formatDayFull(selectedDay) : t('upcoming')}
+              </Text>
+              {weekAhead || (selectedDay && totalSelectedEvents > 0) ? (
+                <Text style={styles.dayHeadCount} numberOfLines={1}>
+                  {[
+                    weekAhead ? todayLong : '',
+                    selectedDay && totalSelectedEvents > 0 ? `${totalSelectedEvents} ${totalSelectedEvents === 1 ? t('cal_event') : t('cal_events')}` : '',
+                  ].filter(Boolean).join(' · ')}
+                </Text>
+              ) : null}
+            </View>
+            {/* Whose agenda: everyone's, or one person's. One button with the
+                household's faces, where a row of chips ran across the page. */}
+            {people.length > 1 ? (
+              <PressScale
+                testID="calendar-people"
+                accessibilityRole="button"
+                accessibilityLabel={`${t('cal_whose')} ${person ? (person.is_me ? t('home_you') : firstNameOf(person.name)) : t('cal_everyone')}`}
+                onPress={() => setPeopleOpen(true)}
+                style={styles.peopleBtn}
+              >
+                {person ? (
+                  <PersonAvatar name={person.name} avatar={person.avatar} size={30} ring={false} />
+                ) : (
+                  <View style={styles.peopleFaces}>
+                    {people.slice(0, 3).map((m, i) => (
+                      <View key={m.member_id} style={[styles.peopleFace, i > 0 && { marginLeft: -10 }]}>
+                        <PersonAvatar name={m.name} avatar={m.avatar} size={28} ring={false} />
+                      </View>
+                    ))}
+                  </View>
+                )}
+                <Text style={styles.peopleBtnText} numberOfLines={1}>
+                  {person ? (person.is_me ? t('home_you') : firstNameOf(person.name)) : t('cal_all_short')}
+                </Text>
+                <ChevronDown color={ui.muted} size={15} />
+              </PressScale>
+            ) : null}
           </View>
 
           {loading ? (
             <ActivityIndicator color={ui.orange} style={{ marginTop: 30 }} />
           ) : shownGroups.length === 0 && earlierCount === 0 ? (
-            <KitCard style={styles.empty}>
+            <View style={styles.empty} testID="calendar-empty">
               <View style={styles.emptyIcon}>
                 <CalendarDays color={ui.muted} size={26} />
               </View>
-              <Text style={styles.emptyText}>{weekAhead ? t('cal_week_empty') : selectedDay ? t('cal_no_events_date') : t('no_events')}</Text>
-              <Text style={styles.emptyHint}>{t('cal_empty_hint')}</Text>
+              <Text style={styles.emptyText}>
+                {weekAhead ? t('cal_nothing_today') : selectedDay ? t('cal_nothing_on', { day: weekdayOf(selectedDay) }) : t('no_events')}
+              </Text>
+              {/* Narrowed to one person, the day may be full for the others. */}
+              {selectedDay && person ? null : (
+                <Text style={styles.emptyHint}>{selectedDay ? t('cal_free_day') : t('cal_empty_hint')}</Text>
+              )}
+              <PressScale testID="calendar-add-event" accessibilityRole="button" onPress={openAddEvent} style={styles.emptyAddBtn}>
+                <Plus color="#FFFFFF" size={17} />
+                <Text style={styles.emptyAddText}>
+                  {weekAhead || !selectedDay ? t('cal_add_event') : t('cal_add_for', { day: weekdayOf(selectedDay) })}
+                </Text>
+              </PressScale>
               <PressScale
                 testID="calendar-empty-sync"
+                accessibilityRole="button"
                 onPress={openImportPicker}
                 disabled={syncDisabled}
                 style={[styles.emptySyncBtn, syncDisabled && { opacity: 0.55 }]}
               >
-                <RefreshCw color={ui.orange} size={15} />
                 <Text style={styles.emptySyncText}>{syncing ? t('cal_syncing') : t('cal_import')}</Text>
               </PressScale>
-            </KitCard>
+            </View>
           ) : (
             <View style={styles.timeline}>
               {/* The way back to what has already been. Counted, so nobody has
@@ -1463,103 +1676,60 @@ export default function Calendar() {
               {shownGroups.length === 0 ? (
                 <Text style={styles.earlierEmpty}>{t('cal_nothing_ahead')}</Text>
               ) : null}
-              {/* A card per event, in the colour of the person it is for, their
-                  face on it. Several days get a heading each — Today, Tomorrow,
-                  then the date — so a week reads as a week. One picked day has
-                  its name over the list already. */}
-              {shownGroups.map((group) => (
-                <View key={group.day} style={styles.dayGroup} testID={`calendar-day-group-${group.day}`}>
-                  {weekAhead || !selectedDay ? (
-                    <Text style={styles.dayGroupTitle}>{dayHeading(group.day)}</Text>
-                  ) : null}
-                  {group.items.map((card) => {
-                    const who = (card.assignee || '').trim();
-                    const member = who ? people.find((m) => isTheirs(card, m)) || members.find((m) => isTheirs(card, m)) || null : null;
-                    const tone = who ? personTone(who, members) : null;
-                    const isGoogle = card.source === 'CALENDAR' || card.external_source === 'google_calendar';
-                    const { time, ampm } = timeParts(card.due_date, card.time_set);
-                    const when = time ? `${time} ${ampm}` : '';
-                    // Who, when, and only then what else there is to say.
-                    const sub = [who, when, cleanText(card.description) || (isGoogle ? t('cal_google_calendar') : '')]
-                      .filter(Boolean).join(' · ');
-                    const glyph = glyphFor(card.icon);
-                    return (
-                      <PressScale
-                        key={card.card_id}
-                        testID={`calendar-card-${card.card_id}`}
-                        onPress={() => setSelectedCard(card)}
-                        style={[styles.eventCard, tone ? { backgroundColor: ui[tone.bg] } : styles.eventCardPlain]}
-                      >
-                        {/* The person's face when the event is somebody's;
-                            the event's own picture rides on its corner. An
-                            event nobody is named on shows its picture alone. */}
-                        <View style={styles.eventFace}>
-                          {who ? (
-                            <PersonAvatar name={member?.name || who} avatar={member?.avatar} size={42} ring={false} />
-                          ) : (
-                            <View
-                              testID={glyph ? `calendar-icon-${card.card_id}` : undefined}
-                              accessibilityElementsHidden
-                              importantForAccessibility="no-hide-descendants"
-                              style={styles.eventIcon}
-                            >
-                              {glyph ? <Text style={styles.eventIconGlyph}>{glyph}</Text> : <CalendarDays color={ui.muted} size={20} />}
-                            </View>
-                          )}
-                          {glyph && who ? (
-                            <View
-                              testID={`calendar-icon-${card.card_id}`}
-                              accessibilityElementsHidden
-                              importantForAccessibility="no-hide-descendants"
-                              style={styles.eventBadge}
-                            >
-                              <Text style={styles.eventBadgeGlyph}>{glyph}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            {card.source === 'CALENDAR' ? <CalendarDays color={ui.muted} size={12} /> : null}
-                            <Text style={[styles.eventTitle, { flexShrink: 1 }]} numberOfLines={2}>{cleanText(card.title)}</Text>
-                          </View>
-                          {card.type === 'BIRTHDAY' && giftPotByCard[card.card_id] ? (
-                            <View style={styles.potChip}>
-                              <Gift color={ui.orangeText} size={11} />
-                              <Text style={styles.potChipText}>
-                                {t('gp_chip', {
-                                  total: String(giftPotByCard[card.card_id].total_pledged),
-                                  target: String(Math.round(giftPotByCard[card.card_id].target_total
-                                    ?? giftPotByCard[card.card_id].per_head * Math.max(giftPotByCard[card.card_id].contributor_count, 2))),
-                                })}
-                              </Text>
-                            </View>
-                          ) : sub ? (
-                            <Text style={styles.eventSub} numberOfLines={1}>{sub}</Text>
-                          ) : null}
-                        </View>
-                      </PressScale>
-                    );
-                  })}
-                </View>
-              ))}
+              {/* The time, then a card in the colour of the person it is for,
+                  their face on it. A picked day has its name over the list
+                  already; the undated list heads each day. Today carries a
+                  line where the day has got to. */}
+              {shownGroups.map((group) => {
+                const lineAt = weekAhead ? nowIndex(group.items, now) : -1;
+                return (
+                  <View key={group.day} style={styles.dayGroup} testID={`calendar-day-group-${group.day}`}>
+                    {!selectedDay ? (
+                      <Text style={styles.dayGroupTitle}>{dayHeading(group.day)}</Text>
+                    ) : null}
+                    {group.items.map((card, index) => (
+                      <React.Fragment key={card.card_id}>
+                        {index === lineAt ? nowLine : null}
+                        {renderEvent(card, { today: weekAhead, soon: weekAhead && index === lineAt })}
+                      </React.Fragment>
+                    ))}
+                    {lineAt === group.items.length ? nowLine : null}
+                  </View>
+                );
+              })}
             </View>
           )}
 
-          {/* Connection banner (tap to sync — keeps the sync card visible & functional) */}
-          <PressScale testID="calendar-sync-card-button" onPress={() => { setMorningNotice(false); openImportPicker(); }} disabled={syncDisabled} style={[styles.bannerGap, syncDisabled && { opacity: 0.55 }]}>
-            <KitCard style={styles.banner}>
-              <View testID="calendar-sync-card" style={styles.bannerInner}>
-                <IconTile bg={ui.orangeSoft} size={40} radius={13}><CalendarDays color={ui.orange} size={20} /></IconTile>
-                <Text style={styles.bannerText} numberOfLines={2}>
-                  {calendarSyncStatus || (syncResult ? syncSummary(syncResult) : t('cal_connected_read_only'))}
-                </Text>
-                {/* Same card, same tappability, same signal as the sharing row
-                    below it — without this the two are indistinguishable and
-                    only one of them advertises that it does something. */}
-                <ChevronRight color={ui.muted} size={18} />
-              </View>
-            </KitCard>
-          </PressScale>
+          {/* What comes after the shown day: one card, so the list above can
+              stay the day it names. */}
+          {!loading && nextUp ? (
+            <View style={styles.nextUp} testID="calendar-next-up">
+              <Text style={styles.nextUpLabel}>{t('cal_next_up')}</Text>
+              {renderEvent(nextUp, { dayLabel: shortDay(cardDateKey(nextUp)) })}
+            </View>
+          ) : null}
+
+          {/* Import and custody: two quiet links where a banner and a pill
+              were. What a sync is doing is said under the calendar, above. */}
+          <View style={styles.quietLinks}>
+            <PressScale
+              testID="calendar-sync-card-button"
+              accessibilityRole="button"
+              onPress={() => { setMorningNotice(false); openImportPicker(); }}
+              disabled={syncDisabled}
+              style={[styles.quietLink, syncDisabled && { opacity: 0.55 }]}
+            >
+              <Text style={styles.quietLinkText}>{syncing ? t('cal_syncing') : t('cal_import_short')}</Text>
+            </PressScale>
+            {isParent && !kidsHidden ? (
+              <>
+                <Text style={styles.quietDot} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">·</Text>
+                <PressScale testID="custody-setup" accessibilityRole="button" onPress={openCustody} style={styles.quietLink}>
+                  <Text style={styles.quietLinkText}>{t('custody_title')}</Text>
+                </PressScale>
+              </>
+            ) : null}
+          </View>
 
           {/* Agenda panel, under the month it describes. "My agenda" is your
               own events; "Shared agenda" is the whole shared pool — items you
@@ -2152,6 +2322,48 @@ export default function Calendar() {
         </PressScale>
       </KeyboardAwareBottomSheet>
 
+      <KeyboardAwareBottomSheet visible={peopleOpen} onClose={() => setPeopleOpen(false)} contentStyle={styles.detailSheet}>
+        <View style={styles.detailHeader}>
+          <Text style={styles.detailTitle} accessibilityRole="header">{t('cal_whose')}</Text>
+          <PressScale testID="calendar-people-close" accessibilityRole="button" accessibilityLabel={t('close')} onPress={() => setPeopleOpen(false)} style={styles.closeBtn}>
+            <X color={ui.text} size={20} />
+          </PressScale>
+        </View>
+        <View style={styles.peopleList}>
+          <PressScale
+            testID="calendar-person-all"
+            accessibilityRole="button"
+            accessibilityState={{ selected: !person }}
+            onPress={() => { setPersonId(null); setPeopleOpen(false); }}
+            style={[styles.personRow, !person && styles.personRowOn]}
+          >
+            <View style={styles.personAll}><Users color={ui.orangeText} size={20} /></View>
+            <Text style={styles.personName}>{t('cal_everyone')}</Text>
+            {!person ? <CheckCircle2 color={ui.orangeText} size={20} /> : null}
+          </PressScale>
+          {people.map((m) => {
+            const on = person?.member_id === m.member_id;
+            return (
+              <PressScale
+                key={m.member_id}
+                testID={`calendar-person-${m.member_id}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={m.name}
+                onPress={() => { setPersonId(on ? null : m.member_id); setPeopleOpen(false); }}
+                style={[styles.personRow, on && styles.personRowOn]}
+              >
+                <PersonAvatar name={m.name} avatar={m.avatar} size={40} ring={false} />
+                <Text style={styles.personName} numberOfLines={1}>
+                  {m.is_me ? t('home_you') : firstNameOf(m.name)}
+                </Text>
+                {on ? <CheckCircle2 color={ui.orangeText} size={20} /> : null}
+              </PressScale>
+            );
+          })}
+        </View>
+      </KeyboardAwareBottomSheet>
+
       {/* One screen, two modes: the add sheet edits an existing card too, so
           there is no second copy of every field to drift out of step. */}
       {/* Mounted only while open, so each review starts from a clean slate
@@ -2188,7 +2400,6 @@ export default function Calendar() {
 const createStyles = (ui: UIColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
-  syncIconBtn: { width: 40, height: 40, borderRadius: 99, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeDeep },
   pendingPill: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.line,
@@ -2206,14 +2417,11 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   morningNoticeText: { flex: 1, color: ui.mintText, fontFamily: 'Figtree_600SemiBold', fontSize: 12.5, lineHeight: 17 },
   morningDismiss: { padding: 2 },
   bannerGap: { marginTop: 18 },
-  banner: { padding: 14 },
-  bannerInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  bannerText: { flex: 1, color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18 },
 
   calCard: { marginTop: 16, padding: 16, alignItems: 'center' },
   monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 14 },
-  monthNav: { width: 40, height: 40, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
-  monthTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 18, letterSpacing: -0.2 },
+  monthNav: { width: 44, height: 44, borderRadius: 99, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center' },
+  monthTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15.5, letterSpacing: -0.2, flexShrink: 1 },
   weekHeader: { flexDirection: 'row', alignSelf: 'center', marginBottom: 6 },
   weekLabel: { textAlign: 'center', fontFamily: 'Figtree_700Bold', fontSize: 12, color: ui.muted },
   monthRow: { flexDirection: 'row', alignItems: 'center' },
@@ -2234,8 +2442,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   custodySwatch: { width: 12, height: 12, borderRadius: 4 },
   custodyLegendText: { fontFamily: 'Figtree_600SemiBold', fontSize: 12, color: ui.muted, flexShrink: 1 },
   custodyEditBtn: { width: 30, height: 30, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.soft },
-  custodySetupBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'center', marginBottom: 12, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999, backgroundColor: ui.lavender },
-  custodySetupText: { fontFamily: 'Figtree_700Bold', fontSize: 13, color: ui.lavenderText },
   custodyModalSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 18 },
   custodyToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   custodyToggleLabel: { flex: 1, color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15 },
@@ -2268,9 +2474,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekStrip: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'center', paddingVertical: 2 },
   weekDayCell: { alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 8, borderRadius: 14 },
   weekDayLabel: { fontFamily: 'Figtree_700Bold', fontSize: 11 },
-  dayHeadRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  addEventBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 9999, paddingHorizontal: 11, paddingVertical: 6 },
-  addEventText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
   dayNumber: { fontFamily: 'Figtree_700Bold', fontSize: 15.5, includeFontPadding: false, textAlign: 'center' },
   // A fixed-height row, so a day with nothing on it stands as tall as one
   // with three people's dots.
@@ -2278,27 +2481,66 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   dayDot: { width: 5, height: 5, borderRadius: 99 },
 
   // The row of faces above the month.
-  peopleRow: { marginTop: 16, marginHorizontal: -20 },
-  peopleRowInner: { paddingHorizontal: 20, gap: 8 },
-  chip: { height: 38, paddingHorizontal: 14, borderRadius: 19, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
-  chipFace: { paddingLeft: 5 },
   // The chosen one is ink on the page's own colour: readable in both themes
   // without a third colour to keep in step.
-  chipOn: { backgroundColor: ui.text, borderColor: ui.text },
-  chipText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14 },
-  chipTextOn: { color: ui.bg },
 
   // flex-start, not baseline: a day name that wraps to two lines would drag
   // "Add event" down to sit beside the second line.
   dayHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginTop: 24, marginBottom: 12 },
+  // Today's date, where the painting was.
+  todayTile: { width: 66, height: 72, borderRadius: 20, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, overflow: 'hidden' },
+  todayTileTop: { height: 22, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
+  todayTileMonth: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 11, letterSpacing: 1.5 },
+  todayTileBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  todayTileDay: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 26, lineHeight: 28, letterSpacing: -0.5 },
+  todayTileWeekday: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 11.5 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 16, borderRadius: 9999, backgroundColor: ui.orangeDeep },
+  addBtnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  // The dates in the card's head: the switch between week and month.
+  rangeBtn: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  rangeTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  rangeSub: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12.5, marginTop: 1 },
+  // Whose agenda.
+  peopleBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingLeft: 6, paddingRight: 12, borderRadius: 9999, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, maxWidth: 160 },
+  peopleFaces: { flexDirection: 'row', alignItems: 'center' },
+  peopleFace: { borderRadius: 99, borderWidth: 2, borderColor: ui.card },
+  peopleBtnText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14, flexShrink: 1 },
+  peopleList: { gap: 8, marginTop: 6 },
+  personRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingHorizontal: 12, borderRadius: 18, borderWidth: 1, borderColor: ui.line },
+  personRowOn: { backgroundColor: ui.soft },
+  personAll: { width: 40, height: 40, borderRadius: 20, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  personName: { flex: 1, color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 16 },
+  // An event: the time, then the card.
+  eventRow: { flexDirection: 'row', alignItems: 'stretch', gap: 10 },
+  eventTime: { width: 60, alignItems: 'flex-end', paddingTop: 13 },
+  eventDayLabel: { color: ui.muted, fontFamily: 'Figtree_800ExtraBold', fontSize: 11.5 },
+  eventClock: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
+  eventAmpm: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 11 },
+  eventAllDay: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 12, lineHeight: 15, textAlign: 'right' },
+  nowLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  nowClock: { width: 60, textAlign: 'right', color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 12.5 },
+  nowDot: { width: 9, height: 9, borderRadius: 99, backgroundColor: ui.orange },
+  nowRule: { flex: 1, height: 2, borderRadius: 2, backgroundColor: ui.orange },
+  nowText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 12.5 },
+  nextUp: { marginTop: 22, gap: 8 },
+  nextUpLabel: { color: ui.muted, fontFamily: 'Figtree_800ExtraBold', fontSize: 13, letterSpacing: 0.4, textTransform: 'uppercase' },
+  emptyAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 48, paddingHorizontal: 20, borderRadius: 9999, backgroundColor: ui.orangeDeep, marginTop: 16 },
+  emptyAddText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
+  syncRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14, minHeight: 44 },
+  syncNote: { flex: 1, color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 18 },
+  syncCancel: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' },
+  quietLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 },
+  quietLink: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 10, justifyContent: 'center' },
+  quietLinkText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 14 },
+  quietDot: { color: ui.muted, fontSize: 16 },
   dayHeadTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flex: 1 },
   dayHeadCount: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
 
-  empty: { paddingVertical: 34, paddingHorizontal: 24, alignItems: 'center' },
+  empty: { paddingVertical: 26, paddingHorizontal: 20, alignItems: 'center', borderWidth: 2, borderStyle: 'dashed', borderColor: ui.line, borderRadius: 24 },
   emptyIcon: { width: 54, height: 54, borderRadius: 16, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   emptyText: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17, textAlign: 'center' },
   emptyHint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13.5, lineHeight: 20, textAlign: 'center', marginTop: 6 },
-  emptySyncBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 99, borderWidth: 1, borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft },
+  emptySyncBtn: { minHeight: 44, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   emptySyncText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
 
   timeline: { gap: 8 },
@@ -2314,7 +2556,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   dayGroup: { gap: 8 },
   dayGroupTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17, letterSpacing: -0.2, marginTop: 8, marginBottom: 2 },
   // Face, words: a card in the person's colour, the way the mockup drew it.
-  eventCard: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 20 },
+  eventCard: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 20 },
   eventCardPlain: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
   eventFace: { width: 42, height: 42 },
   eventIcon: {
