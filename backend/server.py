@@ -12105,14 +12105,19 @@ async def list_shared_with_coparent(direction: str = "out", user=Depends(require
 # binary on both stores). From this point the nightly OTA publishes at 3.0.0
 # only: a phone still on 2.0.0 receives nothing until it updates from the
 # store, and store_version below is how it learns that.
-MIN_SUPPORTED_RUNTIME = "3.0.0"
+# 4.0.0 / 1.3.0 (Expo 57.0.33, a native rebuild) has been at 100% on Google
+# Play since 2026-11-14 and on the App Store by 2026-11-22. Raised the day the
+# 1.3.0 branch merged (#784): from then on updates publish at 4.0.0 only, so a
+# phone on 1.2.x is told to go to its store instead of waiting for one.
+MIN_SUPPORTED_RUNTIME = "4.0.0"
 # 1.2.1 was approved on both stores in early October 2026; the admin read-out
 # and the smoke log said 1.2.0 until the stability check of 2026-10-18 noticed.
 # 1.2.2 rolled out on Google Play on 2026-10-30 (Android-only native changes
 # from #673: no overlay permission, the phone's own theme). The App Store still
 # serves 1.2.1 — nothing native changed for iOS since — so this is the newest
 # build either store offers, which is what the two readers of it want to know.
-CURRENT_STORE_VERSION = "1.2.2"
+# 1.3.0 is on both stores (see MIN_SUPPORTED_RUNTIME above).
+CURRENT_STORE_VERSION = "1.3.0"
 
 
 @app.get("/api/app/version-info")
