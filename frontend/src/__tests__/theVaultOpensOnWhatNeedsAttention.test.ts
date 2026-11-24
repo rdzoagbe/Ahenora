@@ -148,13 +148,15 @@ describe('the screen', () => {
     expect(screen).toContain("{t('vault_intro')}");
     expect(screen).toContain('testID="vault-empty-add"');
     expect(screen).not.toContain('FirstRunTip');
-    // The sheet it opens offers the photo library and files, not the camera:
-    // the words must not promise a photograph.
-    for (const lang of LANGS) {
-      const first = (TRANSLATIONS[lang] as Record<string, string>).vault_first_photo;
-      expect([lang, /photogra|fotogra/i.test(first)]).toEqual([lang, false]);
-    }
-    expect(screen).toContain("pickPicture('library', { where: '/vault'");
+    // "Photograph" is a promise the sheet has to keep: it leads with the
+    // camera (Roland, 2026-11-24: "add the camera to the vault").
+    expect(screen).toContain('testID="vault-pick-camera"');
+    expect(screen).toContain("onPress={() => pickImage('camera')}");
+    expect(screen).toContain("pickPicture('camera', { where: '/vault', quality: 0.6, scanner: { maxPages: 1 } })");
+    // The gallery still asks for no permission, and a refused camera says
+    // what to do next and leaves the other two ways open.
+    expect(screen).toContain("pickPicture('library', { where: '/vault', quality: 0.6 })");
+    expect(screen).toContain("Alert.alert(t('cam_camera_permission_denied'), t('vault_camera_denied_help'));");
   });
 
   it('says whose a row is and when it runs out', () => {
@@ -173,7 +175,7 @@ describe('the screen', () => {
     for (const key of ['vault_family_documents', 'vault_search_docs', 'vault_needs_attention', 'vault_all_documents',
       'vault_expires_in', 'vault_expired_ago', 'vault_n_days', 'vault_one_day', 'vault_n_weeks', 'vault_one_week',
       'vault_n_months', 'vault_open', 'vault_tile_renew', 'vault_tile_stored', 'vault_renew_soon', 'vault_open_doc',
-      'vault_add_pill', 'vault_intro', 'vault_first_photo', 'vault_or_file', 'vault_you_choose', 'vault_no_match', 'vault_more_close']) {
+      'vault_add_pill', 'vault_intro', 'vault_first_photo', 'vault_or_file', 'vault_you_choose', 'vault_no_match', 'vault_more_close', 'vault_pick_camera', 'vault_camera_denied_help']) {
       for (const lang of LANGS) {
         expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);
       }

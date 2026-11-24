@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { pickPicture } from '../../src/pickPicture';
-import { Plus, X, Trash2, ChevronRight, ChevronDown, FileText, CalendarClock, Share2, Image as ImageIcon, Lock, Users, Search } from 'lucide-react-native';
+import { pickPicture, type PictureSource } from '../../src/pickPicture';
+import { Plus, X, Trash2, ChevronRight, ChevronDown, Camera, FileText, CalendarClock, Share2, Image as ImageIcon, Lock, Users, Search } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -313,11 +313,21 @@ export default function Vault() {
   };
   const closeAdd = () => setShowAdd(false);
 
-  const pickImage = async () => {
-    const picked = await pickPicture('library', { where: '/vault', quality: 0.6 });
+  // A picture for the document: taken now, or one already on the phone. The
+  // camera goes through the document scanner where the phone has one (it
+  // finds the page's edges and straightens it), one page, since a Vault
+  // document is one picture.
+  const pickImage = async (source: PictureSource = 'library') => {
+    const picked = source === 'camera'
+      ? await pickPicture('camera', { where: '/vault', quality: 0.6, scanner: { maxPages: 1 } })
+      : await pickPicture('library', { where: '/vault', quality: 0.6 });
     if (!picked) return;
     if ('problem' in picked) {
-      Alert.alert(t('vault_could_not_open_gallery'), t('vault_please_try_again'));
+      if (picked.problem === 'camera_denied') {
+        Alert.alert(t('cam_camera_permission_denied'), t('vault_camera_denied_help'));
+        return;
+      }
+      Alert.alert(t(source === 'camera' ? 'scan_photo_open_failed' : 'vault_could_not_open_gallery'), t('vault_please_try_again'));
       return;
     }
     setImage(`data:image/jpeg;base64,${picked.base64}`);
@@ -641,9 +651,8 @@ export default function Vault() {
             <>
               <Text style={styles.intro}>{t('vault_intro')}</Text>
               <PressScale testID="vault-empty-add" accessibilityRole="button" onPress={openAdd} style={styles.firstTarget}>
-                {/* A plus, not a camera: the sheet this opens offers the photo
-                    library and files, and must not promise more. */}
-                <View style={styles.firstIcon}><Plus color={ui.orangeText} size={26} /></View>
+                {/* A camera: the sheet this opens leads with one. */}
+                <View style={styles.firstIcon}><Camera color={ui.orangeText} size={26} /></View>
                 <Text style={styles.firstTitle}>{t('vault_first_photo')}</Text>
                 <Text style={styles.firstSub}>{t('vault_or_file')}</Text>
               </PressScale>
@@ -859,8 +868,14 @@ export default function Vault() {
         <Text style={styles.label}>{t('vault_who_can_see')}</Text>
         {visibilityPicker}
 
-        <View style={styles.pickRow}>
-          <PressScale testID="vault-pick-photo" onPress={pickImage} style={styles.pickOption}>
+        {/* The camera first, on its own line: most documents are paper in a
+            hand. Then a picture or a file already on the phone. */}
+        <PressScale testID="vault-pick-camera" accessibilityRole="button" onPress={() => pickImage('camera')} style={[styles.pickOption, styles.pickCamera]}>
+          <Camera color="#FFFFFF" size={20} />
+          <Text style={[styles.pickOptionText, { color: '#FFFFFF' }]}>{t('vault_pick_camera')}</Text>
+        </PressScale>
+        <View style={[styles.pickRow, { marginTop: 10 }]}>
+          <PressScale testID="vault-pick-photo" onPress={() => pickImage('library')} style={styles.pickOption}>
             <ImageIcon color={ui.orange} size={20} />
             <Text style={styles.pickOptionText}>{t('vault_pick_photo')}</Text>
           </PressScale>
@@ -1127,6 +1142,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   catBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 9999, borderWidth: 1 },
   catBtnLabel: { fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
   pickRow: { flexDirection: 'row', gap: 12, marginTop: 18 },
+  // Not flex: 0, which on the web gives it no height of its own and lets the
+  // row beneath slide under it.
+  pickCamera: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', marginTop: 18, minHeight: 48, backgroundColor: ui.orangeDeep, borderColor: ui.orangeDeep },
   pickOption: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13, borderRadius: 16, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   pickOptionText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14 },
   pick: { marginTop: 12, height: 150, borderRadius: 18, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
