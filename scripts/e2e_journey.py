@@ -336,9 +336,11 @@ async def main():
             await page.wait_for_timeout(5000)
             body = await page.inner_text("body")
             r[f"{name}_premium_add_not_gated"] = "Upgrade needed" not in body
-            # Meals in the planner make "Sync to list" appear — proof the
-            # week actually landed, not just that no dialog showed.
-            r[f"{name}_premium_week_added"] = "Sync to list" in body
+            # Meals in the planner make "Ingredients to the list" appear at
+            # the foot of the page — proof the week actually landed, not
+            # just that no dialog showed.
+            r[f"{name}_premium_week_added"] = await page.locator(
+                '[data-testid="meal-sync"]').count() == 1
         await iphone.goto(f"{WEB}/settings", wait_until="domcontentloaded")
         # Wait for the plan card itself rather than sleeping a fixed 2.5s and
         # hoping. That sleep was enough on an idle machine and not enough on a
