@@ -86,27 +86,82 @@ describe('what still has to be bought', () => {
 });
 
 describe('the screen', () => {
-  it('opens on what’s cooking', () => {
-    expect(screen).toContain("title={t('kitchen_whats_cooking')}");
+  // Redesign Roland approved on 2026-11-24 ("redesign as this"): tonight
+  // leads with one Cook button, the week is one list of days, the shopping
+  // list is no longer repeated inside Meals, and what is left to buy sits
+  // in the corner where the painting was.
+  it('opens on the menu, tonight first', () => {
+    expect(screen).toContain("title={t(view === 'shop' ? 'kit_title_list' : view === 'spend' ? 'kit_title_spend' : 'kit_title_meals')}");
     expect(screen).toContain('testID="kitchen-tonight"');
+    expect(screen).toContain('testID="kitchen-tonight-cook"');
     expect(screen).toContain('testID="kitchen-week"');
-    expect(screen).toContain('testID="kitchen-to-buy"');
   });
 
-  it('plans a day from its tile, within what the plan allows', () => {
+  it('puts the tabs in the order they are used: meals, list, spending', () => {
+    const meal = screen.indexOf("['meal', t('kit_tab_meals')]");
+    const shop = screen.indexOf("['shop', t('kit_tab_list')]");
+    const spend = screen.indexOf("['spend', t('kit_tab_spending')]");
+    expect(meal).toBeGreaterThan(0);
+    expect(shop).toBeGreaterThan(meal);
+    expect(spend).toBeGreaterThan(shop);
+  });
+
+  it('plans a day from its line, within what the plan allows', () => {
     expect(screen).toContain('testID={`kitchen-plan-${day}`}');
     expect(screen).toContain("onPress={() => (canPlanMeal ? planDay(day) : promptUpgrade('meal_planner'))}");
   });
 
-  it('hands the shopping preview over to the list', () => {
-    expect(screen).toContain('testID="kitchen-to-buy-all"');
-    expect(screen).toContain("onPress={() => selectView('shop')}");
-    expect(screen).toContain('stillToBuy(shopItems).slice(0, 4)');
+  it('shows every dish of a day, each with its way to cook it and its bin', () => {
+    expect(screen).toContain('dishes.length > 0 ? dishes.map(mealRow)');
+    expect(screen).toContain('testID={cookId(m)}');
+    expect(screen).toContain('onPress={() => deleteMeal(m.meal_id)}');
+    expect(screen).toContain('onPress={() => deleteMeal(tonight.meal_id)}');
+    // Breakfast or lunch today is not lost behind tonight's card.
+    expect(screen).toContain('alsoToday.map(mealRow)');
+  });
+
+  it('says what is left to buy in the corner, and that corner opens the list', () => {
+    const tile = screen.slice(screen.indexOf('testID="kitchen-to-buy"'), screen.indexOf('showAdd={false}'));
+    expect(tile).toContain("onPress={() => selectView('shop')}");
+    expect(tile).toContain('{uncheckedItems.length}');
+    // No second copy of the list inside Meals.
+    expect(screen).not.toContain('kitchen-to-buy-all');
+    expect(screen).not.toContain('stillToBuy(shopItems)');
+  });
+
+  it('has one main button a tab: the picker, or the receipt camera on Spending', () => {
+    const header = screen.slice(screen.indexOf('<ScreenHeader'), screen.indexOf('<View style={styles.tabs}>'));
+    expect(header).toContain('showAdd={false}');
+    expect(header).toContain('testID="tab-add"');
+    expect(header).toContain('onPress={openQuickAdd}');
+    expect(header).toContain('testID="exp-scan-receipt"');
+    expect(header).toContain('onPress={() => spendScan.current?.()}');
+  });
+
+  it('keeps the small options as links at the foot, none of them lost', () => {
+    for (const id of ['meal-sync', 'meal-history', 'recipe-ai-open', 'meal-clear-all', 'kitchen-keep-awake',
+      'shop-history', 'shop-clear-done', 'shop-select-mode', 'shop-clear-all']) {
+      expect([id, screen.includes(`testID="${id}"`)]).toEqual([id, true]);
+    }
+    const spending = read('src', 'components', 'SpendingView.tsx');
+    expect(spending).toContain('testID="exp-add-open"');
+    expect(spending).toContain('testID="exp-scan-file"');
+    // Standing alone (the old /expenses address) it keeps its own buttons.
+    expect(spending).toContain('{!scan && !embedded ? (');
+  });
+
+  it('draws no emoji for an aisle: a dot and its name', () => {
+    expect(screen).not.toContain('AISLE_EMOJI');
+    expect(screen).toContain('styles.aisleDot');
   });
 
   it('says every new thing in all four languages', () => {
     for (const key of ['kitchen_whats_cooking', 'kitchen_tonight', 'kitchen_nothing_tonight', 'kitchen_plan',
-      'kitchen_to_buy', 'kitchen_to_buy_one', 'kitchen_see_all', 'kitchen_min', 'shop_added_by']) {
+      'kitchen_to_buy', 'kitchen_to_buy_one', 'kitchen_see_all', 'kitchen_min', 'shop_added_by',
+      'kit_title_meals', 'kit_title_list', 'kit_title_spend', 'kit_tile_to_buy', 'kit_tile_open', 'kit_week_planned',
+      'kit_plan_meal', 'kit_recipe_ready', 'kit_no_recipe_yet', 'kit_cook', 'kit_ideas_tile', 'kit_capture_tile',
+      'kit_foot_to_list', 'kit_foot_saved', 'kit_foot_ask', 'kit_foot_screen_on', 'kit_foot_screen_is_on',
+      'kit_foot_past', 'kit_to_buy_head', 'kit_in_basket', 'kit_ticket', 'kit_foot_add_shop', 'kit_foot_import']) {
       for (const lang of LANGS) {
         expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);
       }
@@ -116,6 +171,9 @@ describe('the screen', () => {
       expect(table.kitchen_tonight).toContain('{day}');
       expect(table.kitchen_to_buy).toContain('{n}');
       expect(table.kitchen_min).toContain('{n}');
+      expect(table.kit_tile_open).toContain('{n}');
+      expect(table.kit_week_planned).toContain('{n}');
+      expect(table.kit_week_planned).toContain('{total}');
     }
   });
 });

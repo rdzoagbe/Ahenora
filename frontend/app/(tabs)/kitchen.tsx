@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, View, Text, StyleSheet, TextInput, ScrollView, ActivityIndicator, Modal } from 'react-native';
+import { Alert, View, Text, StyleSheet, TextInput, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useClientValue } from '../../src/hooks/useClientValue';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, UtensilsCrossed, ChevronLeft, History, RotateCcw, Sparkles, Sun, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , FileText, ListChecks, Leaf, Shuffle, Tag, ReceiptText, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
+import { Plus, X, Trash2, ShoppingCart, ShoppingBag, Check, ChevronLeft, RotateCcw, Sparkles, ChefHat, Clock, AlertTriangle, Search, Minus, Camera, Image as ImageIcon , FileText, Leaf, Shuffle, Tag, ReceiptText, ChevronDown, ChevronRight, CookingPot, Pizza, Drumstick, Fish, Soup, Salad, Sandwich, Egg, Utensils } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { SpendingView } from '../../src/components/SpendingView';
@@ -31,10 +31,10 @@ import { refreshOutcome } from '../../src/refreshOutcome';
 import { suggestWeek, MealSuggestion, SuggestLang, localizedMealTitle, localizedMealIngredients, resolveRecipeId, recipeIngredients, searchRecipes } from '../../src/mealSuggestions';
 import { quantityFor, shoppingNameFor, formatAiQuantity, AiIngredient } from '../../src/recipeQuantities';
 import { categoriseShoppingItem, shoppingLabel } from '../../src/shoppingCategories';
-import { groupByAisle, Aisle, AISLE_EMOJI, splitQuantity, whereItWent } from '../../src/shoppingAisles';
+import { groupByAisle, Aisle, splitQuantity, whereItWent } from '../../src/shoppingAisles';
 import { AislePickerSheet } from '../../src/components/AislePickerSheet';
 import { recipeMethod } from '../../src/recipeSteps';
-import { dayKey, daysAfter, mealIcon, mealOn, stillToBuy, type MealIcon } from '../../src/kitchenWeek';
+import { dayKey, daysAfter, mealIcon, mealOn, type MealIcon } from '../../src/kitchenWeek';
 import { apiErrorText, isAiAllowanceError } from '../../src/apiError';
 import { ScansLeft } from '../../src/components/ScansLeft';
 import { pickListFile } from '../../src/pickListFile';
@@ -80,7 +80,13 @@ const SHOP_VIEW_KEY = 'ahenora_shop_view';
 const RECEIPT_HINT_KEY = 'ahenora_receipt_hint_off';
 
 export default function Kitchen() {
-  const { t, lang, subscription, dataVersion, refreshSubscription } = useStore();
+  const { t, lang, subscription, dataVersion, refreshSubscription, openQuickAdd } = useStore();
+  // Spending's one main button lives in this page's header; the camera it
+  // opens belongs to the spending view.
+  const spendScan = useRef<(() => void) | null>(null);
+  const [spendReading, setSpendReading] = useState(false);
+  // "Ask for a recipe" stays folded behind a link at the foot until wanted.
+  const [showRecipeAi, setShowRecipeAi] = useState(false);
   // The food library covers en/es/fr/de; anything else falls back to English.
   // How many people the amounts are scaled for. Defaults to the household and
   // is adjustable, because who is actually eating changes night to night.
@@ -1452,15 +1458,6 @@ export default function Kitchen() {
     return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { day: '2-digit', month: 'short' });
   };
 
-  const mealsByDay = useMemo(() => {
-    const grouped: Record<string, MealPlan[]> = {};
-    for (const d of DAYS) grouped[d] = [];
-    for (const m of meals) {
-      if (grouped[m.day]) grouped[m.day].push(m);
-      else grouped[m.day] = [m];
-    }
-    return grouped;
-  }, [meals]);
 
   const uncheckedItems = useMemo(() => shopItems.filter((i) => !i.checked), [shopItems]);
   const checkedItems = useMemo(() => shopItems.filter((i) => i.checked), [shopItems]);
@@ -1593,6 +1590,28 @@ export default function Kitchen() {
     generateRecipe(meal);
   };
 
+  // The small options sit at the foot of each tab as quiet links. No dot
+  // between them: on a narrow phone the row wraps, and a dot left hanging
+  // at the end of a line reads as a mistake. Anything not offered right now
+  // is simply left out.
+  const footRow = (links: (React.ReactNode | null | false)[]) => (
+    <View style={styles.foot}>{links.filter(Boolean)}</View>
+  );
+  // Keep the screen awake while shopping or cooking.
+  const keepAwakeLink = (
+    <PressScale
+      key="awake"
+      testID="kitchen-keep-awake"
+      accessibilityRole="switch"
+      accessibilityState={{ checked: keepAwake }}
+      onPress={toggleKeepAwake}
+      style={styles.footLink}
+    >
+      <Text style={[styles.footText, !keepAwake && { color: ui.muted }]}>
+        {keepAwake ? t('kit_foot_screen_is_on') : t('kit_foot_screen_on')}
+      </Text>
+    </PressScale>
+  );
 
   return (
     <SwipeableTabView style={styles.container}>
@@ -1604,8 +1623,49 @@ export default function Kitchen() {
       >
         <ScreenHeader
           eyebrow={t('kitchen')}
-          title={t('kitchen_whats_cooking')}
-          art={view === 'shop' ? SECTION_ART.shopping : SECTION_ART.kitchen}
+          title={t(view === 'shop' ? 'kit_title_list' : view === 'spend' ? 'kit_title_spend' : 'kit_title_meals')}
+          art={SECTION_ART.kitchen}
+          // What is left to buy, where the painting of a kitchen was: the same
+          // corner, saying something, and the way to the list from any tab.
+          artNode={
+            <PressScale
+              testID="kitchen-to-buy"
+              accessibilityRole="button"
+              accessibilityLabel={t('kit_tile_open', { n: uncheckedItems.length })}
+              onPress={() => selectView('shop')}
+              style={styles.buyTile}
+            >
+              <View style={styles.buyTileTop}>
+                <Text style={styles.buyTileLabel} numberOfLines={1} adjustsFontSizeToFit>{t('kit_tile_to_buy')}</Text>
+              </View>
+              <View style={styles.buyTileBody}>
+                <Text style={styles.buyTileNum}>{uncheckedItems.length}</Text>
+                <Text style={styles.buyTileUnit} numberOfLines={1}>{uncheckedItems.length === 1 ? t('vault_item') : t('vault_items')}</Text>
+              </View>
+            </PressScale>
+          }
+          // One main button per tab. On Meals and List it is the picker every
+          // screen's corner opens (same testID); on Spending it is the camera
+          // for a receipt. The generic one is off, or there would be two.
+          showAdd={false}
+          right={view === 'spend' ? (
+            <PressScale
+              testID="exp-scan-receipt"
+              accessibilityRole="button"
+              accessibilityLabel={t('exp_scan_receipt')}
+              onPress={() => spendScan.current?.()}
+              disabled={spendReading}
+              style={[styles.addBtn, spendReading && { opacity: 0.5 }]}
+            >
+              <Camera color="#FFFFFF" size={17} />
+              <Text style={styles.addBtnText}>{spendReading ? t('exp_scan_reading') : t('kit_ticket')}</Text>
+            </PressScale>
+          ) : (
+            <PressScale testID="tab-add" accessibilityRole="button" accessibilityLabel={t('a11y_add')} onPress={openQuickAdd} style={styles.addBtn}>
+              <Plus color="#FFFFFF" size={17} />
+              <Text style={styles.addBtnText}>{t('a11y_add')}</Text>
+            </PressScale>
+          )}
         />
 
         {/* Three ways in, all visible.
@@ -1621,8 +1681,8 @@ export default function Kitchen() {
             in that. Liste / Essen / Ausgaben does, and each word is true. */}
         <View style={styles.tabs}>
           {([
-            ['shop', t('kit_tab_list')],
             ['meal', t('kit_tab_meals')],
+            ['shop', t('kit_tab_list')],
             ['spend', t('kit_tab_spending')],
           ] as [KitchenView, string][]).map(([key, label]) => (
             <PressScale
@@ -1640,45 +1700,11 @@ export default function Kitchen() {
           ))}
         </View>
 
-        {/* Keep the screen awake while shopping or cooking — not while reviewing
-            Spending, where a screen-on toggle is meaningless and just clutters
-            the top of the tab. */}
-        {view !== 'spend' ? (
-          <PressScale testID="kitchen-keep-awake" onPress={toggleKeepAwake} style={[styles.keepAwake, keepAwake && styles.keepAwakeOn]}>
-            <Sun color={keepAwake ? ui.orange : ui.muted} size={16} />
-            <Text style={[styles.keepAwakeText, keepAwake && { color: ui.orangeText }]}>
-              {keepAwake ? t('kitchen_screen_on') : t('kitchen_screen_on_off')}
-            </Text>
-          </PressScale>
-        ) : null}
-
         {/* SHOPPING LIST */}
         {view === 'spend' ? (
-          <SpendingView embedded showToast={showToast} />
+          <SpendingView embedded showToast={showToast} scanRef={spendScan} onScanning={setSpendReading} />
         ) : view === 'shop' ? (
           <>
-            <View style={styles.secHead}>
-              <View style={styles.secLeft}>
-                <ShoppingCart color={ui.orange} size={20} />
-                <Text style={styles.secTitle} numberOfLines={1}>{t('vault_shopping_list')}</Text>
-              </View>
-              <View style={styles.secRight}>
-                {/* Matches the "Clear done" pill beside it rather than sitting
-                    there as an unlabelled grey square. */}
-                <PressScale testID="shop-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openShopHistory} style={styles.histPill}>
-                  <History color={ui.muted} size={13} />
-                  <Text style={styles.histPillText} numberOfLines={1}>{t('kitchen_past_trips')}</Text>
-                </PressScale>
-                {checkedItems.length > 0 ? (
-                  <PressScale onPress={clearChecked} style={styles.clearBtn}>
-                    <Text style={styles.clearBtnText}>{t('vault_clear_done')}</Text>
-                  </PressScale>
-                ) : (
-                  <Text style={styles.secCount}>{shopItems.length} {shopItems.length === 1 ? t('vault_item') : t('vault_items')}</Text>
-                )}
-              </View>
-            </View>
-
             {shopItems.length === 0 && shopHistory.length > 0 ? (
               <PressScale testID="restore-banner" onPress={() => openRestore(shopHistory[0])} style={styles.restoreBanner}>
                 <View style={styles.restoreIcon}><RotateCcw color={ui.orange} size={18} /></View>
@@ -1702,7 +1728,7 @@ export default function Kitchen() {
               </PressScale>
             ) : null}
 
-            <View style={styles.card}>
+            <View style={styles.flat}>
               <View style={styles.shopInputRow}>
                 <TextInput
                   value={shopInput}
@@ -1884,6 +1910,12 @@ export default function Kitchen() {
                   </PressScale>
                 </View>
               ) : null}
+              {uncheckedItems.length > 0 ? (
+                <View style={styles.between}>
+                  <Text style={styles.h2}>{t('kit_to_buy_head')}</Text>
+                  <Text style={styles.toBuyCount}>{uncheckedItems.length} {uncheckedItems.length === 1 ? t('vault_item') : t('vault_items')}</Text>
+                </View>
+              ) : null}
               {/* A full weekly shop ran the page on for screens, burying the
                   meal ideas and the history beneath it. Ten at a time, the
                   rest inside. */}
@@ -1967,16 +1999,14 @@ export default function Kitchen() {
                         accessibilityRole="button"
                         accessibilityLabel={`${catLabel(row.aisle, t)}, ${row.count}`}
                         onPress={() => toggleFold(row.aisle)}
-                        style={[styles.sectionHead, { backgroundColor: tint.bg }, !row.open && styles.sectionHeadFolded]}
+                        style={styles.aisleHead}
                       >
-                        <Text style={styles.aisleEmoji}>{AISLE_EMOJI[row.aisle]}</Text>
-                        <Text style={[styles.sectionTitle, { color: tint.fg }]} numberOfLines={1}>{catLabel(row.aisle, t)}</Text>
-                        <View style={[styles.sectionCount, { borderColor: tint.fg }]}>
-                          <Text style={[styles.sectionCountText, { color: tint.fg }]}>{row.count}</Text>
-                        </View>
+                        <View style={[styles.aisleDot, { backgroundColor: tint.fg }]} />
+                        <Text style={[styles.aisleTitle, { color: tint.fg }]} numberOfLines={1}>{catLabel(row.aisle, t)}</Text>
+                        <Text style={styles.aisleCount}>{row.count}</Text>
                         {row.open
-                          ? <ChevronDown color={tint.fg} size={16} />
-                          : <ChevronRight color={tint.fg} size={16} />}
+                          ? <ChevronDown color={ui.muted} size={16} />
+                          : <ChevronRight color={ui.muted} size={16} />}
                       </PressScale>
                     );
                   }
@@ -2032,12 +2062,12 @@ export default function Kitchen() {
                   <PressScale
                     testID="shop-done-head"
                     accessibilityRole="button"
-                    accessibilityLabel={`${t('vault_done')}, ${checkedItems.length}`}
+                    accessibilityLabel={`${t('kit_in_basket')}, ${checkedItems.length}`}
                     onPress={() => toggleFold('__done')}
                     style={[styles.sectionHead, { backgroundColor: ui.soft }, folded.has('__done') && styles.sectionHeadFolded]}
                   >
                     <Check color={ui.mintText} size={16} />
-                    <Text style={[styles.sectionTitle, { color: ui.muted }]}>{t('vault_done')}</Text>
+                    <Text style={[styles.sectionTitle, { color: ui.muted }]}>{t('kit_in_basket')}</Text>
                     <View style={[styles.sectionCount, { borderColor: ui.muted }]}>
                       <Text style={[styles.sectionCountText, { color: ui.muted }]}>{checkedItems.length}</Text>
                     </View>
@@ -2081,64 +2111,65 @@ export default function Kitchen() {
 
               {shopItems.length === 0 ? <Text style={styles.empty}>{t('vault_shop_empty')}</Text> : null}
 
-              {shopItems.length > 0 ? (
-                selectMode ? (
-                  <View style={styles.selBar}>
-                    <PressScale testID="shop-select-cancel" onPress={exitSelect} style={styles.selCancelBtn}>
-                      <Text style={styles.selCancelText}>{t('cancel')}</Text>
-                    </PressScale>
-                    <PressScale
-                      testID="shop-select-all"
-                      onPress={() => setSelectedIds(
-                        selectedIds.size === shopItems.length
-                          ? new Set()
-                          : new Set(shopItems.map((i) => i.item_id)),
-                      )}
-                      style={styles.selCancelBtn}
-                    >
-                      <Text style={styles.selCancelText}>
-                        {selectedIds.size === shopItems.length ? t('kitchen_select_none') : t('kitchen_select_all')}
-                      </Text>
-                    </PressScale>
-                    <PressScale
-                      testID="shop-delete-selected"
-                      onPress={deleteSelected}
-                      disabled={selectedIds.size === 0}
-                      style={[styles.selDeleteBtn, selectedIds.size === 0 && { opacity: 0.45 }]}
-                    >
-                      <Trash2 color="#FFFFFF" size={14} />
-                      <Text style={styles.selDeleteText}>
-                        {t('kitchen_delete_selected')}{selectedIds.size ? ` (${selectedIds.size})` : ''}
-                      </Text>
-                    </PressScale>
-                  </View>
-                ) : (
-                  <View style={styles.shopFooterRow}>
-                    <PressScale testID="shop-select-mode" onPress={() => setSelectMode(true)} style={styles.selectModeBtn}>
-                      <ListChecks color={ui.text} size={14} />
-                      <Text style={styles.selectModeText}>{t('kitchen_select_items')}</Text>
-                    </PressScale>
-                    {shopItems.length > 1 ? (
-                      <PressScale testID="shop-clear-all" onPress={clearAllShop} style={styles.clearAllBtn}>
-                        <Trash2 color={ui.danger} size={14} />
-                        <Text style={styles.clearAllText}>{t('kitchen_clear_all')}</Text>
-                      </PressScale>
-                    ) : null}
-                  </View>
-                )
-              ) : null}
+              {selectMode && shopItems.length > 0 ? (
+                <View style={styles.selBar}>
+                  <PressScale testID="shop-select-cancel" onPress={exitSelect} style={styles.selCancelBtn}>
+                    <Text style={styles.selCancelText}>{t('cancel')}</Text>
+                  </PressScale>
+                  <PressScale
+                    testID="shop-select-all"
+                    onPress={() => setSelectedIds(
+                      selectedIds.size === shopItems.length
+                        ? new Set()
+                        : new Set(shopItems.map((i) => i.item_id)),
+                    )}
+                    style={styles.selCancelBtn}
+                  >
+                    <Text style={styles.selCancelText}>
+                      {selectedIds.size === shopItems.length ? t('kitchen_select_none') : t('kitchen_select_all')}
+                    </Text>
+                  </PressScale>
+                  <PressScale
+                    testID="shop-delete-selected"
+                    onPress={deleteSelected}
+                    disabled={selectedIds.size === 0}
+                    style={[styles.selDeleteBtn, selectedIds.size === 0 && { opacity: 0.45 }]}
+                  >
+                    <Trash2 color="#FFFFFF" size={14} />
+                    <Text style={styles.selDeleteText}>
+                      {t('kitchen_delete_selected')}{selectedIds.size ? ` (${selectedIds.size})` : ''}
+                    </Text>
+                  </PressScale>
+                </View>
+              ) : footRow([
+                <PressScale key="past" testID="shop-history" accessibilityRole="button" onPress={openShopHistory} style={styles.footLink}>
+                  <Text style={styles.footText}>{t('kit_foot_past')}</Text>
+                </PressScale>,
+                checkedItems.length > 0 ? (
+                  <PressScale key="done" testID="shop-clear-done" accessibilityRole="button" onPress={clearChecked} style={styles.footLink}>
+                    <Text style={styles.footText}>{t('vault_clear_done')}</Text>
+                  </PressScale>
+                ) : null,
+                shopItems.length > 0 ? (
+                  <PressScale key="select" testID="shop-select-mode" accessibilityRole="button" onPress={() => setSelectMode(true)} style={styles.footLink}>
+                    <Text style={styles.footText}>{t('kitchen_select_items')}</Text>
+                  </PressScale>
+                ) : null,
+                shopItems.length > 1 ? (
+                  <PressScale key="clear" testID="shop-clear-all" accessibilityRole="button" onPress={clearAllShop} style={styles.footLink}>
+                    <Text style={[styles.footText, { color: ui.danger }]}>{t('kitchen_clear_all')}</Text>
+                  </PressScale>
+                ) : null,
+                keepAwakeLink,
+              ])}
             </View>
           </>
         ) : (
           /* MEAL PLANNER */
           <>
-            <View style={styles.secHead}>
-              <View style={styles.secLeft}>
-                <UtensilsCrossed color={ui.lavenderText} size={20} />
-                <Text style={styles.secTitle} numberOfLines={1}>{t('vault_meal_planner')}</Text>
-              </View>
-              {mealLocked ? <LockBadge onPress={() => promptUpgrade('meal_planner')} /> : null}
-            </View>
+            {mealLocked ? (
+              <View style={styles.lockRow}><LockBadge onPress={() => promptUpgrade('meal_planner')} /></View>
+            ) : null}
 
             {/* Named here, on the planner itself, not only inside the sheets.
                 Whoever plans the week or cooks from it should not have to open
@@ -2164,41 +2195,115 @@ export default function Kitchen() {
               const today = dayKey(now);
               const tonight = mealOn(meals, today);
               const dayName = (day: string) => t(`day_${day}`);
-              const titleOf = (m: MealPlan) => {
-                const own = !!m.ai_recipe && Object.keys(m.ai_recipe).length > 0;
-                return own ? m.title : localizedMealTitle(m.recipe_id, m.title, suggestLang);
-              };
+              const isOwn = (m: MealPlan) => !!m.ai_recipe && Object.keys(m.ai_recipe).length > 0;
+              const titleOf = (m: MealPlan) => (isOwn(m) ? m.title : localizedMealTitle(m.recipe_id, m.title, suggestLang));
+              const methodOf = (m: MealPlan) => recipeMethod(resolveRecipeId(m.recipe_id, m.title), suggestLang);
               const minutesOf = (m: MealPlan): number | null => {
                 const own = m.ai_recipe?.[suggestLang]?.minutes;
                 if (own) return own;
-                const method = recipeMethod(resolveRecipeId(m.recipe_id, m.title), suggestLang);
-                return method?.minutes ?? null;
+                return methodOf(m)?.minutes ?? null;
               };
-              const toBuy = stillToBuy(shopItems);
+              // One line under a dish: how long, and whether there is a recipe
+              // to open or one still to be written.
+              const subOf = (m: MealPlan): string => {
+                if (generatingFor === m.meal_id) return t('cook_generating');
+                if (!isOwn(m) && !methodOf(m)) return t('kit_no_recipe_yet');
+                const mins = minutesOf(m);
+                return mins ? `${t('kitchen_min', { n: mins })} · ${t('kit_recipe_ready')}` : t('kit_recipe_ready');
+              };
+              const cookId = (m: MealPlan) => (isOwn(m) ? `cook-own-${m.meal_id}` : methodOf(m) ? `cook-${m.meal_id}` : `cook-ai-${m.meal_id}`);
+              const on = (day: string) => meals.filter((m) => (m.day || '').toLowerCase() === day);
+              const after = daysAfter(now, 6);
+              const dateIn = (n: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + n).getDate();
+              const planned = after.filter((d) => mealOn(meals, d)).length;
+              // Breakfast or lunch planned for today sits under tonight's card.
+              const alsoToday = on(today).filter((m) => m.meal_id !== tonight?.meal_id);
+              // A dish in the week: tap it to cook it, the bin takes it off.
+              const mealRow = (m: MealPlan) => (
+                <View key={m.meal_id} style={styles.weekMeal}>
+                  <PressScale
+                    testID={cookId(m)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${titleOf(m)}. ${subOf(m)}`}
+                    onPress={() => cookFromCard(m)}
+                    disabled={generatingFor === m.meal_id}
+                    style={styles.weekMealMain}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.weekMealTitle} numberOfLines={2}>{titleOf(m)}</Text>
+                      <Text style={styles.weekMealSub} numberOfLines={1}>{subOf(m)}</Text>
+                    </View>
+                    {generatingFor === m.meal_id
+                      ? <ActivityIndicator color={ui.orange} size="small" />
+                      : <ChevronRight color={ui.muted} size={16} />}
+                  </PressScale>
+                  <PressScale
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t('a11y_delete')}: ${titleOf(m)}`}
+                    onPress={() => deleteMeal(m.meal_id)}
+                    hitSlop={8}
+                    style={styles.weekMealDel}
+                  >
+                    <Trash2 color={ui.muted} size={15} />
+                  </PressScale>
+                </View>
+              );
+              const dateCol = (day: string, n: number) => (
+                <View style={styles.weekDate}>
+                  <Text style={styles.weekDow}>{dayName(day).slice(0, 3)}</Text>
+                  <Text style={styles.weekNum}>{dateIn(n)}</Text>
+                </View>
+              );
               return (
                 <>
                   {tonight ? (
-                    <PressScale
-                      testID="kitchen-tonight"
-                      accessibilityRole="button"
-                      accessibilityLabel={`${t('kitchen_tonight', { day: dayName(today) })}: ${titleOf(tonight)}`}
-                      onPress={() => cookFromCard(tonight)}
-                      style={styles.tonightCard}
-                    >
-                      <View style={styles.tonightTile}>
-                        <MealGlyph icon={mealIcon(tonight.title)} color={ui.goldText} size={30} />
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={styles.tonightCard}>
+                      <View style={styles.tonightHead}>
                         <Text style={styles.tonightEyebrow}>{t('kitchen_tonight', { day: dayName(today) })}</Text>
-                        <Text style={styles.tonightTitle} numberOfLines={2}>{titleOf(tonight)}</Text>
-                        {(() => {
-                          const mins = minutesOf(tonight);
-                          const sub = mins ? t('kitchen_min', { n: mins }) : tonight.ingredients.slice(0, 3).join(' · ');
-                          return sub ? <Text style={styles.tonightSub} numberOfLines={1}>{sub}</Text> : null;
-                        })()}
+                        <PressScale
+                          accessibilityRole="button"
+                          accessibilityLabel={`${t('a11y_delete')}: ${titleOf(tonight)}`}
+                          onPress={() => deleteMeal(tonight.meal_id)}
+                          hitSlop={10}
+                          style={styles.tonightDel}
+                        >
+                          <Trash2 color={ui.goldText} size={15} />
+                        </PressScale>
                       </View>
-                      <ChevronRight color={ui.goldText} size={20} />
-                    </PressScale>
+                      <PressScale
+                        testID="kitchen-tonight"
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t('kitchen_tonight', { day: dayName(today) })}: ${titleOf(tonight)}`}
+                        onPress={() => cookFromCard(tonight)}
+                        style={styles.tonightMain}
+                      >
+                        <View style={styles.tonightTile}>
+                          <MealGlyph icon={mealIcon(tonight.title)} color={ui.goldText} size={26} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.tonightTitle} numberOfLines={2}>{titleOf(tonight)}</Text>
+                          {(() => {
+                            const mins = minutesOf(tonight);
+                            const sub = mins ? t('kitchen_min', { n: mins }) : tonight.ingredients.slice(0, 3).join(' · ');
+                            return sub ? <Text style={styles.tonightSub} numberOfLines={1}>{sub}</Text> : null;
+                          })()}
+                        </View>
+                      </PressScale>
+                      <PressScale
+                        testID="kitchen-tonight-cook"
+                        accessibilityRole="button"
+                        onPress={() => cookFromCard(tonight)}
+                        disabled={generatingFor === tonight.meal_id}
+                        style={styles.cookBtn}
+                      >
+                        {generatingFor === tonight.meal_id
+                          ? <ActivityIndicator color={ui.bg} size="small" />
+                          : <ChefHat color={ui.bg} size={18} />}
+                        <Text style={styles.cookBtnText}>
+                          {generatingFor === tonight.meal_id ? t('cook_generating') : t('kit_cook')}
+                        </Text>
+                      </PressScale>
+                    </View>
                   ) : (
                     <PressScale
                       testID="kitchen-tonight"
@@ -2206,166 +2311,99 @@ export default function Kitchen() {
                       onPress={() => (canPlanMeal ? planDay(today) : promptUpgrade('meal_planner'))}
                       style={[styles.tonightCard, styles.tonightEmpty]}
                     >
-                      <View style={[styles.tonightTile, { backgroundColor: ui.soft }]}>
-                        <CookingPot color={ui.muted} size={30} />
+                      <Text style={[styles.tonightEyebrow, { color: ui.muted }]}>{t('kitchen_tonight', { day: dayName(today) })}</Text>
+                      <View style={styles.tonightMain}>
+                        <View style={[styles.tonightTile, { backgroundColor: ui.soft }]}>
+                          <CookingPot color={ui.muted} size={26} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.tonightTitle} numberOfLines={2}>{t('kitchen_nothing_tonight')}</Text>
+                        </View>
+                        <View style={styles.planPill}><Plus color={ui.orangeText} size={14} /><Text style={styles.planPillText}>{t('kitchen_plan')}</Text></View>
                       </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={[styles.tonightEyebrow, { color: ui.muted }]}>{t('kitchen_tonight', { day: dayName(today) })}</Text>
-                        <Text style={styles.tonightTitle} numberOfLines={2}>{t('kitchen_nothing_tonight')}</Text>
-                      </View>
-                      <View style={styles.planPill}><Plus color={ui.orangeText} size={14} /><Text style={styles.planPillText}>{t('kitchen_plan')}</Text></View>
                     </PressScale>
                   )}
 
-                  <Text style={styles.h2}>{t('kids_this_week')}</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.weekStrip} contentContainerStyle={styles.weekStripInner} testID="kitchen-week">
-                    {daysAfter(now, 6).map((day) => {
-                      const planned = mealOn(meals, day);
-                      return planned ? (
-                        <PressScale
-                          key={day}
-                          testID={`kitchen-day-${day}`}
-                          accessibilityRole="button"
-                          accessibilityLabel={`${dayName(day)}: ${titleOf(planned)}`}
-                          onPress={() => cookFromCard(planned)}
-                          style={styles.dayTile}
-                        >
-                          <Text style={styles.dayLabel}>{dayName(day).slice(0, 3)}</Text>
-                          <MealGlyph icon={mealIcon(planned.title)} color={ui.text} size={26} />
-                          <Text style={styles.dayTitle} numberOfLines={2}>{titleOf(planned)}</Text>
-                        </PressScale>
-                      ) : (
-                        <PressScale
-                          key={day}
-                          testID={`kitchen-plan-${day}`}
-                          accessibilityRole="button"
-                          accessibilityLabel={`${dayName(day)}: ${t('kitchen_plan')}`}
-                          onPress={() => (canPlanMeal ? planDay(day) : promptUpgrade('meal_planner'))}
-                          style={[styles.dayTile, styles.dayTileEmpty]}
-                        >
-                          <Text style={styles.dayLabel}>{dayName(day).slice(0, 3)}</Text>
-                          <Plus color={ui.muted} size={24} />
-                          <Text style={[styles.dayTitle, { color: ui.muted }]}>{t('kitchen_plan')}</Text>
-                        </PressScale>
+                  <View style={styles.between}>
+                    <Text style={styles.h2}>{t('kids_this_week')}</Text>
+                    <Text style={styles.toBuyCount}>{t('kit_week_planned', { n: planned, total: after.length })}</Text>
+                  </View>
+                  {/* The week as one list: each day says what is planned, or
+                      offers to plan it. */}
+                  <View style={styles.weekList} testID="kitchen-week">
+                    {alsoToday.length > 0 ? (
+                      <View style={styles.weekDay}>
+                        {dateCol(today, 0)}
+                        <View style={styles.weekMeals}>{alsoToday.map(mealRow)}</View>
+                      </View>
+                    ) : null}
+                    {after.map((day, i) => {
+                      const dishes = on(day);
+                      return (
+                        <View key={day} testID={`kitchen-day-${day}`} style={styles.weekDay}>
+                          {dateCol(day, i + 1)}
+                          <View style={styles.weekMeals}>
+                            {dishes.length > 0 ? dishes.map(mealRow) : (
+                              <PressScale
+                                testID={`kitchen-plan-${day}`}
+                                accessibilityRole="button"
+                                accessibilityLabel={`${dayName(day)}: ${t('kit_plan_meal')}`}
+                                onPress={() => (canPlanMeal ? planDay(day) : promptUpgrade('meal_planner'))}
+                                style={styles.weekPlan}
+                              >
+                                <Plus color={ui.orangeText} size={16} />
+                                <Text style={styles.weekPlanText}>{t('kit_plan_meal')}</Text>
+                              </PressScale>
+                            )}
+                          </View>
+                        </View>
                       );
                     })}
-                  </ScrollView>
-
-                  {toBuy.length > 0 ? (
-                    <View testID="kitchen-to-buy">
-                      <View style={styles.between}>
-                        <Text style={styles.h2}>{t('vault_shopping_list')}</Text>
-                        <Text style={styles.toBuyCount}>{toBuy.length === 1 ? t('kitchen_to_buy_one') : t('kitchen_to_buy', { n: toBuy.length })}</Text>
-                      </View>
-                      <View style={styles.previewList}>
-                        {stillToBuy(shopItems).slice(0, 4).map((item) => {
-                          const { label, qty } = splitQuantity(item.name);
-                          return (
-                            <PressScale
-                              key={item.item_id}
-                              testID={`kitchen-buy-${item.item_id}`}
-                              accessibilityRole="button"
-                              onPress={() => toggleShopItem(item)}
-                              style={styles.previewRow}
-                            >
-                              <View style={styles.shopCircle} />
-                              <View style={{ flex: 1, minWidth: 0 }}>
-                                <Text style={styles.rowText} numberOfLines={1}>{label}{qty ? ` · ${qty}` : ''}</Text>
-                                {priceLine(label, item.item_id, 'kitchen-buy-price', true)}
-                                {item.added_by ? <Text style={styles.rowCat} numberOfLines={1}>{t('shop_added_by', { name: item.added_by })}</Text> : null}
-                              </View>
-                            </PressScale>
-                          );
-                        })}
-                      </View>
-                      <PressScale testID="kitchen-to-buy-all" accessibilityRole="button" onPress={() => selectView('shop')} style={styles.seeAll}>
-                        <Text style={styles.seeAllText}>{t('kitchen_see_all')}</Text>
-                        <ChevronRight color={ui.orangeText} size={16} />
-                      </PressScale>
-                    </View>
-                  ) : null}
+                  </View>
                 </>
               );
             })()}
 
-            {/* Free peek: locked families can still OPEN the suggestions sheet —
-                seeing 7 concrete dinners sells Premium far better than a lock
-                icon. Adding to the planner is what prompts the upgrade. */}
-            {mealLocked ? (
-              <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.ideasCta}>
-                <Sparkles color={ui.lavenderText} size={18} />
-                <Text style={styles.ideasCtaText}>{t('meal_ideas_cta')}</Text>
-              </PressScale>
-            ) : null}
-
             <PremiumPreviewBanner />
 
-            {/* Free's monthly taste: add meals by hand and send them to the
-                list, with the month's count in plain words. The camera, saved
-                plans and the AI recipe stay on the paid plans below. */}
+            {/* Free's monthly taste, with the month's count in plain words. */}
             {mealTaste ? (
-              <>
-                <Text testID="meal-taste-count" style={styles.scanHint}>
-                  {mealTaste.left > 0
-                    ? t('taste_meal_left', { left: mealTaste.left, limit: mealTaste.limit })
-                    : t('taste_meal_spent', {
-                        limit: mealTaste.limit,
-                        date: new Date(mealTaste.resets_on).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'long' }),
-                      })}
-                </Text>
-                <View style={styles.mealActions}>
-                  {meals.length > 0 && mealTaste.used > 0 ? (
-                    <PressScale testID="meal-taste-sync" onPress={syncMealsToShopping} style={[styles.mealActionBtn, { backgroundColor: ui.mint }]}>
-                      <Text style={styles.clearBtnText} numberOfLines={1}>{t('vault_sync_to_list')}</Text>
-                    </PressScale>
-                  ) : null}
-                  {mealTaste.left > 0 ? (
-                    <PressScale testID="meal-taste-add" onPress={() => setShowMealAdd(true)} style={[styles.mealActionBtn, { backgroundColor: ui.lavender }]}>
-                      <Text style={[styles.clearBtnText, { color: ui.lavenderText }]} numberOfLines={1}>{t('vault_add_short')}</Text>
-                    </PressScale>
-                  ) : null}
-                </View>
-              </>
+              <Text testID="meal-taste-count" style={styles.scanHint}>
+                {mealTaste.left > 0
+                  ? t('taste_meal_left', { left: mealTaste.left, limit: mealTaste.limit })
+                  : t('taste_meal_spent', {
+                      limit: mealTaste.limit,
+                      date: new Date(mealTaste.resets_on).toLocaleDateString(localeFor(lang), { day: 'numeric', month: 'long' }),
+                    })}
+              </Text>
             ) : null}
 
-            {/* Primary action: shopping-list meal ideas, full-width so it reads
-                as the headline way in. Secondary actions sit in their own row. */}
-            {!mealLocked ? (
-              <>
-                <PressScale testID="meal-suggest" onPress={openSuggest} style={styles.ideasCta}>
-                  <Sparkles color={ui.lavenderText} size={18} />
-                  <Text style={styles.ideasCtaText}>{t('meal_ideas_cta')}</Text>
+            {/* Two things worth a tile: ideas for the days with nothing on
+                them, and the camera. A locked family can still open the ideas
+                (seeing seven dinners sells Premium better than a lock);
+                adding one is what asks for the upgrade. */}
+            <View style={styles.tileRow}>
+              <PressScale testID="meal-suggest" accessibilityRole="button" onPress={openSuggest} style={[styles.actTile, { backgroundColor: ui.lavender }]}>
+                <Sparkles color={ui.lavenderText} size={20} />
+                <Text style={styles.actTileText}>{t('kit_ideas_tile')}</Text>
+              </PressScale>
+              {!mealLocked ? (
+                <PressScale testID="capture-recipe" accessibilityRole="button" onPress={openCapture} style={[styles.actTile, { backgroundColor: ui.orangeSoft }]}>
+                  <Camera color={ui.orangeText} size={20} />
+                  <Text style={styles.actTileText}>{t('kit_capture_tile')}</Text>
                 </PressScale>
-                <View style={styles.mealActions}>
-                  {meals.length > 0 ? (
-                    <PressScale onPress={syncMealsToShopping} style={[styles.mealActionBtn, { backgroundColor: ui.mint }]}>
-                      <Text style={styles.clearBtnText} numberOfLines={1}>{t('vault_sync_to_list')}</Text>
-                    </PressScale>
-                  ) : null}
-                  <PressScale testID="capture-recipe" onPress={openCapture} style={[styles.mealActionBtn, { backgroundColor: ui.orangeSoft, borderWidth: 1, borderColor: ui.orange }]}>
-                    <Camera color={ui.orange} size={14} />
-                    <Text style={[styles.clearBtnText, { color: ui.orangeText }]} numberOfLines={1}>{t('capture_chip')}</Text>
-                  </PressScale>
-                  <PressScale onPress={() => setShowMealAdd(true)} style={[styles.mealActionBtn, { backgroundColor: ui.lavender }]}>
-                    <Text style={[styles.clearBtnText, { color: ui.lavenderText }]} numberOfLines={1}>{t('vault_add_short')}</Text>
-                  </PressScale>
-                  {/* Was a bare grey icon square beside three coloured, labelled
-                      pills — it read as a stray control rather than an action.
-                      Now it matches its siblings and says what it opens. */}
-                  <PressScale testID="meal-history" accessibilityRole="button" accessibilityLabel={t('a11y_history')} onPress={openMealHistory} style={[styles.mealActionBtn, { backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line }]}>
-                    <History color={ui.muted} size={14} />
-                    <Text style={[styles.clearBtnText, { color: ui.muted }]} numberOfLines={1}>{t('kitchen_saved')}</Text>
-                  </PressScale>
-                </View>
-              </>
-            ) : null}
-            {/* The legend for the camera — same rule as the shopping page:
-                one line saying exactly what it does. */}
-            {!mealLocked ? <Text style={styles.scanHint}>{t('capture_hint')}</Text> : null}
+              ) : mealTaste && mealTaste.left > 0 ? (
+                <PressScale testID="meal-taste-add" accessibilityRole="button" onPress={() => setShowMealAdd(true)} style={[styles.actTile, { backgroundColor: ui.orangeSoft }]}>
+                  <Plus color={ui.orangeText} size={20} />
+                  <Text style={styles.actTileText}>{t('kit_plan_meal')}</Text>
+                </PressScale>
+              ) : null}
+            </View>
 
-            {/* Ask the AI for a recipe: a free-text dish, generated on the spot
-                without adding it to the plan first. Opens in the recipe view. */}
-            {!mealLocked ? (
+            {/* Ask for a recipe: a free-text dish, written on the spot without
+                adding it to the plan first. Behind a link at the foot, so the
+                page is not a form until someone wants one. */}
+            {!mealLocked && (showRecipeAi || recipeAiQuery.length > 0) ? (
               <View style={styles.recipeAiCard}>
                 <View style={styles.recipeAiLabel}>
                   <Sparkles color={ui.orangeText} size={15} />
@@ -2406,93 +2444,34 @@ export default function Kitchen() {
               </View>
             ) : null}
 
-            <View style={styles.card}>
-              {DAYS.filter((d) => (mealsByDay[d] || []).length > 0).map((day) => (
-                <View key={day}>
-                  <Text style={styles.mealDayLabel}>{t(`day_${day}`)}</Text>
-                  {mealsByDay[day].map((meal) => {
-                    // A meal carrying its own recipe (captured from a photo,
-                    // or AI-written) is authoritative: never alias it to a
-                    // library dish that happens to share the name — the
-                    // family wants THEIR version, not ours.
-                    const hasOwnRecipe = !!meal.ai_recipe && Object.keys(meal.ai_recipe).length > 0;
-                    return (
-                    <View key={meal.meal_id} style={styles.row}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.rowText}>{hasOwnRecipe ? meal.title : localizedMealTitle(meal.recipe_id, meal.title, suggestLang)}</Text>
-                        {meal.ingredients.length > 0 ? <Text style={styles.rowCat}>{hasOwnRecipe ? meal.ingredients.join(', ') : localizedMealIngredients(meal.recipe_id, meal.ingredients, suggestLang, meal.title).join(', ')}</Text> : null}
-                        {hasOwnRecipe ? (
-                          <PressScale
-                            testID={`cook-own-${meal.meal_id}`}
-                            accessibilityRole="button"
-                            onPress={() => generateRecipe(meal)}
-                            disabled={generatingFor === meal.meal_id}
-                            hitSlop={8}
-                            style={styles.cookLink}
-                          >
-                            <ChefHat color={ui.orange} size={13} />
-                            <Text style={styles.cookLinkText}>{t('cook_it')}</Text>
-                          </PressScale>
-                        ) : recipeMethod(resolveRecipeId(meal.recipe_id, meal.title), suggestLang) ? (
-                          <PressScale
-                            testID={`cook-${meal.meal_id}`}
-                            accessibilityRole="button"
-                            onPress={() => openRecipe({ recipeId: resolveRecipeId(meal.recipe_id, meal.title)!, title: localizedMealTitle(meal.recipe_id, meal.title, suggestLang) })}
-                            hitSlop={8}
-                            style={styles.cookLink}
-                          >
-                            <ChefHat color={ui.orange} size={13} />
-                            <Text style={styles.cookLinkText}>{t('cook_it')}</Text>
-                          </PressScale>
-                        ) : (
-                          /* No method in the library — offer to write one. */
-                          <PressScale
-                            testID={`cook-ai-${meal.meal_id}`}
-                            accessibilityRole="button"
-                            onPress={() => generateRecipe(meal)}
-                            disabled={generatingFor === meal.meal_id}
-                            hitSlop={8}
-                            style={styles.cookLink}
-                          >
-                            {generatingFor === meal.meal_id ? (
-                              <ActivityIndicator color={ui.orange} size="small" />
-                            ) : (
-                              <Sparkles color={ui.orange} size={13} />
-                            )}
-                            <Text style={styles.cookLinkText}>
-                              {generatingFor === meal.meal_id ? t('cook_generating') : t('cook_generate')}
-                            </Text>
-                          </PressScale>
-                        )}
-                      </View>
-                      <PressScale
-                  accessibilityRole="button"
-                  accessibilityLabel={t('a11y_delete')} onPress={() => deleteMeal(meal.meal_id)} hitSlop={12} style={{ padding: 4 }}>
-                        <Trash2 color={ui.muted} size={15} />
-                      </PressScale>
-                    </View>
-                    );
-                  })}
-                </View>
-              ))}
-              {meals.length === 0 ? (
-                <View style={styles.mealEmptyWrap}>
-                  <Text style={styles.empty}>{t('vault_meal_empty')}</Text>
-                  <PressScale testID="meal-suggest-cta" onPress={openSuggest} style={styles.suggestCta}>
-                    <Sparkles color={ui.lavenderText} size={16} />
-                    <Text style={styles.suggestCtaText}>{t('kitchen_suggest_week')}</Text>
-                  </PressScale>
-                </View>
-              ) : null}
-
-              {meals.length > 1 ? (
-                <PressScale testID="meal-clear-all" onPress={clearAllMealsPlan} style={styles.clearAllBtn}>
-                  <Trash2 color={ui.danger} size={14} />
-                  <Text style={styles.clearAllText}>{t('kitchen_clear_all')}</Text>
+            {footRow([
+              meals.length > 0 && !mealLocked ? (
+                <PressScale key="sync" testID="meal-sync" accessibilityRole="button" onPress={syncMealsToShopping} style={styles.footLink}>
+                  <Text style={styles.footText}>{t('kit_foot_to_list')}</Text>
                 </PressScale>
-              ) : null}
-            </View>
-            {meals.length > 0 ? <Text style={styles.mealTip}>{t('kitchen_sync_tip')}</Text> : null}
+              ) : null,
+              meals.length > 0 && mealTaste && mealTaste.used > 0 ? (
+                <PressScale key="taste-sync" testID="meal-taste-sync" accessibilityRole="button" onPress={syncMealsToShopping} style={styles.footLink}>
+                  <Text style={styles.footText}>{t('kit_foot_to_list')}</Text>
+                </PressScale>
+              ) : null,
+              !mealLocked ? (
+                <PressScale key="saved" testID="meal-history" accessibilityRole="button" onPress={openMealHistory} style={styles.footLink}>
+                  <Text style={styles.footText}>{t('kit_foot_saved')}</Text>
+                </PressScale>
+              ) : null,
+              !mealLocked ? (
+                <PressScale key="ask" testID="recipe-ai-open" accessibilityRole="button" onPress={() => setShowRecipeAi((v) => !v)} style={styles.footLink}>
+                  <Text style={styles.footText}>{t('kit_foot_ask')}</Text>
+                </PressScale>
+              ) : null,
+              keepAwakeLink,
+              meals.length > 1 ? (
+                <PressScale key="clear" testID="meal-clear-all" accessibilityRole="button" onPress={clearAllMealsPlan} style={styles.footLink}>
+                  <Text style={[styles.footText, { color: ui.danger }]}>{t('kitchen_clear_all')}</Text>
+                </PressScale>
+              ) : null,
+            ])}
           </>
         )}
 
@@ -3459,42 +3438,71 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     flexDirection: 'row', gap: 2, padding: 3, marginTop: 14, marginBottom: 12,
     backgroundColor: ui.soft, borderRadius: 14,
   },
-  tab: { flex: 1, height: 36, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderRadius: 11 },
+  tab: { flex: 1, height: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderRadius: 11 },
   tabOn: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
   tabText: { fontFamily: 'Figtree_700Bold', fontSize: 14, color: ui.muted },
   tabTextOn: { color: ui.text, fontFamily: 'Figtree_800ExtraBold' },
 
   // Tonight, the days after it, what still has to be bought.
-  h2: { fontFamily: 'Figtree_800ExtraBold', fontSize: 17, letterSpacing: -0.2, color: ui.text, marginTop: 16, marginBottom: 8 },
+  h2: { fontFamily: 'Figtree_800ExtraBold', fontSize: 20, letterSpacing: -0.2, color: ui.text, marginTop: 20, marginBottom: 10 },
   between: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
-  tonightCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 20, backgroundColor: ui.gold, marginTop: 12 },
+  tonightCard: { gap: 12, padding: 18, borderRadius: 24, backgroundColor: ui.gold, marginTop: 14 },
+  tonightHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  tonightDel: { padding: 4 },
+  tonightMain: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  cookBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 999, backgroundColor: ui.goldText },
+  cookBtnText: { color: ui.bg, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
+  // The header: what is left to buy, and the page's one main button.
+  buyTile: { width: 66, height: 72, borderRadius: 20, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, overflow: 'hidden' },
+  buyTileTop: { height: 22, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  buyTileLabel: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 10, letterSpacing: 0.6 },
+  buyTileBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  buyTileNum: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 26, lineHeight: 28, letterSpacing: -0.5 },
+  buyTileUnit: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 11.5 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 16, borderRadius: 9999, backgroundColor: ui.orangeDeep },
+  addBtnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  lockRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
+  // The week, one day to a line.
+  weekList: { gap: 8 },
+  weekDay: { flexDirection: 'row', alignItems: 'stretch', gap: 10 },
+  weekDate: { width: 40, alignItems: 'flex-end', justifyContent: 'center' },
+  weekDow: { color: ui.muted, fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
+  weekNum: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
+  weekMeals: { flex: 1, minWidth: 0, gap: 6 },
+  weekMeal: { flexDirection: 'row', alignItems: 'center', minHeight: 56, borderRadius: 18, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, paddingRight: 6 },
+  weekMealMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 6 },
+  weekMealTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
+  weekMealSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13, marginTop: 1 },
+  weekMealDel: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
+  weekPlan: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 56, borderRadius: 18, borderWidth: 2, borderStyle: 'dashed', borderColor: ui.line, paddingHorizontal: 14 },
+  weekPlanText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 14.5 },
+  tileRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  actTile: { flex: 1, minWidth: 0, minHeight: 64, borderRadius: 18, paddingVertical: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  actTileText: { flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 14, lineHeight: 18 },
+  foot: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 10, marginTop: 18 },
+  footLink: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' },
+  footText: { fontFamily: 'Figtree_700Bold', fontSize: 13.5, color: ui.orangeText },
+  // The list sits flat on the page: a dot and a name for each aisle.
+  flat: { gap: 4, marginTop: 14 },
+  aisleHead: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, marginTop: 6 },
+  aisleDot: { width: 9, height: 9, borderRadius: 9 },
+  aisleTitle: { flex: 1, fontFamily: 'Figtree_800ExtraBold', fontSize: 12.5, letterSpacing: 0.5, textTransform: 'uppercase' },
+  aisleCount: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
   tonightEmpty: { backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderStyle: 'dashed' },
-  tonightTile: { width: 56, height: 56, borderRadius: 16, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
-  tonightEyebrow: { color: ui.goldText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
-  tonightTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 19, lineHeight: 24 },
+  tonightTile: { width: 52, height: 52, borderRadius: 26, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  tonightEyebrow: { color: ui.goldText, fontFamily: 'Figtree_800ExtraBold', fontSize: 12.5, letterSpacing: 0.6, textTransform: 'uppercase' },
+  tonightTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 22, lineHeight: 27, letterSpacing: -0.3 },
   tonightSub: { color: ui.goldText, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5, marginTop: 2 },
   planPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.orangeSoft, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
   planPillText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
-  weekStrip: { marginHorizontal: -20 },
-  weekStripInner: { paddingHorizontal: 20, gap: 8 },
-  dayTile: { width: 92, height: 96, borderRadius: 18, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: 6 },
-  dayTileEmpty: { backgroundColor: 'transparent', borderWidth: 2, borderStyle: 'dashed' },
-  dayLabel: { fontFamily: 'Figtree_800ExtraBold', fontSize: 13, color: ui.muted },
-  dayTitle: { fontFamily: 'Figtree_700Bold', fontSize: 12.5, lineHeight: 15, color: ui.text, textAlign: 'center' },
-  toBuyCount: { fontFamily: 'Figtree_600SemiBold', fontSize: 14, color: ui.muted, marginTop: 16 },
-  previewList: { borderRadius: 16, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, paddingHorizontal: 14 },
-  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: ui.line },
-  seeAll: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10 },
-  seeAllText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  toBuyCount: { fontFamily: 'Figtree_600SemiBold', fontSize: 13.5, color: ui.muted, marginTop: 20 },
   container: { flex: 1, backgroundColor: ui.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
 
-  secHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 12 },
   // flexShrink 0: the pill and the count are the actionable half, and they
   // are already as small as they go. The title gives way instead.
-  secRight: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
   // A soft-filled quiet button, not an outlined box. As a card-coloured
   // outline it read as a stray dark blob among the labelled colour buttons in
   // the row (a lone circle in dark mode). Soft fill, same pill radius and row
@@ -3507,8 +3515,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   histBtn: { width: 44, alignSelf: 'stretch', borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center' },
   // Prominent, labelled call-to-action for the shopping-list meal ideas — now
   // one of the two main ways users get recipes, so it leads the row.
-  ideasCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, backgroundColor: ui.lavender, alignSelf: 'stretch', justifyContent: 'center', marginBottom: 10 },
-  ideasCtaText: { color: ui.lavenderText, fontFamily: 'Figtree_700Bold', fontSize: 14 },
   histRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: ui.line },
   histTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15 },
   histSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, marginTop: 2 },
@@ -3530,16 +3536,10 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // minWidth 0 alongside flexShrink: a flex child defaults to min-width:auto
   // and refuses to shrink below its own text, which is how "3 items" ended up
   // 9px past the right edge of a 320px screen — measured, by e2e_overflow.py.
-  secLeft: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1, minWidth: 0 },
-  secTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 19, letterSpacing: -0.3, flexShrink: 1 },
-  secCount: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
 
   clearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.mint },
-  histPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.soft, borderWidth: 1, borderColor: ui.line },
-  histPillText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12 },
   clearBtnText: { color: ui.mintText, fontFamily: 'Figtree_700Bold', fontSize: 12 },
 
-  card: { borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, padding: 14, gap: 4 },
   shopInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 },
   shopScanBtn: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: ui.orange, backgroundColor: ui.orangeSoft },
   scanHint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 11.5, marginBottom: 10, marginTop: 2 },
@@ -3579,7 +3579,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   shopAddBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   hint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
-  rowText: { color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
+  rowText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 16 },
   // "Environ 14,25 € pour 4 articles", above the list.
   totalCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.soft,
@@ -3652,12 +3652,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   addedNoteText: { flex: 1, fontFamily: 'Figtree_700Bold', fontSize: 13.5, color: ui.mintText },
   sectionHead: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginTop: 12, paddingHorizontal: 14, paddingVertical: 11,
-    borderTopLeftRadius: 16, borderTopRightRadius: 16,
-    borderWidth: 1, borderColor: ui.line, borderBottomWidth: 0,
+    marginTop: 12, paddingHorizontal: 14, minHeight: 48, borderRadius: 16,
   },
-  sectionHeadFolded: { borderRadius: 16, borderBottomWidth: 1 },
-  aisleEmoji: { fontSize: 16 },
+  sectionHeadFolded: {},
   sectionTitle: { flex: 1, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
   sectionCount: {
     minWidth: 24, height: 22, borderRadius: 99, borderWidth: 1.5, paddingHorizontal: 6,
@@ -3666,16 +3663,13 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   sectionCountText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
   sectionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: ui.card, paddingVertical: 13, paddingHorizontal: 14,
-    borderLeftWidth: 1, borderRightWidth: 1, borderTopWidth: 1,
-    borderColor: ui.line,
+    minHeight: 52, paddingVertical: 10, paddingHorizontal: 2,
+    borderBottomWidth: 1, borderBottomColor: ui.line,
   },
-  sectionRowLast: {
-    borderBottomWidth: 1, borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
-  },
+  sectionRowLast: { borderBottomWidth: 0 },
   shopCardDone: { opacity: 0.75 },
   shopCircle: {
-    width: 22, height: 22, borderRadius: 99, borderWidth: 2, borderColor: ui.muted,
+    width: 24, height: 24, borderRadius: 99, borderWidth: 2, borderColor: ui.muted,
     alignItems: 'center', justifyContent: 'center',
   },
   shopCircleOn: { backgroundColor: ui.mintText, borderColor: ui.mintText },
@@ -3687,12 +3681,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   divider: { marginTop: 8, paddingVertical: 4 },
   dividerText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
   empty: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, textAlign: 'center', paddingVertical: 14 },
-  mealDayLabel: { color: ui.lavenderText, fontFamily: 'Figtree_800ExtraBold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8, marginBottom: 2 },
-  mealTip: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12.5, lineHeight: 19, marginTop: 12 },
-  keepAwake: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 12, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card },
-  keepAwakeOn: { borderColor: ui.orange + '55', backgroundColor: ui.orangeSoft },
-  keepAwakeText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
-  mealEmptyWrap: { alignItems: 'center', paddingVertical: 6 },
   // The labelled actions share the row equally and run its full width; the
   // dead space on the right made them look like leftovers rather than a set.
   // The history icon keeps its square: stretching an icon-only, rarely-used
@@ -3700,21 +3688,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // Four actions do not fit one phone row: forcing them to share it shrank every
   // pill until its label truncated ("Sync to l…", "Capture reci…", "+ A…").
   // Let them wrap instead — two comfortable rows beat one unreadable one.
-  mealActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 },
   // flexGrow rather than flex: 1. Exactly equal thirds is narrower than "Sync
   // to list" needs (~98px with its padding, against ~90px available on a 390px
   // phone) and German is longer still, so equal widths would truncate the label
   // it is named after. Growing from natural width fills the row just as
   // completely without clipping anything.
-  mealActionBtn: { flexGrow: 0, flexShrink: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 99 },
   restoreDismiss: { padding: 4, marginLeft: 2 },
-  shopFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  selectModeBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999,
-    borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft,
-  },
-  selectModeText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 12 },
   rowSelected: { backgroundColor: ui.orangeSoft },
   selBox: {
     width: 22, height: 22, borderRadius: 6,
@@ -3745,8 +3724,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   // on the ink read in light mode and measured 2.22:1 in dark, where the ink
   // is pale. Caught by the contrast harness once the meals became the
   // opening view.
-  suggestCta: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99, backgroundColor: ui.lavender, marginTop: 4 },
-  suggestCtaText: { color: ui.lavenderText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
   suggestSub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13.5, lineHeight: 20, marginBottom: 8 },
   suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderTopWidth: 1, borderTopColor: ui.line },
   suggestDay: { color: ui.lavenderText, fontFamily: 'Figtree_800ExtraBold', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -3814,8 +3791,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   browseDayTextActive: { color: '#FFFFFF' },
   againBtn: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 10, marginBottom: 4, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: ui.orange },
   againText: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
-  cookLink: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
-  cookLinkText: { color: ui.orangeText, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
   cookMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   cookMetaText: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13 },
   cookSectionTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 15, marginTop: 18, marginBottom: 8 },

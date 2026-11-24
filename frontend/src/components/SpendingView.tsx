@@ -98,8 +98,13 @@ const RECEIPT_MAX_PARTS = 3;
 
 type ShowToast = ReturnType<typeof useToast>['showToast'];
 
-export function SpendingView({ embedded = false, showToast: hostToast }: {
+export function SpendingView({ embedded = false, showToast: hostToast, scanRef, onScanning }: {
   embedded?: boolean;
+  /** Embedded in Cuisine, the one main button ("Receipt") is drawn in the
+   *  page's header, beside the title. It reaches the camera through this. */
+  scanRef?: React.MutableRefObject<(() => void) | null>;
+  /** Tells the header's button a receipt is being read, so it can say so. */
+  onScanning?: (reading: boolean) => void;
   /** Embedded in Cuisine, the toast is the screen's: this view sits inside
    *  Cuisine's scrolling content, where its own would sit off-screen. */
   showToast?: ShowToast;
@@ -515,6 +520,32 @@ export function SpendingView({ embedded = false, showToast: hostToast }: {
 
   const chartMax = Math.max(1, ...(overview?.months ?? []).map((m) => m.total));
 
+  useEffect(() => {
+    if (!scanRef) return undefined;
+    scanRef.current = () => { captureReceipt('camera'); };
+    return () => { scanRef.current = null; };
+  }, [scanRef, captureReceipt]);
+  // Leaving the tab mid-read must not leave the header's button stuck on
+  // "reading": say it has stopped on the way out.
+  useEffect(() => {
+    onScanning?.(scanning);
+    return () => { onScanning?.(false); };
+  }, [onScanning, scanning]);
+  // The widest bar is the shop that took the most.
+  const merchantMax = Math.max(1, ...merchantRows.map((r) => r.total));
+
+  // One month or six: the same screen, so there is nothing new to learn.
+  const segNode = (
+    <View style={[styles.seg, embedded && styles.segEmbedded]}>
+      <PressScale testID="exp-tab-month" accessibilityRole="button" accessibilityState={{ selected: !showSix }} onPress={() => setShowSix(false)} style={[styles.segBtn, !showSix && styles.segOn]}>
+        <Text style={[styles.segText, !showSix && styles.segTextOn]}>{t('exp_tab_month')}</Text>
+      </PressScale>
+      <PressScale testID="exp-tab-six" accessibilityRole="button" accessibilityState={{ selected: showSix }} onPress={() => setShowSix(true)} style={[styles.segBtn, showSix && styles.segOn]}>
+        <Text style={[styles.segText, showSix && styles.segTextOn]}>{t('exp_tab_six')}</Text>
+      </PressScale>
+    </View>
+  );
+
   const Wrapper: any = embedded ? View : ScrollView;
   const wrapperProps = embedded
     // Kitchen already pads its content by 20, so the embedded copy adds none
@@ -569,7 +600,7 @@ export function SpendingView({ embedded = false, showToast: hostToast }: {
             </View>
           ) : null}
 
-          {!scan ? (
+          {!scan && !embedded ? (
             <View style={styles.actionRow}>
               <PressScale
                 testID="exp-scan-receipt"
@@ -592,7 +623,7 @@ export function SpendingView({ embedded = false, showToast: hostToast }: {
               </PressScale>
             </View>
           ) : null}
-          {!scan ? (
+          {!scan && !embedded ? (
             // A digital receipt (PDF from an email or the shop's app), or a
             // picture of one saved in Files: no photo of paper at all.
             <PressScale
@@ -607,18 +638,10 @@ export function SpendingView({ embedded = false, showToast: hostToast }: {
           ) : null}
           {scanError && !scan ? <Text style={styles.scanErr}>{scanError}</Text> : null}
 
-          {/* One month or six — the same screen, so there is nothing new to learn. */}
-          <View style={styles.seg}>
-            <PressScale testID="exp-tab-month" onPress={() => setShowSix(false)} style={[styles.segBtn, !showSix && styles.segOn]}>
-              <Text style={[styles.segText, !showSix && styles.segTextOn]}>{t('exp_tab_month')}</Text>
-            </PressScale>
-            <PressScale testID="exp-tab-six" onPress={() => setShowSix(true)} style={[styles.segBtn, showSix && styles.segOn]}>
-              <Text style={[styles.segText, showSix && styles.segTextOn]}>{t('exp_tab_six')}</Text>
-            </PressScale>
-          </View>
+          {embedded ? null : segNode}
 
           {/* ---- The headline number ---- */}
-          <View style={styles.card}>
+          <View style={[styles.card, embedded && styles.cardLead]}>
             {showSix ? (
               <>
                 <Text style={styles.lbl}>{t('exp_tab_six')}</Text>
@@ -730,6 +753,7 @@ export function SpendingView({ embedded = false, showToast: hostToast }: {
                 )}
               </>
             )}
+            {embedded ? segNode : null}
           </View>
 
           {/* ---- Settle up. Only when there are two parents and something has
@@ -770,11 +794,27 @@ export function SpendingView({ embedded = false, showToast: hostToast }: {
           ) : null}
 
           {/* ---- Where it went ---- */}
-          <View style={styles.card}>
-            <Text style={styles.lbl}>{t('exp_where')}</Text>
+          <View style={embedded ? styles.flat : styles.card}>
+            <Text style={embedded ? styles.h2 : styles.lbl}>{t('exp_where')}</Text>
             {merchantRows.length === 0 ? (
               <Text style={styles.empty}>{t('exp_empty')}</Text>
-            ) : merchantRows.map((row, i) => (
+            ) : merchantRows.map((row, i) => (embedded ? (
+              // In Cuisine: a bar per shop, so the eye sees the split before
+              // it reads a number.
+              <View key={row.merchant} style={styles.barRow}>
+                <View style={styles.barHead}>
+                  <Text style={[styles.shopName, { flex: 1 }]} numberOfLines={1}>{row.merchant}</Text>
+                  <Text style={styles.rowAmount}>{money(row.total)}</Text>
+                </View>
+                <View style={styles.barTrack}>
+                  <View style={[styles.barFill, { width: `${Math.max(4, Math.round((row.total / merchantMax) * 100))}%` }]} />
+                </View>
+                <Text style={styles.shopSub}>
+                  {shopsLabel(row.visits)}
+                  {showSix ? ` · ${t('exp_each', { amount: money(row.average) })}` : ''}
+                </Text>
+              </View>
+            ) : (
               <View key={row.merchant} style={[styles.row, i > 0 && styles.rowDivider]}>
                 <View style={styles.shopCell}>
                   <View style={styles.mark}>
@@ -793,13 +833,13 @@ export function SpendingView({ embedded = false, showToast: hostToast }: {
                 </View>
                 <Text style={styles.rowAmount}>{money(row.total)}</Text>
               </View>
-            ))}
+            )))}
           </View>
 
           {/* ---- The receipts themselves ---- */}
           {!showSix ? (
-            <View style={styles.card}>
-              <Text style={styles.lbl}>{t('exp_receipts')}</Text>
+            <View style={embedded ? styles.flat : styles.card}>
+              <Text style={embedded ? styles.h2 : styles.lbl}>{t('exp_receipts')}</Text>
               {recent.length === 0 ? (
                 <Text style={styles.empty}>{t('exp_empty')}</Text>
               ) : recent.slice(0, receiptsShown).map((e, i) => (
@@ -1081,6 +1121,18 @@ export function SpendingView({ embedded = false, showToast: hostToast }: {
               </PressScale>
             </View>
           ) : null}
+          {/* In Cuisine the quieter ways in sit at the foot, as text: the one
+              main button is in the header. */}
+          {embedded && !scan ? (
+            <View style={styles.foot}>
+              <PressScale testID="exp-add-open" accessibilityRole="button" onPress={() => setAdding((v) => !v)} style={styles.footLink}>
+                <Text style={styles.footText}>{t('kit_foot_add_shop')}</Text>
+              </PressScale>
+              <PressScale testID="exp-scan-file" accessibilityRole="button" onPress={importReceiptFile} disabled={scanning} style={[styles.footLink, scanning && styles.dim]}>
+                <Text style={styles.footText}>{t('kit_foot_import')}</Text>
+              </PressScale>
+            </View>
+          ) : null}
         </Wrapper>
       )}
       {hostToast ? null : <AppToast visible={Boolean(toast)} message={toast?.message || null} tone={toast?.tone || 'info'} action={toast?.action ?? null} />}
@@ -1094,6 +1146,18 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
 
   body: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 40, gap: 12 },
   bodyEmbedded: { paddingTop: 2, paddingBottom: 8, gap: 12 },
+  // Cuisine's version: the month leads on a tinted card, the rest sits flat.
+  cardLead: { backgroundColor: ui.blue, borderWidth: 0, borderRadius: 24, padding: 18 },
+  segEmbedded: { marginTop: 4, backgroundColor: 'transparent', borderColor: ui.line },
+  flat: { gap: 10, marginTop: 6 },
+  h2: { fontFamily: 'Figtree_800ExtraBold', fontSize: 20, letterSpacing: -0.2, color: ui.text },
+  barRow: { gap: 5 },
+  barHead: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
+  barTrack: { height: 8, borderRadius: 8, backgroundColor: ui.soft, overflow: 'hidden' },
+  barFill: { height: 8, borderRadius: 8, backgroundColor: ui.blueText },
+  foot: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 10, marginTop: 8 },
+  footLink: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' },
+  footText: { fontFamily: 'Figtree_700Bold', fontSize: 13.5, color: ui.orangeText },
 
   seg: {
     flexDirection: 'row', gap: 4, padding: 3,
