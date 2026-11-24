@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -30,6 +31,7 @@ import { closeAlerts, expiryPhrase, groupByDrawer, matchesQuery, ownerLine } fro
 import { CATEGORY_STATIC, categoryStyle } from '../../src/documentCategories';
 
 import { useStore } from '../../src/store';
+import { useClientValue } from '../../src/hooks/useClientValue';
 
 import { api, logEvent, Entitlements, ExpiryAlert, FamilyMember, VaultDoc, VaultVisibility } from '../../src/api';
 import { offerUndo } from '../../src/trashUndo';
@@ -78,6 +80,9 @@ export default function Vault() {
   // Whether the list has ever arrived. An empty vault and a list that failed
   // to load are different things: only the first is a first visit.
   const [listLoaded, setListLoaded] = useState(false);
+  // The web page is drawn once before it knows the screen: it starts wide,
+  // like the server's copy, and narrows after.
+  const narrow = useClientValue(useWindowDimensions().width < 360, false);
   const [showAdd, setShowAdd] = useState(false);
   const [preview, setPreview] = useState<VaultDoc | null>(null);
   const [pdfFailed, setPdfFailed] = useState(false);
@@ -576,7 +581,10 @@ export default function Vault() {
           <ScreenHeader
             eyebrow={t('vault')}
             title={t('vault_family_documents')}
-            titleSize={28}
+            // On a narrow phone the pill keeps its plus and drops its word, and
+            // the title goes down a size: "Familiendokumente" beside
+            // "Hinzufügen" broke in the middle of the word at 320px.
+            titleSize={narrow ? 24 : 28}
             art={SECTION_ART.vault}
             // What needs renewing, where the painting of a wallet was: the
             // same corner, saying something. With nothing close to running
@@ -612,10 +620,10 @@ export default function Vault() {
                 accessibilityRole="button"
                 // Not the generic "Add": a screen reader should hear what it adds.
                 accessibilityLabel={t('add_document')}
-                style={styles.addBtn}
+                style={[styles.addBtn, narrow && styles.addBtnNarrow]}
               >
-                <Plus color="#FFFFFF" size={17} />
-                <Text style={styles.addBtnText}>{t('vault_add_pill')}</Text>
+                <Plus color="#FFFFFF" size={narrow ? 20 : 17} />
+                {narrow ? null : <Text style={styles.addBtnText}>{t('vault_add_pill')}</Text>}
               </PressScale>
             }
           />
@@ -709,8 +717,12 @@ export default function Vault() {
                           style={styles.alertRow}
                         >
                           <View style={[styles.expiryDot, { backgroundColor: alert.days_left < 0 ? ui.danger : ui.orange }]} />
-                          <Text style={styles.alertTitle} numberOfLines={1}>{alert.title}</Text>
-                          {when ? <Text style={styles.alertWhen} numberOfLines={1}>{when}</Text> : null}
+                          {/* Name over date: side by side, one of the two was
+                              cut short on a narrow phone. */}
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.alertTitle} numberOfLines={1}>{alert.title}</Text>
+                            {when ? <Text style={styles.alertWhen} numberOfLines={1}>{when}</Text> : null}
+                          </View>
                           {doc ? <ChevronRight color={ui.goldText} size={14} /> : null}
                         </PressScale>
                       );
@@ -1053,18 +1065,19 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   attentionSub: { color: ui.goldText, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5, marginTop: 2 },
   attentionBtn: { minHeight: 46, borderRadius: 999, backgroundColor: ui.goldText, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   attentionBtnText: { color: ui.bg, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
-  alertRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 },
-  alertTitle: { flex: 1, minWidth: 0, color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14.5 },
-  alertWhen: { color: ui.goldText, fontFamily: 'Figtree_600SemiBold', fontSize: 13, flexShrink: 0 },
+  alertRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48 },
+  alertTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14.5 },
+  alertWhen: { color: ui.goldText, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
   // The header: what needs renewing, and the one Add.
   tile: { width: 66, height: 72, borderRadius: 20, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, overflow: 'hidden' },
   tileTop: { height: 22, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   tileLabel: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 9.5, letterSpacing: 0.4 },
   tileBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   tileNum: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 26, lineHeight: 28, letterSpacing: -0.5 },
-  tileUnit: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 10.5 },
+  tileUnit: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 9.5 },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 16, borderRadius: 9999, backgroundColor: ui.orangeDeep },
   addBtnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  addBtnNarrow: { width: 44, paddingHorizontal: 0, justifyContent: 'center' },
   // A first visit.
   intro: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 16, lineHeight: 24, marginTop: 16 },
   firstTarget: { minHeight: 150, marginTop: 16, borderRadius: 24, borderWidth: 2, borderStyle: 'dashed', borderColor: ui.line, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 20 },
