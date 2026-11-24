@@ -104,7 +104,7 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
    *  page's header, beside the title. It reaches the camera through this. */
   scanRef?: React.MutableRefObject<(() => void) | null>;
   /** Tells the header's button a receipt is being read, so it can say so. */
-  onScanning?: (reading: boolean) => void;
+  onScanning?: (state: 'idle' | 'reading' | 'review') => void;
   /** Embedded in Cuisine, the toast is the screen's: this view sits inside
    *  Cuisine's scrolling content, where its own would sit off-screen. */
   showToast?: ShowToast;
@@ -527,10 +527,11 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
   }, [scanRef, captureReceipt]);
   // Leaving the tab mid-read must not leave the header's button stuck on
   // "reading": say it has stopped on the way out.
+  const reviewing = Boolean(scan);
   useEffect(() => {
-    onScanning?.(scanning);
-    return () => { onScanning?.(false); };
-  }, [onScanning, scanning]);
+    onScanning?.(reviewing ? 'review' : scanning ? 'reading' : 'idle');
+    return () => { onScanning?.('idle'); };
+  }, [onScanning, scanning, reviewing]);
   // The widest bar is the shop that took the most.
   const merchantMax = Math.max(1, ...merchantRows.map((r) => r.total));
 
@@ -1123,6 +1124,9 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
           ) : null}
           {/* In Cuisine the quieter ways in sit at the foot, as text: the one
               main button is in the header. */}
+          {/* Said again here: "Import a file" is pressed at the foot, and the
+              line under the header would be a screen above. */}
+          {embedded && scanError && !scan ? <Text style={styles.scanErr}>{scanError}</Text> : null}
           {embedded && !scan ? (
             <View style={styles.foot}>
               <PressScale testID="exp-add-open" accessibilityRole="button" onPress={() => setAdding((v) => !v)} style={styles.footLink}>

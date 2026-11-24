@@ -151,7 +151,7 @@ describe('the list page uses it', () => {
     expect(src).toContain('testID="shop-suggest-panel"');
     expect(src).toContain('testID="shop-add-typed"');
     expect(src).toContain('{priceLine(label, item.item_id)}');
-    expect(src).toContain("prefix = 'shop-price'");
+    expect(src).toContain('testID={`shop-price-${itemId}`}');
   });
 });
 

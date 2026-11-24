@@ -139,7 +139,7 @@ describe('the screen', () => {
   });
 
   it('keeps the small options as links at the foot, none of them lost', () => {
-    for (const id of ['meal-sync', 'meal-history', 'recipe-ai-open', 'meal-clear-all', 'kitchen-keep-awake',
+    for (const id of ['meal-add', 'meal-sync', 'meal-history', 'recipe-ai-open', 'meal-clear-all', 'kitchen-keep-awake',
       'shop-history', 'shop-clear-done', 'shop-select-mode', 'shop-clear-all']) {
       expect([id, screen.includes(`testID="${id}"`)]).toEqual([id, true]);
     }
@@ -148,6 +148,12 @@ describe('the screen', () => {
     expect(spending).toContain('testID="exp-scan-file"');
     // Standing alone (the old /expenses address) it keeps its own buttons.
     expect(spending).toContain('{!scan && !embedded ? (');
+  });
+
+  it('puts the receipt camera away while a read receipt is being checked', () => {
+    expect(screen).toContain("right={view === 'spend' ? (spendState === 'review' ? null : (");
+    const spending = read('src', 'components', 'SpendingView.tsx');
+    expect(spending).toContain("onScanning?.(reviewing ? 'review' : scanning ? 'reading' : 'idle');");
   });
 
   it('draws no emoji for an aisle: a dot and its name', () => {
@@ -161,7 +167,7 @@ describe('the screen', () => {
       'kit_title_meals', 'kit_title_list', 'kit_title_spend', 'kit_tile_to_buy', 'kit_tile_open', 'kit_week_planned',
       'kit_plan_meal', 'kit_recipe_ready', 'kit_no_recipe_yet', 'kit_cook', 'kit_ideas_tile', 'kit_capture_tile',
       'kit_foot_to_list', 'kit_foot_saved', 'kit_foot_ask', 'kit_foot_screen_on', 'kit_foot_screen_is_on',
-      'kit_foot_past', 'kit_to_buy_head', 'kit_in_basket', 'kit_ticket', 'kit_foot_add_shop', 'kit_foot_import']) {
+      'kit_foot_past', 'kit_to_buy_head', 'kit_in_basket', 'kit_ticket', 'kit_foot_add_shop', 'kit_foot_import', 'kit_foot_add_meal']) {
       for (const lang of LANGS) {
         expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);
       }

@@ -84,7 +84,8 @@ export default function Kitchen() {
   // Spending's one main button lives in this page's header; the camera it
   // opens belongs to the spending view.
   const spendScan = useRef<(() => void) | null>(null);
-  const [spendReading, setSpendReading] = useState(false);
+  const [spendState, setSpendScanState] = useState<'idle' | 'reading' | 'review'>('idle');
+  const spendReading = spendState === 'reading';
   // "Ask for a recipe" stays folded behind a link at the foot until wanted.
   const [showRecipeAi, setShowRecipeAi] = useState(false);
   // The food library covers en/es/fr/de; anything else falls back to English.
@@ -1517,12 +1518,11 @@ export default function Kitchen() {
   // The same line on the Liste and in the Repas preview.
   // `quiet` leaves out "no price yet": the Repas preview is a four-line
   // summary, and a line that says nothing only makes it longer.
-  const priceLine = (label: string, itemId: string, prefix = 'shop-price', quiet = false) => {
+  const priceLine = (label: string, itemId: string) => {
     if (!shopPrices || shopPrices.items.length === 0) return null;
     const hit = priceForItem(label, shopPrices.items);
     if (!hit) {
-      if (quiet) return null;
-      return <Text testID={`${prefix}-${itemId}`} style={styles.rowNoPrice}>{t('shop_price_none')}</Text>;
+      return <Text testID={`shop-price-${itemId}`} style={styles.rowNoPrice}>{t('shop_price_none')}</Text>;
     }
     const p = hit.price;
     // A receipt with a longer name ("Sel fin" for "Sel") says whose price it is.
@@ -1530,7 +1530,7 @@ export default function Kitchen() {
     if (p.cheapest) {
       const best = p.cheapest.shops[0];
       return (
-        <Text testID={`${prefix}-${itemId}`} style={styles.rowPrice} numberOfLines={2}>
+        <Text testID={`shop-price-${itemId}`} style={styles.rowPrice} numberOfLines={2}>
           {named}{priceLabel(best.unit_price, p.unit, p.unit !== 'piece', lang)} · {p.cheapest.shop} · <Text style={styles.rowCheapest}>
             {/* How much cheaper, so "le moins cher" is worth acting on: the
                 comparison's own figure, same unit, against the dearer shop. */}
@@ -1542,7 +1542,7 @@ export default function Kitchen() {
       );
     }
     return (
-      <Text testID={`${prefix}-${itemId}`} style={styles.rowPrice} numberOfLines={2}>
+      <Text testID={`shop-price-${itemId}`} style={styles.rowPrice} numberOfLines={2}>
         {named}{lastPriceLine(p, t, lang)}
       </Text>
     );
@@ -1636,7 +1636,7 @@ export default function Kitchen() {
               style={styles.buyTile}
             >
               <View style={styles.buyTileTop}>
-                <Text style={styles.buyTileLabel} numberOfLines={1} adjustsFontSizeToFit>{t('kit_tile_to_buy')}</Text>
+                <Text style={styles.buyTileLabel} numberOfLines={1}>{t('kit_tile_to_buy')}</Text>
               </View>
               <View style={styles.buyTileBody}>
                 <Text style={styles.buyTileNum}>{uncheckedItems.length}</Text>
@@ -1648,7 +1648,9 @@ export default function Kitchen() {
           // screen's corner opens (same testID); on Spending it is the camera
           // for a receipt. The generic one is off, or there would be two.
           showAdd={false}
-          right={view === 'spend' ? (
+          // While a read receipt is being checked the camera is put away: a
+          // second read would throw the unsaved one out.
+          right={view === 'spend' ? (spendState === 'review' ? null : (
             <PressScale
               testID="exp-scan-receipt"
               accessibilityRole="button"
@@ -1660,7 +1662,7 @@ export default function Kitchen() {
               <Camera color="#FFFFFF" size={17} />
               <Text style={styles.addBtnText}>{spendReading ? t('exp_scan_reading') : t('kit_ticket')}</Text>
             </PressScale>
-          ) : (
+          )) : (
             <PressScale testID="tab-add" accessibilityRole="button" accessibilityLabel={t('a11y_add')} onPress={openQuickAdd} style={styles.addBtn}>
               <Plus color="#FFFFFF" size={17} />
               <Text style={styles.addBtnText}>{t('a11y_add')}</Text>
@@ -1702,7 +1704,7 @@ export default function Kitchen() {
 
         {/* SHOPPING LIST */}
         {view === 'spend' ? (
-          <SpendingView embedded showToast={showToast} scanRef={spendScan} onScanning={setSpendReading} />
+          <SpendingView embedded showToast={showToast} scanRef={spendScan} onScanning={setSpendScanState} />
         ) : view === 'shop' ? (
           <>
             {shopItems.length === 0 && shopHistory.length > 0 ? (
@@ -1978,7 +1980,7 @@ export default function Kitchen() {
                         accessibilityRole="button"
                         accessibilityLabel={`${name}, ${count}, ${cost}`}
                         onPress={() => toggleFold(key)}
-                        style={[styles.sectionHead, { backgroundColor: ui.soft }, !row.open && styles.sectionHeadFolded]}
+                        style={[styles.sectionHead, { backgroundColor: ui.soft }]}
                       >
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={[styles.sectionTitle, { color: ui.text }]} numberOfLines={1}>{name}</Text>
@@ -2064,7 +2066,7 @@ export default function Kitchen() {
                     accessibilityRole="button"
                     accessibilityLabel={`${t('kit_in_basket')}, ${checkedItems.length}`}
                     onPress={() => toggleFold('__done')}
-                    style={[styles.sectionHead, { backgroundColor: ui.soft }, folded.has('__done') && styles.sectionHeadFolded]}
+                    style={[styles.sectionHead, { backgroundColor: ui.soft }]}
                   >
                     <Check color={ui.mintText} size={16} />
                     <Text style={[styles.sectionTitle, { color: ui.muted }]}>{t('kit_in_basket')}</Text>
@@ -2209,7 +2211,8 @@ export default function Kitchen() {
                 if (generatingFor === m.meal_id) return t('cook_generating');
                 if (!isOwn(m) && !methodOf(m)) return t('kit_no_recipe_yet');
                 const mins = minutesOf(m);
-                return mins ? `${t('kitchen_min', { n: mins })} · ${t('kit_recipe_ready')}` : t('kit_recipe_ready');
+                const ready = t('kit_recipe_ready');
+                return mins ? `${t('kitchen_min', { n: mins })} · ${ready}` : ready.charAt(0).toUpperCase() + ready.slice(1);
               };
               const cookId = (m: MealPlan) => (isOwn(m) ? `cook-own-${m.meal_id}` : methodOf(m) ? `cook-${m.meal_id}` : `cook-ai-${m.meal_id}`);
               const on = (day: string) => meals.filter((m) => (m.day || '').toLowerCase() === day);
@@ -2403,7 +2406,7 @@ export default function Kitchen() {
             {/* Ask for a recipe: a free-text dish, written on the spot without
                 adding it to the plan first. Behind a link at the foot, so the
                 page is not a form until someone wants one. */}
-            {!mealLocked && (showRecipeAi || recipeAiQuery.length > 0) ? (
+            {!mealLocked && showRecipeAi ? (
               <View style={styles.recipeAiCard}>
                 <View style={styles.recipeAiLabel}>
                   <Sparkles color={ui.orangeText} size={15} />
@@ -2445,6 +2448,13 @@ export default function Kitchen() {
             ) : null}
 
             {footRow([
+              // A second dish on a day that already has one, or a dish when
+              // every day is taken: the day lines only offer the empty days.
+              !mealLocked ? (
+                <PressScale key="add" testID="meal-add" accessibilityRole="button" onPress={() => setShowMealAdd(true)} style={styles.footLink}>
+                  <Text style={styles.footText}>{t('kit_foot_add_meal')}</Text>
+                </PressScale>
+              ) : null,
               meals.length > 0 && !mealLocked ? (
                 <PressScale key="sync" testID="meal-sync" accessibilityRole="button" onPress={syncMealsToShopping} style={styles.footLink}>
                   <Text style={styles.footText}>{t('kit_foot_to_list')}</Text>
@@ -3448,14 +3458,14 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   between: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
   tonightCard: { gap: 12, padding: 18, borderRadius: 24, backgroundColor: ui.gold, marginTop: 14 },
   tonightHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  tonightDel: { padding: 4 },
+  tonightDel: { width: 44, height: 44, margin: -12, alignItems: 'center', justifyContent: 'center' },
   tonightMain: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   cookBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, borderRadius: 999, backgroundColor: ui.goldText },
   cookBtnText: { color: ui.bg, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
   // The header: what is left to buy, and the page's one main button.
   buyTile: { width: 66, height: 72, borderRadius: 20, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, overflow: 'hidden' },
   buyTileTop: { height: 22, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
-  buyTileLabel: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 10, letterSpacing: 0.6 },
+  buyTileLabel: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 9.5, letterSpacing: 0.4 },
   buyTileBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   buyTileNum: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 26, lineHeight: 28, letterSpacing: -0.5 },
   buyTileUnit: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 11.5 },
@@ -3473,7 +3483,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   weekMealMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 6 },
   weekMealTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16 },
   weekMealSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13, marginTop: 1 },
-  weekMealDel: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
+  weekMealDel: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   weekPlan: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 56, borderRadius: 18, borderWidth: 2, borderStyle: 'dashed', borderColor: ui.line, paddingHorizontal: 14 },
   weekPlanText: { color: ui.orangeText, fontFamily: 'Figtree_700Bold', fontSize: 14.5 },
   tileRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
@@ -3654,7 +3664,6 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginTop: 12, paddingHorizontal: 14, minHeight: 48, borderRadius: 16,
   },
-  sectionHeadFolded: {},
   sectionTitle: { flex: 1, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
   sectionCount: {
     minWidth: 24, height: 22, borderRadius: 99, borderWidth: 1.5, paddingHorizontal: 6,
