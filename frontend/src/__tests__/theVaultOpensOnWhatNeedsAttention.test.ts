@@ -136,7 +136,8 @@ describe('the screen', () => {
   });
 
   it('does not mistake a list that failed to load for a first visit', () => {
-    expect(screen).toContain('{!listLoaded && !loading ? (');
+    // ...unless a document was added meanwhile: that one is shown.
+    expect(screen).toContain('{!listLoaded && !loading && docs.length === 0 ? (');
     expect(screen).toContain('testID="vault-retry"');
     const retry = screen.indexOf('testID="vault-retry"');
     expect(retry).toBeGreaterThan(0);
@@ -147,6 +148,13 @@ describe('the screen', () => {
     expect(screen).toContain("{t('vault_intro')}");
     expect(screen).toContain('testID="vault-empty-add"');
     expect(screen).not.toContain('FirstRunTip');
+    // The sheet it opens offers the photo library and files, not the camera:
+    // the words must not promise a photograph.
+    for (const lang of LANGS) {
+      const first = (TRANSLATIONS[lang] as Record<string, string>).vault_first_photo;
+      expect([lang, /photogra|fotogra/i.test(first)]).toEqual([lang, false]);
+    }
+    expect(screen).toContain("pickPicture('library', { where: '/vault'");
   });
 
   it('says whose a row is and when it runs out', () => {

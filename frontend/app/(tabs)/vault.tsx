@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { pickPicture } from '../../src/pickPicture';
-import { Plus, X, Trash2, ChevronRight, ChevronDown, Camera, FileText, CalendarClock, Share2, Image as ImageIcon, Lock, Users, Search } from 'lucide-react-native';
+import { Plus, X, Trash2, ChevronRight, ChevronDown, FileText, CalendarClock, Share2, Image as ImageIcon, Lock, Users, Search } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -628,9 +628,10 @@ export default function Vault() {
             }
           />
 
-          {!listLoaded && !loading ? (
+          {!listLoaded && !loading && docs.length === 0 ? (
             /* The list did not arrive (the toast says so). Not a first visit:
-               say it here too, and offer the way to try again. */
+               say it here too, and offer the way to try again. A document
+               added meanwhile is shown: docs is no longer empty. */
             <PressScale testID="vault-retry" accessibilityRole="button" onPress={handleRefresh} style={styles.firstTarget}>
               <Text style={styles.firstTitle}>{t('vault_could_not_load')}</Text>
               <Text style={[styles.firstSub, { color: ui.orangeText }]}>{t('retry')}</Text>
@@ -640,7 +641,9 @@ export default function Vault() {
             <>
               <Text style={styles.intro}>{t('vault_intro')}</Text>
               <PressScale testID="vault-empty-add" accessibilityRole="button" onPress={openAdd} style={styles.firstTarget}>
-                <View style={styles.firstIcon}><Camera color={ui.orangeText} size={26} /></View>
+                {/* A plus, not a camera: the sheet this opens offers the photo
+                    library and files, and must not promise more. */}
+                <View style={styles.firstIcon}><Plus color={ui.orangeText} size={26} /></View>
                 <Text style={styles.firstTitle}>{t('vault_first_photo')}</Text>
                 <Text style={styles.firstSub}>{t('vault_or_file')}</Text>
               </PressScale>
