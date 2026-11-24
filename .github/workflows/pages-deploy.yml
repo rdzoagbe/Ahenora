@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment_retry.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -95,15 +95,28 @@ jobs:
       # red run. Nothing was wrong with the site or the artifact: the list had
       # not caught up (the artifact of 04:02:59 is in the run's list today).
       # So ask until the artifact is listed, then deploy.
+      #
+      # That alone did not hold. On 2026-11-23 15:47 UTC this step was told
+      # the artifact was listed on its first ask, and 0.3 seconds later the
+      # deploy step was told there were none: one answer saying yes does not
+      # mean the next one will. So this step now wants the same answer three
+      # times running, and the deploy below gets a second try in this same
+      # run if the first one fails.
       - name: Wait until GitHub lists the artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for attempt in $(seq 1 20); do
+          seen=0
+          for attempt in $(seq 1 25); do
             count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=github-pages" --jq '.total_count' 2>/dev/null || echo 0)
             if [ "${count:-0}" -ge 1 ]; then
-              echo "The artifact is listed (attempt $attempt)."
-              exit 0
+              seen=$((seen + 1))
+              if [ "$seen" -ge 3 ]; then
+                echo "The artifact is listed, three asks running (attempt $attempt)."
+                exit 0
+              fi
+            else
+              seen=0
             fi
             sleep 3
           done
@@ -114,14 +127,28 @@ jobs:
           echo "::error::GitHub still does not list the github-pages artifact after a minute. The site is unchanged. Start a new run (Actions, Deploy docs to Pages, Run workflow); re-running this one cannot work."
           exit 1
 
+      # The first try may fail without failing the run: the second try below
+      # decides. Nothing is uploaded again, so there is still one artifact
+      # (a re-run of the whole job would make two, and that fails for good).
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v5
+
+      - name: Wait before a second try
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+
+      # Not continue-on-error: if this fails too, the run is red and says why.
+      - name: Deploy to GitHub Pages, second try
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5
 
       # Prove the URLs Google Play validates actually resolve on the live site.
       - name: Smoke-check published legal URLs
         run: |
-          base="${{ steps.deployment.outputs.page_url }}"
+          base="${{ steps.deployment_retry.outputs.page_url || steps.deployment.outputs.page_url }}"
           base="${base%/}"
           fail=0
           for path in privacy.html delete-account.html; do
@@ -140,7 +167,7 @@ jobs:
       # link. Checked on the live site, as JSON, after every deploy.
       - name: Smoke-check the app-link association files
         run: |
-          base="${{ steps.deployment.outputs.page_url }}"
+          base="${{ steps.deployment_retry.outputs.page_url || steps.deployment.outputs.page_url }}"
           base="${base%/}"
           fail=0
           for path in .well-known/assetlinks.json .well-known/apple-app-site-association; do
