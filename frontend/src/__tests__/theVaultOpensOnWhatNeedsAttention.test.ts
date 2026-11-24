@@ -20,7 +20,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
-import { daysUntil, expiryPhrase, headlineAlert, matchesQuery, ownerLine, whenLabel } from '../vaultTop';
+import { CLOSE_DAYS, closeAlerts, daysUntil, expiryPhrase, groupByDrawer, headlineAlert, matchesQuery, ownerLine, whenLabel } from '../vaultTop';
 import type { ExpiryAlert } from '../api';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
@@ -80,17 +80,60 @@ describe('search and whose', () => {
   });
 });
 
+describe('what is close to running out', () => {
+  // Tidy-up Roland approved on 2026-11-24 ("go"): the page only raises what
+  // is close. The old alert list called an ID card with 1,558 days left an
+  // alert, and repeated documents already shown above it.
+  it('is what has run out or will within ninety days, soonest first', () => {
+    expect(CLOSE_DAYS).toBe(90);
+    const close = closeAlerts([alert('far', 1558), alert('soon', 60), alert('gone', -3), alert('edge', 90), alert('later', 91)]);
+    expect(close.map((a) => a.doc_id)).toEqual(['gone', 'soon', 'edge']);
+    expect(closeAlerts([alert('far', 400)])).toEqual([]);
+  });
+});
+
+describe('the drawers', () => {
+  const d = (title: string, category: string) => ({ title, category });
+  it('keep their order, leave out the empty ones, and never hide a stray', () => {
+    const groups = groupByDrawer([d('a', 'School'), d('b', 'Medical'), d('c', 'School'), d('x', 'Other')], ['Medical', 'School', 'Insurance']);
+    expect(groups.map((g) => [g.key, g.items.map((i) => i.title)])).toEqual([
+      ['Medical', ['b']], ['School', ['a', 'c']], ['Other', ['x']],
+    ]);
+    expect(groupByDrawer([], ['Medical'])).toEqual([]);
+  });
+});
+
 describe('the screen', () => {
   it('opens on family documents, with a search and the drawers', () => {
     expect(screen).toContain("title={t('vault_family_documents')}");
     expect(screen).toContain('testID="vault-search"');
-    expect(screen).toContain("docs.filter((d) => (filter === 'All' || d.category === filter) && matchesQuery(d, query))");
+    expect(screen).toContain('docs.filter((d) => matchesQuery(d, query))');
+    expect(screen).toContain('groupByDrawer(filtered, CATEGORIES.map((c) => c.key))');
+    expect(screen).toContain('testID={`vault-drawer-${key}`}');
+    // The row of filter chips went: grouped, the list does that job.
+    expect(screen).not.toContain('vault-filter-');
   });
 
-  it('puts the one that needs attention first, and does not list it twice', () => {
+  it('says what needs renewing in the corner, and has one Add that says what it adds', () => {
+    const header = screen.slice(screen.indexOf('<ScreenHeader'), screen.indexOf('{docs.length === 0 && !loading ? ('));
+    expect(header).toContain('testID="vault-tile"');
+    expect(header).toContain("t(close.length > 0 ? 'vault_tile_renew' : 'vault_tile_stored')");
+    expect(header).toContain('showAdd={false}');
+    expect(header).toContain("accessibilityLabel={t('add_document')}");
+  });
+
+  it('puts the one that needs attention first, the other close ones under it, and nothing twice', () => {
     expect(screen).toContain('testID="vault-attention"');
-    expect(screen).toContain('const headline = headlineAlert(expiryAlerts);');
-    expect(screen).toContain('const otherAlerts = headline ? expiryAlerts.filter((a) => a.doc_id !== headline.doc_id) : expiryAlerts;');
+    expect(screen).toContain('const close = useMemo(() => closeAlerts(expiryAlerts), [expiryAlerts]);');
+    expect(screen).toContain('const headline = close[0] || null;');
+    expect(screen).toContain('const otherAlerts = close.slice(1, 4);');
+    expect(screen).not.toContain("t('vault_expiry_alerts')");
+  });
+
+  it('greets a first visit with one sentence and one thing to do', () => {
+    expect(screen).toContain("{t('vault_intro')}");
+    expect(screen).toContain('testID="vault-empty-add"');
+    expect(screen).not.toContain('FirstRunTip');
   });
 
   it('says whose a row is and when it runs out', () => {
@@ -108,7 +151,8 @@ describe('the screen', () => {
   it('says every new thing in all four languages', () => {
     for (const key of ['vault_family_documents', 'vault_search_docs', 'vault_needs_attention', 'vault_all_documents',
       'vault_expires_in', 'vault_expired_ago', 'vault_n_days', 'vault_one_day', 'vault_n_weeks', 'vault_one_week',
-      'vault_n_months', 'vault_open']) {
+      'vault_n_months', 'vault_open', 'vault_tile_renew', 'vault_tile_stored', 'vault_renew_soon', 'vault_open_doc',
+      'vault_add_pill', 'vault_intro', 'vault_first_photo', 'vault_or_file', 'vault_you_choose', 'vault_no_match']) {
       for (const lang of LANGS) {
         expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);
       }

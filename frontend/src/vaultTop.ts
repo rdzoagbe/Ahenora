@@ -61,3 +61,23 @@ export function ownerLine(doc: Pick<VaultDoc, 'owner_user_id' | 'owner_name'>, m
   if (meUserId && doc.owner_user_id === meUserId) return t('hub_you');
   return (doc.owner_name || '').trim() || null;
 }
+
+/** How near "close to running out" is, in days. The phone reminder comes at
+ *  30 days (DUE_SOON_DAYS on the server); the page says it a little earlier,
+ *  while there is still time to book the appointment. */
+export const CLOSE_DAYS = 90;
+
+/** The documents worth saying something about: already run out, or within
+ *  CLOSE_DAYS, soonest first. A card that expires in four years is not one. */
+export function closeAlerts(alerts: ExpiryAlert[]): ExpiryAlert[] {
+  return alerts.filter((a) => a.days_left <= CLOSE_DAYS).sort((a, b) => a.days_left - b.days_left);
+}
+
+/** Documents in their drawers, in the order given; an empty drawer is left
+ *  out, and a drawer nobody listed goes last so no document is ever hidden. */
+export function groupByDrawer<T extends { category: string }>(docs: T[], order: string[]): { key: string; items: T[] }[] {
+  const known = order.map((key) => ({ key, items: docs.filter((d) => d.category === key) }));
+  const stray = Array.from(new Set(docs.map((d) => d.category).filter((c) => !order.includes(c))))
+    .map((key) => ({ key, items: docs.filter((d) => d.category === key) }));
+  return [...known, ...stray].filter((g) => g.items.length > 0);
+}
