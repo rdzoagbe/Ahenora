@@ -24,7 +24,7 @@ describe('each page passes its picture to the header', () => {
   it.each([
     ['calendar', /art=\{SECTION_ART\.calendar\}/],
     ['kids', /art=\{SECTION_ART\.family\}/],
-    ['kitchen', /art=\{view === 'shop' \? SECTION_ART\.shopping : SECTION_ART\.kitchen\}/],
+    ['kitchen', /art=\{SECTION_ART\.kitchen\}/],
     ['vault', /art=\{SECTION_ART\.vault\}/],
     ['settings', /art=\{SECTION_ART\.settings\}/],
   ])('%s', (name, pattern) => {

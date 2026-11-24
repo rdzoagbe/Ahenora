@@ -14,6 +14,7 @@ Holds, in a real browser against the real server:
     adds it, it lands there;
   * an aisle folds away and comes back.
 """
+import re
 import asyncio, json, os, sys, urllib.request, uuid
 from playwright.async_api import async_playwright
 
@@ -117,8 +118,10 @@ async def main():
             r["aisles_in_walking_order"] = False
         body = await page.inner_text("body")
         r["aisle_names_are_words_not_codes"] = (
-            "Fruit & veg" in body and "Cleaning & household" in body
-            and "Produce" not in body)
+            # The headings are drawn in capitals now (a dot and a name), and
+            # a browser reports text as it is drawn.
+            "FRUIT & VEG" in body.upper() and "CLEANING & HOUSEHOLD" in body.upper()
+            and not re.search(r"\bPRODUCE\b", body.upper()))
         r["amount_in_its_own_tag"] = "400g" in body and "Tomatoes 400g" not in body
 
         if SHOTS:

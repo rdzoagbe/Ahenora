@@ -151,7 +151,7 @@ describe('the list page uses it', () => {
     expect(src).toContain('testID="shop-suggest-panel"');
     expect(src).toContain('testID="shop-add-typed"');
     expect(src).toContain('{priceLine(label, item.item_id)}');
-    expect(src).toContain("prefix = 'shop-price'");
+    expect(src).toContain('testID={`shop-price-${itemId}`}');
   });
 });
 
@@ -207,9 +207,11 @@ describe('the list by shop', () => {
 
 describe('both views show the prices', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', 'kitchen.tsx'), 'utf8');
-  it('offers the by-shop switch and prices the Repas preview', () => {
+  it('offers the by-shop switch, and prices the list where it now lives', () => {
     expect(src).toContain('testID={`shop-view-${v}`}');
-    expect(src).toContain("priceLine(label, item.item_id, 'kitchen-buy-price', true)");
+    expect(src).toContain('{priceLine(label, item.item_id)}');
+    // The list is no longer repeated inside Repas (redesign, 2026-11-24).
+    expect(src).not.toContain('kitchen-buy-price');
   });
 });
 

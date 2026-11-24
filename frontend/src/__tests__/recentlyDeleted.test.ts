@@ -99,7 +99,7 @@ describe('"Annuler" after a delete', () => {
   });
 
   it('shows the expense toast on screen inside Cuisine', () => {
-    expect(read('app', '(tabs)', 'kitchen.tsx')).toContain('<SpendingView embedded showToast={showToast} />');
+    expect(read('app', '(tabs)', 'kitchen.tsx')).toContain('<SpendingView embedded showToast={showToast} ');
   });
 
   it('is a plain confirmation when there is nothing to undo', () => {
