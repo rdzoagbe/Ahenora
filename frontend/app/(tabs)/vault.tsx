@@ -3,18 +3,18 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TextInput,
   Platform,
   Image,
   Alert,
   Modal,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { pickPicture } from '../../src/pickPicture';
-import { Plus, X, Trash2, Shield, Folder, ChevronRight, FileText, AlertTriangle, CalendarClock, Share2, Image as ImageIcon, Lock, Users, Search } from 'lucide-react-native';
+import { pickPicture, type PictureSource } from '../../src/pickPicture';
+import { Plus, X, Trash2, ChevronRight, ChevronDown, Camera, FileText, CalendarClock, Share2, Image as ImageIcon, Lock, Users, Search } from 'lucide-react-native';
 
 import { SwipeableTabView } from '../../src/components/SwipeableTabView';
 import { PressScale } from '../../src/components/PressScale';
@@ -25,13 +25,13 @@ import LoadingOverlay from '../../src/components/LoadingOverlay';
 import { TabScreen } from '../../src/components/TabScreen';
 import { PdfViewer } from '../../src/components/PdfViewer';
 import DatePickerSheet from '../../src/components/DatePickerSheet';
-import FirstRunTip from '../../src/components/FirstRunTip';
 import { HtmlDocViewer } from '../../src/components/HtmlDocViewer';
-import { Card, IconTile, ProgressBar, ScreenHeader, UI, useUI, UIColors } from '../../src/components/Kit';
-import { expiryPhrase, headlineAlert, matchesQuery, ownerLine } from '../../src/vaultTop';
-import { CATEGORY_STATIC } from '../../src/documentCategories';
+import { ScreenHeader, useUI, UIColors } from '../../src/components/Kit';
+import { closeAlerts, expiryPhrase, groupByDrawer, matchesQuery, ownerLine } from '../../src/vaultTop';
+import { CATEGORY_STATIC, categoryStyle } from '../../src/documentCategories';
 
 import { useStore } from '../../src/store';
+import { useClientValue } from '../../src/hooks/useClientValue';
 
 import { api, logEvent, Entitlements, ExpiryAlert, FamilyMember, VaultDoc, VaultVisibility } from '../../src/api';
 import { offerUndo } from '../../src/trashUndo';
@@ -77,6 +77,12 @@ export default function Vault() {
 
   const [docs, setDocs] = useState<VaultDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  // Whether the list has ever arrived. An empty vault and a list that failed
+  // to load are different things: only the first is a first visit.
+  const [listLoaded, setListLoaded] = useState(false);
+  // The web page is drawn once before it knows the screen: it starts wide,
+  // like the server's copy, and narrows after.
+  const narrow = useClientValue(useWindowDimensions().width < 360, false);
   const [showAdd, setShowAdd] = useState(false);
   const [preview, setPreview] = useState<VaultDoc | null>(null);
   const [pdfFailed, setPdfFailed] = useState(false);
@@ -103,7 +109,6 @@ export default function Vault() {
         .finally(() => setDocRendering(false));
     }
   };
-  const [filter, setFilter] = useState<string>('All');
   const [visibility, setVisibility] = useState<VaultVisibility>('private');
   // "These people": the member rows with an account, other than me.
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -190,6 +195,7 @@ export default function Vault() {
       const [vaultRes, expiryRes, entRes] = await Promise.allSettled([api.listVault(), api.vaultExpiryAlerts(), api.getEntitlements()]);
       if (vaultRes.status === 'fulfilled') {
         setDocs(vaultRes.value);
+        setListLoaded(true);
         // Reported, not read back off state: a caller in the same tick sees
         // the OLD count, which is how a refresh says nothing arrived when
         // something did.
@@ -280,10 +286,22 @@ export default function Vault() {
   // What was typed in the search box. A search narrows the list the same
   // way a drawer does; the two combine.
   const [query, setQuery] = useState('');
-  const filtered = useMemo(
-    () => docs.filter((d) => (filter === 'All' || d.category === filter) && matchesQuery(d, query)),
-    [docs, filter, query],
-  );
+  const filtered = useMemo(() => docs.filter((d) => matchesQuery(d, query)), [docs, query]);
+  // The documents in their drawers, in the order the drawers are always
+  // shown; a drawer with nothing in it is left out. This replaced a row of
+  // filter chips: grouped, the list already answers "only the medical ones".
+  const drawers = useMemo(() => groupByDrawer(filtered, CATEGORIES.map((c) => c.key)), [filtered]);
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  const toggleFold = (key: string) => setFolded((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  // What is close to running out (or already has), soonest first.
+  const close = useMemo(() => closeAlerts(expiryAlerts), [expiryAlerts]);
+  const headline = close[0] || null;
+  const otherAlerts = close.slice(1, 4);
+  const closeIds = useMemo(() => new Set(close.map((a) => a.doc_id)), [close]);
 
   const openAdd = () => {
     setTitle('');
@@ -295,11 +313,21 @@ export default function Vault() {
   };
   const closeAdd = () => setShowAdd(false);
 
-  const pickImage = async () => {
-    const picked = await pickPicture('library', { where: '/vault', quality: 0.6 });
+  // A picture for the document: taken now, or one already on the phone. The
+  // camera goes through the document scanner where the phone has one (it
+  // finds the page's edges and straightens it), one page, since a Vault
+  // document is one picture.
+  const pickImage = async (source: PictureSource = 'library') => {
+    const picked = source === 'camera'
+      ? await pickPicture('camera', { where: '/vault', quality: 0.6, scanner: { maxPages: 1 } })
+      : await pickPicture('library', { where: '/vault', quality: 0.6 });
     if (!picked) return;
     if ('problem' in picked) {
-      Alert.alert(t('vault_could_not_open_gallery'), t('vault_please_try_again'));
+      if (picked.problem === 'camera_denied') {
+        Alert.alert(t('cam_camera_permission_denied'), t('vault_camera_denied_help'));
+        return;
+      }
+      Alert.alert(t(source === 'camera' ? 'scan_photo_open_failed' : 'vault_could_not_open_gallery'), t('vault_please_try_again'));
       return;
     }
     setImage(`data:image/jpeg;base64,${picked.base64}`);
@@ -563,228 +591,248 @@ export default function Vault() {
           <ScreenHeader
             eyebrow={t('vault')}
             title={t('vault_family_documents')}
+            // On a narrow phone the pill keeps its plus and drops its word, and
+            // the title goes down a size: "Familiendokumente" beside
+            // "Hinzufügen" broke in the middle of the word at 320px.
+            titleSize={narrow ? 24 : 28}
             art={SECTION_ART.vault}
-            // showAdd off, or this corner carries TWO plus buttons side by side,
-            // both announcing themselves as "Add": the header's generic
-            // quick-add picker and the one below it that adds a document. The
-            // FAB was moved up here precisely to stop it reading as a duplicate
-            // of the bar's own ＋, and it landed next to a different one.
-            //
-            // On this screen Add means one thing — put a document in the vault
-            // — so that is the only Add here. The quick-add picker is on the
-            // four other tabs, which is where you are when you want it.
+            // What needs renewing, where the painting of a wallet was: the
+            // same corner, saying something. With nothing close to running
+            // out it says how many documents are kept.
+            artNode={
+              <View
+                testID="vault-tile"
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={close.length > 0
+                  ? `${t('vault_renew_soon')}: ${close.length}`
+                  : `${docs.length} ${docs.length === 1 ? t('vault_document') : t('vault_documents')}`}
+                style={styles.tile}
+              >
+                <View style={styles.tileTop}>
+                  <Text style={styles.tileLabel} numberOfLines={1} maxFontSizeMultiplier={1.15}>{t(close.length > 0 ? 'vault_tile_renew' : 'vault_tile_stored')}</Text>
+                </View>
+                <View style={styles.tileBody}>
+                  <Text style={styles.tileNum} maxFontSizeMultiplier={1.15}>{close.length > 0 ? close.length : docs.length}</Text>
+                  <Text style={styles.tileUnit} numberOfLines={1} maxFontSizeMultiplier={1.15}>{(close.length > 0 ? close.length : docs.length) === 1 ? t('vault_document') : t('vault_documents')}</Text>
+                </View>
+              </View>
+            }
+            // showAdd off, or this corner carries TWO Adds side by side: the
+            // header's generic quick-add picker and the one that adds a
+            // document. On this screen Add means one thing, put a document in
+            // the vault, so that is the only Add here.
             showAdd={false}
             right={
               <PressScale
                 testID="vault-add"
                 onPress={openAdd}
                 accessibilityRole="button"
-                // Not the generic "Add": a screen reader announced this and the
-                // control beside it with the identical word, so the two were
-                // indistinguishable by the people who most need them not to be.
+                // Not the generic "Add": a screen reader should hear what it adds.
                 accessibilityLabel={t('add_document')}
-                style={styles.headerAddBtn}
+                style={[styles.addBtn, narrow && styles.addBtnNarrow]}
               >
-                <Plus color="#FFFFFF" size={20} />
+                <Plus color="#FFFFFF" size={narrow ? 20 : 17} />
+                {narrow ? null : <Text style={styles.addBtnText}>{t('vault_add_pill')}</Text>}
               </PressScale>
             }
           />
 
-          <FirstRunTip
-            id="vault_why"
-            testID="vault-first-run-tip"
-            title={t('vault_tip_title')}
-            message={t('vault_tip_msg')}
-            icon={<Shield color={ui.orange} size={20} />}
-          />
-
-          {/* Where is that document? Asked by name first. */}
-          <View style={styles.searchBox}>
-            <Search color={ui.muted} size={18} />
-            <TextInput
-              testID="vault-search"
-              value={query}
-              onChangeText={setQuery}
-              placeholder={t('vault_search_docs')}
-              placeholderTextColor={ui.muted}
-              accessibilityLabel={t('vault_search_docs')}
-              returnKeyType="search"
-              autoCorrect={false}
-              style={styles.searchInput}
-            />
-            {query ? (
-              <PressScale testID="vault-search-clear" accessibilityRole="button" accessibilityLabel={t('close')} onPress={() => setQuery('')} hitSlop={8}>
-                <X color={ui.muted} size={16} />
-              </PressScale>
-            ) : null}
-          </View>
-
-          {/* Category filter chips */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} style={styles.chipScroll}>
-            {['All', ...CATEGORIES.map((c) => c.key)].map((key) => {
-              const active = filter === key;
-              return (
-                <PressScale key={key} testID={`vault-filter-${key}`} onPress={() => setFilter(key)} style={[styles.chip, active && styles.chipActive]}>
-                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{key === 'All' ? t('vault_all') : t(key.toLowerCase())}</Text>
-                </PressScale>
-              );
-            })}
-          </ScrollView>
-
-          {/* The one document that needs attention, first: the soonest to run
-              out, or one already run out. It opens the document itself; the
-              rest of the alerts keep their own list below, without this one. */}
-          {(() => {
-            const headline = headlineAlert(expiryAlerts);
-            if (!headline) return null;
-            const doc = docs.find((d) => d.doc_id === headline.doc_id) || null;
-            const phrase = expiryPhrase({ expiry_date: headline.expiry_date }, new Date(), t);
-            return (
-              <PressScale
-                testID="vault-attention"
-                accessibilityRole="button"
-                accessibilityLabel={`${t('vault_needs_attention')}: ${headline.title}${phrase ? `, ${phrase}` : ''}`}
-                disabled={!doc}
-                onPress={() => doc && openPreview(doc)}
-                style={styles.attention}
-              >
-                <IconTile bg={ui.card} size={40} radius={12}>
-                  <CalendarClock color={ui.goldText} size={22} />
-                </IconTile>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.attentionEyebrow}>{t('vault_needs_attention')}</Text>
-                  <Text style={styles.attentionTitle} numberOfLines={2}>{headline.title}{phrase ? ` · ${phrase}` : ''}</Text>
-                </View>
-                {doc ? <Text style={styles.attentionLink}>{t('vault_open')}</Text> : null}
-              </PressScale>
-            );
-          })()}
-
-          {/* All documents */}
-          <View style={styles.recentHead} testID="vault-all-documents">
-            <Text style={styles.recentTitle}>{t('vault_all_documents')}</Text>
-            <Text style={styles.recentTotal}>{filtered.length}</Text>
-          </View>
-
-          {filtered.length === 0 && !loading ? (
-            <Card style={styles.emptyCard}>
-              <IconTile bg={ui.soft} size={52} radius={16}><FileText color={ui.muted} size={24} /></IconTile>
-              <Text style={styles.emptyTitle}>{filter === 'All' ? t('no_docs') : `${t('vault_no')} ${t(filter.toLowerCase())} ${t('vault_documents')}`}</Text>
-              <Text style={styles.emptySub}>{t('vault_empty_sub')}</Text>
-              <PressScale testID="vault-empty-add" onPress={openAdd} style={styles.emptyBtn}>
-                <Plus color="#FFFFFF" size={18} />
-                <Text style={styles.emptyBtnText}>{t('add_document')}</Text>
-              </PressScale>
-            </Card>
-          ) : (
-            <View style={styles.list}>
-              {filtered.map((d) => {
-                const cat = catInfo(d.category);
-                const isImg = isImageDoc(d);
-                const CatIcon = cat.icon;
-                const now = new Date();
-                // Whose it is, and when it runs out: the two things a row is
-                // read for. The drawer is the picture; what it is called is the
-                // title; who may see it is the small mark on the right.
-                const sub = [ownerLine(d, user?.user_id, t), expiryPhrase(d, now, t) || t('vault_no_expiry')]
-                  .filter(Boolean).join(' · ');
-                const visibility = d.visibility || 'shared';
-                return (
-                  <PressScale
-                    key={d.doc_id}
-                    testID={`vault-doc-${d.doc_id}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${d.title}, ${sub}, ${visibility === 'private' ? t('vault_private') : visibility === 'selected' ? t('vault_selected') : t('vault_shared')}`}
-                    onPress={() => openPreview(d)}
-                    style={styles.listRow}
-                  >
-                    <View style={[styles.listThumb, { backgroundColor: cat.soft }]}>
-                      {isImg ? (
-                        <Image source={{ uri: d.image_base64 }} style={styles.listThumbImg} />
-                      ) : (
-                        <CatIcon color={cat.tone} size={22} />
-                      )}
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-                      <Text style={styles.listTitle} numberOfLines={1}>{d.title}</Text>
-                      <Text style={styles.listSub} numberOfLines={1}>{sub}</Text>
-                    </View>
-                    {(d.visibility || 'shared') === 'private' ? (
-                      <Lock color={ui.muted} size={15} />
-                    ) : d.visibility === 'selected' ? (
-                      <Users color={ui.mintText} size={15} />
-                    ) : null}
-                    <ChevronRight color={ui.muted} size={18} />
-                  </PressScale>
-                );
-              })}
-            </View>
-          )}
-          {/* Document Expiry Alerts — the rest of them; the soonest is the
-              card at the top, and nothing appears twice on one screen. */}
-          {(() => {
-            const headline = headlineAlert(expiryAlerts);
-            const otherAlerts = headline ? expiryAlerts.filter((a) => a.doc_id !== headline.doc_id) : expiryAlerts;
-            return otherAlerts.length > 0 ? (
+          {!listLoaded && !loading && docs.length === 0 ? (
+            /* The list did not arrive (the toast says so). Not a first visit:
+               say it here too, and offer the way to try again. A document
+               added meanwhile is shown: docs is no longer empty. */
+            <PressScale testID="vault-retry" accessibilityRole="button" onPress={handleRefresh} style={styles.firstTarget}>
+              <Text style={styles.firstTitle}>{t('vault_could_not_load')}</Text>
+              <Text style={[styles.firstSub, { color: ui.orangeText }]}>{t('retry')}</Text>
+            </PressScale>
+          ) : docs.length === 0 && !loading ? (
+            /* A first visit: one sentence, and one thing to do. */
             <>
-              <View style={styles.recentHead}>
-                <View style={styles.shopHeaderLeft}>
-                  <AlertTriangle color="#DC2626" size={20} />
-                  <Text style={styles.recentTitle}>{t('vault_expiry_alerts')}</Text>
-                </View>
-                <Text style={styles.recentTotal}>{otherAlerts.length} {otherAlerts.length === 1 ? t('vault_alert') : t('vault_alerts')}</Text>
-              </View>
-              <View style={styles.shopCard}>
-                {otherAlerts.slice(0, 6).map((alert) => {
-                  const expired = alert.status === 'expired';
-                  const n = expired ? Math.abs(alert.days_left) : alert.days_left;
-                  const unit = expired
-                    ? t(n === 1 ? 'vault_day_ago' : 'vault_days_ago')
-                    : t(n === 1 ? 'vault_day_left' : 'vault_days_left');
-                  const when = expired ? `${t('vault_expired')} ${n} ${unit}` : `${n} ${unit}`;
-                  // The alert is where a wrong date is NOTICED, so it is also
-                  // where it has to be correctable. These were inert rows: you
-                  // could read "expired 40 days ago" on a document that does
-                  // not expire and do nothing about it from here.
-                  const doc = docs.find((d) => d.doc_id === alert.doc_id) || null;
-                  return (
-                    <PressScale
-                      key={alert.doc_id}
-                      testID={`vault-alert-${alert.doc_id}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${alert.title} — ${t('vault_set_expiry')}`}
-                      disabled={!doc}
-                      onPress={() => doc && setExpiryFor(doc)}
-                      style={styles.shopRow}
-                    >
-                      <View style={[styles.expiryDot, { backgroundColor: alert.status === 'expired' ? '#DC2626' : alert.status === 'urgent' ? '#F59E0B' : ui.mintText }]} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.shopItemText}>{alert.title}</Text>
-                        <Text style={styles.shopCat}>
-                          {when} · {alert.category}
-                        </Text>
-                      </View>
-                      {doc ? <ChevronRight color={ui.muted} size={16} /> : null}
-                    </PressScale>
-                  );
-                })}
+              <Text style={styles.intro}>{t('vault_intro')}</Text>
+              <PressScale testID="vault-empty-add" accessibilityRole="button" onPress={openAdd} style={styles.firstTarget}>
+                {/* A camera: the sheet this opens leads with one. */}
+                <View style={styles.firstIcon}><Camera color={ui.orangeText} size={26} /></View>
+                <Text style={styles.firstTitle}>{t('vault_first_photo')}</Text>
+                <Text style={styles.firstSub}>{t('vault_or_file')}</Text>
+              </PressScale>
+              <View style={styles.privacyLine}>
+                <Lock color={ui.muted} size={14} />
+                <Text style={styles.footText}>{t('vault_you_choose')}</Text>
               </View>
             </>
-          ) : null;
-          })()}
-
-          {/* Storage summary */}
-          <View testID="vault-storage"><Card style={styles.storageCard}>
-            <IconTile bg={ui.orangeSoft} size={52} radius={16}>
-              <Folder color={ui.orange} size={24} />
-            </IconTile>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.storageText}>{docs.length} {docs.length === 1 ? t('vault_document') : t('vault_documents')} · {usedLabel} {t('vault_of')} {limitMb >= 1024 ? `${(limitMb / 1024).toFixed(0)} GB` : `${limitMb.toFixed(0)} MB`}</Text>
-              <View style={{ marginTop: 10 }}>
-                <ProgressBar pct={storagePct} />
+          ) : (
+            <>
+              {/* Where is that document? Asked by name first. */}
+              <View style={styles.searchBox}>
+                <Search color={ui.muted} size={18} />
+                <TextInput
+                  testID="vault-search"
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder={t('vault_search_docs')}
+                  placeholderTextColor={ui.muted}
+                  accessibilityLabel={t('vault_search_docs')}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                  style={styles.searchInput}
+                />
+                {query ? (
+                  <PressScale testID="vault-search-clear" accessibilityRole="button" accessibilityLabel={t('close')} onPress={() => setQuery('')} hitSlop={8}>
+                    <X color={ui.muted} size={16} />
+                  </PressScale>
+                ) : null}
               </View>
-            </View>
-          </Card></View>
+
+              {/* What is close to running out, or already has: the soonest
+                  leads with one way in, the others sit under it. Only what is
+                  close (closeAlerts): a card that expires in four years is not
+                  an alert, and nothing appears twice on one screen. */}
+              {headline ? (() => {
+                const lead = docs.find((d) => d.doc_id === headline.doc_id) || null;
+                const phrase = expiryPhrase({ expiry_date: headline.expiry_date }, new Date(), t);
+                return (
+                  <View style={styles.attention}>
+                    <Text style={styles.attentionEyebrow}>{t('vault_renew_soon')}</Text>
+                    <PressScale
+                      testID="vault-attention"
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t('vault_renew_soon')}: ${headline.title}${phrase ? `, ${phrase}` : ''}`}
+                      disabled={!lead}
+                      onPress={() => lead && openPreview(lead)}
+                      style={styles.attentionMain}
+                    >
+                      <View style={styles.attentionIcon}><CalendarClock color={ui.goldText} size={24} /></View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.attentionTitle} numberOfLines={2}>{headline.title}</Text>
+                        {phrase ? <Text style={styles.attentionSub} numberOfLines={1}>{phrase}</Text> : null}
+                      </View>
+                    </PressScale>
+                    {lead ? (
+                      <PressScale testID="vault-attention-open" accessibilityRole="button" onPress={() => openPreview(lead)} style={styles.attentionBtn}>
+                        <Text style={styles.attentionBtnText}>{t('vault_open_doc')}</Text>
+                      </PressScale>
+                    ) : null}
+                    {otherAlerts.map((alert) => {
+                      // The alert is where a wrong date is NOTICED, so it is
+                      // also where it has to be correctable.
+                      const doc = docs.find((d) => d.doc_id === alert.doc_id) || null;
+                      const when = expiryPhrase({ expiry_date: alert.expiry_date }, new Date(), t);
+                      return (
+                        <PressScale
+                          key={alert.doc_id}
+                          testID={`vault-alert-${alert.doc_id}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${alert.title}${when ? `, ${when}` : ''} — ${t('vault_set_expiry')}`}
+                          disabled={!doc}
+                          onPress={() => doc && setExpiryFor(doc)}
+                          style={styles.alertRow}
+                        >
+                          <View style={[styles.expiryDot, { backgroundColor: alert.days_left < 0 ? ui.danger : ui.orange }]} />
+                          {/* Name over date: side by side, one of the two was
+                              cut short on a narrow phone. */}
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.alertTitle} numberOfLines={1}>{alert.title}</Text>
+                            {when ? <Text style={styles.alertWhen} numberOfLines={1}>{when}</Text> : null}
+                          </View>
+                          {doc ? <ChevronRight color={ui.goldText} size={14} /> : null}
+                        </PressScale>
+                      );
+                    })}
+                    {/* The tile counts them all; say where the rest are. */}
+                    {close.length > 1 + otherAlerts.length ? (
+                      <Text testID="vault-more-close" style={styles.alertWhen}>{t('vault_more_close', { n: close.length - 1 - otherAlerts.length })}</Text>
+                    ) : null}
+                  </View>
+                );
+              })() : null}
+
+              {/* All documents, a drawer at a time */}
+              <View style={styles.recentHead} testID="vault-all-documents">
+                <Text style={styles.recentTitle}>{t('vault_all_documents')}</Text>
+                <Text style={styles.recentTotal}>{filtered.length} {filtered.length === 1 ? t('vault_document') : t('vault_documents')}</Text>
+              </View>
+
+              {filtered.length === 0 && !loading ? (
+                <Text style={styles.noMatch}>{t('vault_no_match')}</Text>
+              ) : (
+                <View style={styles.list}>
+                  {drawers.map(({ key, items }) => {
+                    const cat = catInfo(key);
+                    // A search opens every drawer: a match inside a folded
+                    // one would otherwise be counted and not shown.
+                    const open = query.trim().length > 0 || !folded.has(key);
+                    // The drawer's name sits on the page, not on a pale tile:
+                    // its colour has to be the one for this theme.
+                    const tone = categoryStyle(key).tone(ui);
+                    return (
+                      <View key={key}>
+                        <PressScale
+                          testID={`vault-drawer-${key}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${t(key.toLowerCase())}, ${items.length}`}
+                          onPress={() => toggleFold(key)}
+                          style={styles.drawerHead}
+                        >
+                          <View style={[styles.drawerDot, { backgroundColor: tone }]} />
+                          <Text style={[styles.drawerTitle, { color: tone }]} numberOfLines={1}>{t(key.toLowerCase())}</Text>
+                          <Text style={styles.drawerCount}>{items.length}</Text>
+                          {open ? <ChevronDown color={ui.muted} size={16} /> : <ChevronRight color={ui.muted} size={16} />}
+                        </PressScale>
+                        {open ? items.map((d, i) => {
+                          const isImg = isImageDoc(d);
+                          const CatIcon = cat.icon;
+                          const now = new Date();
+                          // Whose it is, and when it runs out: the two things
+                          // a row is read for. Who may see it is the small
+                          // mark on the right.
+                          const sub = [ownerLine(d, user?.user_id, t), expiryPhrase(d, now, t) || t('vault_no_expiry')]
+                            .filter(Boolean).join(' · ');
+                          const seenBy = d.visibility || 'shared';
+                          const soon = closeIds.has(d.doc_id);
+                          return (
+                            <PressScale
+                              key={d.doc_id}
+                              testID={`vault-doc-${d.doc_id}`}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${d.title}, ${sub}, ${seenBy === 'private' ? t('vault_private') : seenBy === 'selected' ? t('vault_selected') : t('vault_shared')}`}
+                              onPress={() => openPreview(d)}
+                              style={[styles.listRow, i === items.length - 1 && styles.listRowLast]}
+                            >
+                              <View style={[styles.listThumb, { backgroundColor: cat.soft }]}>
+                                {isImg ? (
+                                  <Image source={{ uri: d.image_base64 }} style={styles.listThumbImg} />
+                                ) : (
+                                  <CatIcon color={cat.tone} size={20} />
+                                )}
+                              </View>
+                              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                                <Text style={styles.listTitle} numberOfLines={1}>{d.title}</Text>
+                                <Text style={[styles.listSub, soon && { color: ui.orangeText }]} numberOfLines={1}>{sub}</Text>
+                              </View>
+                              {seenBy === 'private' ? (
+                                <Lock color={ui.muted} size={15} />
+                              ) : d.visibility === 'selected' ? (
+                                <Users color={ui.mintText} size={15} />
+                              ) : null}
+                              <ChevronRight color={ui.muted} size={16} />
+                            </PressScale>
+                          );
+                        }) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Storage: one quiet line. It turns orange when nearly full. */}
+              <View testID="vault-storage" style={styles.foot}>
+                <Text style={[styles.footText, storagePct >= 80 && { color: ui.orangeText }]}>
+                  {docs.length} {docs.length === 1 ? t('vault_document') : t('vault_documents')} · {usedLabel} {t('vault_of')} {limitMb >= 1024 ? `${(limitMb / 1024).toFixed(0)} GB` : `${limitMb.toFixed(0)} MB`}
+                </Text>
+              </View>
+            </>
+          )}
 
 
           <View style={{ height: 140 }} />
@@ -820,8 +868,14 @@ export default function Vault() {
         <Text style={styles.label}>{t('vault_who_can_see')}</Text>
         {visibilityPicker}
 
-        <View style={styles.pickRow}>
-          <PressScale testID="vault-pick-photo" onPress={pickImage} style={styles.pickOption}>
+        {/* The camera first, on its own line: most documents are paper in a
+            hand. Then a picture or a file already on the phone. */}
+        <PressScale testID="vault-pick-camera" accessibilityRole="button" onPress={() => pickImage('camera')} style={[styles.pickOption, styles.pickCamera]}>
+          <Camera color="#FFFFFF" size={20} />
+          <Text style={[styles.pickOptionText, { color: '#FFFFFF' }]}>{t('vault_pick_camera')}</Text>
+        </PressScale>
+        <View style={[styles.pickRow, { marginTop: 10 }]}>
+          <PressScale testID="vault-pick-photo" onPress={() => pickImage('library')} style={styles.pickOption}>
             <ImageIcon color={ui.orange} size={20} />
             <Text style={styles.pickOptionText}>{t('vault_pick_photo')}</Text>
           </PressScale>
@@ -1021,42 +1075,61 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
   bellWrap: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
 
-  chipScroll: { marginTop: 18, marginHorizontal: -20 },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 46, paddingHorizontal: 14, borderRadius: 16, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, marginTop: 14, marginBottom: 12 },
   searchInput: { flex: 1, fontFamily: 'Figtree_600SemiBold', fontSize: 15, color: ui.text, paddingVertical: 0 },
-  attention: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 20, backgroundColor: ui.gold, marginTop: 16 },
-  attentionEyebrow: { color: ui.goldText, fontFamily: 'Figtree_800ExtraBold', fontSize: 13 },
-  attentionTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 16, lineHeight: 21 },
-  attentionLink: { color: ui.goldText, fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  attention: { gap: 12, padding: 18, borderRadius: 24, backgroundColor: ui.gold, marginTop: 16 },
+  attentionMain: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  attentionIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: ui.card, alignItems: 'center', justifyContent: 'center' },
+  attentionSub: { color: ui.goldText, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5, marginTop: 2 },
+  attentionBtn: { minHeight: 46, borderRadius: 999, backgroundColor: ui.goldText, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  attentionBtnText: { color: ui.bg, fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
+  alertRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48 },
+  alertTitle: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14.5 },
+  alertWhen: { color: ui.goldText, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
+  // The header: what needs renewing, and the one Add.
+  tile: { width: 66, height: 72, borderRadius: 20, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.card, overflow: 'hidden' },
+  tileTop: { height: 22, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  tileLabel: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 9.5, letterSpacing: 0.4 },
+  tileBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  tileNum: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 26, lineHeight: 28, letterSpacing: -0.5 },
+  tileUnit: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 9.5 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 16, borderRadius: 9999, backgroundColor: ui.orangeDeep },
+  addBtnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
+  addBtnNarrow: { width: 44, paddingHorizontal: 0, justifyContent: 'center' },
+  // A first visit.
+  intro: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 16, lineHeight: 24, marginTop: 16 },
+  firstTarget: { minHeight: 150, marginTop: 16, borderRadius: 24, borderWidth: 2, borderStyle: 'dashed', borderColor: ui.line, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 20 },
+  firstIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  firstTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17, textAlign: 'center' },
+  firstSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13.5 },
+  privacyLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18 },
+  // The drawers: a dot and a name, then the documents flat on the page.
+  drawerHead: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, marginTop: 6 },
+  drawerDot: { width: 9, height: 9, borderRadius: 9 },
+  drawerTitle: { flex: 1, fontFamily: 'Figtree_800ExtraBold', fontSize: 12.5, letterSpacing: 0.5, textTransform: 'uppercase' },
+  drawerCount: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12.5 },
+  listRowLast: { borderBottomWidth: 0 },
+  noMatch: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14, textAlign: 'center', paddingVertical: 20 },
+  foot: { alignItems: 'center', marginTop: 22 },
+  footText: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
+  attentionEyebrow: { color: ui.goldText, fontFamily: 'Figtree_800ExtraBold', fontSize: 12.5, letterSpacing: 0.6, textTransform: 'uppercase' },
+  attentionTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 20, lineHeight: 25, letterSpacing: -0.3 },
   listSub: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 13 },
-  chipRow: { gap: 9, paddingHorizontal: 20 },
-  chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 99, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line },
-  chipActive: { backgroundColor: ui.text, borderColor: ui.text },
-  chipText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 14 },
-  chipTextActive: { color: ui.bg },
 
-  storageCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, marginTop: 16 },
-  storageText: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17 },
 
   recentHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 24, marginBottom: 14 },
   recentTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 19, letterSpacing: -0.3 },
   recentTotal: { color: ui.muted, fontFamily: 'Figtree_600SemiBold', fontSize: 14 },
 
-  list: { gap: 10 },
-  listRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, borderRadius: 16, paddingVertical: 11, paddingHorizontal: 12 },
-  listThumb: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  listThumbImg: { width: 46, height: 46, resizeMode: 'cover' },
+  list: { gap: 2 },
+  listRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: ui.line },
+  listThumb: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  listThumbImg: { width: 44, height: 44, resizeMode: 'cover' },
   listTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15, letterSpacing: -0.2 },
   listMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   listDate: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12 },
 
-  emptyCard: { alignItems: 'center', paddingVertical: 30, paddingHorizontal: 22, gap: 10 },
-  emptyTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 17, textAlign: 'center' },
-  emptySub: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  emptyBtn: { marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: ui.orangeDeep, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 99 },
-  emptyBtnText: { color: '#FFFFFF', fontFamily: 'Figtree_800ExtraBold', fontSize: 14 },
 
-  headerAddBtn: { width: 40, height: 40, borderRadius: 99, alignItems: 'center', justifyContent: 'center', backgroundColor: ui.orangeDeep },
 
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8,9,16,0.5)' },
   sheet: { backgroundColor: ui.card, borderTopLeftRadius: 34, borderTopRightRadius: 34, borderWidth: 1, borderColor: ui.line, padding: 26, paddingBottom: 140 },
@@ -1069,6 +1142,9 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   catBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 9999, borderWidth: 1 },
   catBtnLabel: { fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
   pickRow: { flexDirection: 'row', gap: 12, marginTop: 18 },
+  // Not flex: 0, which on the web gives it no height of its own and lets the
+  // row beneath slide under it.
+  pickCamera: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', marginTop: 18, minHeight: 48, backgroundColor: ui.orangeDeep, borderColor: ui.orangeDeep },
   pickOption: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13, borderRadius: 16, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft },
   pickOptionText: { color: ui.text, fontFamily: 'Figtree_700Bold', fontSize: 14 },
   pick: { marginTop: 12, height: 150, borderRadius: 18, borderWidth: 1, borderColor: ui.line, backgroundColor: ui.soft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
@@ -1130,20 +1206,15 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   previewOpenBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 99, paddingHorizontal: 20, paddingVertical: 12 },
   previewOpenText: { color: '#fff', fontFamily: 'Figtree_800ExtraBold', fontSize: 15 },
 
-  shopHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   clearBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: ui.mint },
   clearBtnText: { color: ui.mintText, fontFamily: 'Figtree_700Bold', fontSize: 12 },
-  shopCard: { borderRadius: 20, backgroundColor: ui.card, borderWidth: 1, borderColor: ui.line, padding: 14, gap: 4 },
   shopInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 },
   shopInput: { flex: 1, borderWidth: 1, borderColor: ui.line, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontFamily: 'Figtree_500Medium', fontSize: 14, color: ui.text, backgroundColor: ui.soft },
   shopAddBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
-  shopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: ui.line },
   shopNumberBadge: { width: 24, height: 24, borderRadius: 99, backgroundColor: ui.orangeSoft, alignItems: 'center', justifyContent: 'center' },
   shopNumberText: { color: ui.orangeText, fontFamily: 'Figtree_800ExtraBold', fontSize: 12 },
   shopHint: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12, textAlign: 'center', paddingTop: 10 },
-  shopItemText: { flex: 1, color: ui.text, fontFamily: 'Figtree_600SemiBold', fontSize: 15 },
   shopItemDone: { textDecorationLine: 'line-through', color: ui.muted },
-  shopCat: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12 },
   shopDivider: { marginTop: 8, paddingVertical: 4 },
   shopDividerText: { color: ui.muted, fontFamily: 'Figtree_700Bold', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
   shopEmpty: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 13, textAlign: 'center', paddingVertical: 14 },
