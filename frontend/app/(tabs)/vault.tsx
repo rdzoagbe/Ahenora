@@ -75,6 +75,9 @@ export default function Vault() {
 
   const [docs, setDocs] = useState<VaultDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  // Whether the list has ever arrived. An empty vault and a list that failed
+  // to load are different things: only the first is a first visit.
+  const [listLoaded, setListLoaded] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [preview, setPreview] = useState<VaultDoc | null>(null);
   const [pdfFailed, setPdfFailed] = useState(false);
@@ -187,6 +190,7 @@ export default function Vault() {
       const [vaultRes, expiryRes, entRes] = await Promise.allSettled([api.listVault(), api.vaultExpiryAlerts(), api.getEntitlements()]);
       if (vaultRes.status === 'fulfilled') {
         setDocs(vaultRes.value);
+        setListLoaded(true);
         // Reported, not read back off state: a caller in the same tick sees
         // the OLD count, which is how a refresh says nothing arrived when
         // something did.
@@ -572,6 +576,7 @@ export default function Vault() {
           <ScreenHeader
             eyebrow={t('vault')}
             title={t('vault_family_documents')}
+            titleSize={28}
             art={SECTION_ART.vault}
             // What needs renewing, where the painting of a wallet was: the
             // same corner, saying something. With nothing close to running
@@ -587,11 +592,11 @@ export default function Vault() {
                 style={styles.tile}
               >
                 <View style={styles.tileTop}>
-                  <Text style={styles.tileLabel} numberOfLines={1}>{t(close.length > 0 ? 'vault_tile_renew' : 'vault_tile_stored')}</Text>
+                  <Text style={styles.tileLabel} numberOfLines={1} maxFontSizeMultiplier={1.15}>{t(close.length > 0 ? 'vault_tile_renew' : 'vault_tile_stored')}</Text>
                 </View>
                 <View style={styles.tileBody}>
-                  <Text style={styles.tileNum}>{close.length > 0 ? close.length : docs.length}</Text>
-                  <Text style={styles.tileUnit} numberOfLines={1}>{(close.length > 0 ? close.length : docs.length) === 1 ? t('vault_document') : t('vault_documents')}</Text>
+                  <Text style={styles.tileNum} maxFontSizeMultiplier={1.15}>{close.length > 0 ? close.length : docs.length}</Text>
+                  <Text style={styles.tileUnit} numberOfLines={1} maxFontSizeMultiplier={1.15}>{(close.length > 0 ? close.length : docs.length) === 1 ? t('vault_document') : t('vault_documents')}</Text>
                 </View>
               </View>
             }
@@ -615,7 +620,14 @@ export default function Vault() {
             }
           />
 
-          {docs.length === 0 && !loading ? (
+          {!listLoaded && !loading ? (
+            /* The list did not arrive (the toast says so). Not a first visit:
+               say it here too, and offer the way to try again. */
+            <PressScale testID="vault-retry" accessibilityRole="button" onPress={handleRefresh} style={styles.firstTarget}>
+              <Text style={styles.firstTitle}>{t('vault_could_not_load')}</Text>
+              <Text style={[styles.firstSub, { color: ui.orangeText }]}>{t('retry')}</Text>
+            </PressScale>
+          ) : docs.length === 0 && !loading ? (
             /* A first visit: one sentence, and one thing to do. */
             <>
               <Text style={styles.intro}>{t('vault_intro')}</Text>
@@ -665,7 +677,7 @@ export default function Vault() {
                     <PressScale
                       testID="vault-attention"
                       accessibilityRole="button"
-                      accessibilityLabel={`${t('vault_needs_attention')}: ${headline.title}${phrase ? `, ${phrase}` : ''}`}
+                      accessibilityLabel={`${t('vault_renew_soon')}: ${headline.title}${phrase ? `, ${phrase}` : ''}`}
                       disabled={!lead}
                       onPress={() => lead && openPreview(lead)}
                       style={styles.attentionMain}
@@ -703,6 +715,10 @@ export default function Vault() {
                         </PressScale>
                       );
                     })}
+                    {/* The tile counts them all; say where the rest are. */}
+                    {close.length > 1 + otherAlerts.length ? (
+                      <Text testID="vault-more-close" style={styles.alertWhen}>{t('vault_more_close', { n: close.length - 1 - otherAlerts.length })}</Text>
+                    ) : null}
                   </View>
                 );
               })() : null}
@@ -719,7 +735,9 @@ export default function Vault() {
                 <View style={styles.list}>
                   {drawers.map(({ key, items }) => {
                     const cat = catInfo(key);
-                    const open = !folded.has(key);
+                    // A search opens every drawer: a match inside a folded
+                    // one would otherwise be counted and not shown.
+                    const open = query.trim().length > 0 || !folded.has(key);
                     // The drawer's name sits on the page, not on a pale tile:
                     // its colour has to be the one for this theme.
                     const tone = categoryStyle(key).tone(ui);
@@ -746,14 +764,14 @@ export default function Vault() {
                           // mark on the right.
                           const sub = [ownerLine(d, user?.user_id, t), expiryPhrase(d, now, t) || t('vault_no_expiry')]
                             .filter(Boolean).join(' · ');
-                          const visibility = d.visibility || 'shared';
+                          const seenBy = d.visibility || 'shared';
                           const soon = closeIds.has(d.doc_id);
                           return (
                             <PressScale
                               key={d.doc_id}
                               testID={`vault-doc-${d.doc_id}`}
                               accessibilityRole="button"
-                              accessibilityLabel={`${d.title}, ${sub}, ${visibility === 'private' ? t('vault_private') : visibility === 'selected' ? t('vault_selected') : t('vault_shared')}`}
+                              accessibilityLabel={`${d.title}, ${sub}, ${seenBy === 'private' ? t('vault_private') : seenBy === 'selected' ? t('vault_selected') : t('vault_shared')}`}
                               onPress={() => openPreview(d)}
                               style={[styles.listRow, i === items.length - 1 && styles.listRowLast]}
                             >
@@ -768,7 +786,7 @@ export default function Vault() {
                                 <Text style={styles.listTitle} numberOfLines={1}>{d.title}</Text>
                                 <Text style={[styles.listSub, soon && { color: ui.orangeText }]} numberOfLines={1}>{sub}</Text>
                               </View>
-                              {visibility === 'private' ? (
+                              {seenBy === 'private' ? (
                                 <Lock color={ui.muted} size={15} />
                               ) : d.visibility === 'selected' ? (
                                 <Users color={ui.mintText} size={15} />
@@ -1075,7 +1093,7 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
   list: { gap: 2 },
   listRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: ui.line },
   listThumb: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  listThumbImg: { width: 46, height: 46, resizeMode: 'cover' },
+  listThumbImg: { width: 44, height: 44, resizeMode: 'cover' },
   listTitle: { color: ui.text, fontFamily: 'Figtree_800ExtraBold', fontSize: 15, letterSpacing: -0.2 },
   listMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   listDate: { color: ui.muted, fontFamily: 'Figtree_500Medium', fontSize: 12 },

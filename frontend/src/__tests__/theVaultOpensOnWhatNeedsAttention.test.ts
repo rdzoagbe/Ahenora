@@ -130,6 +130,19 @@ describe('the screen', () => {
     expect(screen).not.toContain("t('vault_expiry_alerts')");
   });
 
+  it('opens every drawer for a search, and says where the uncounted close ones are', () => {
+    expect(screen).toContain('const open = query.trim().length > 0 || !folded.has(key);');
+    expect(screen).toContain('testID="vault-more-close"');
+  });
+
+  it('does not mistake a list that failed to load for a first visit', () => {
+    expect(screen).toContain('{!listLoaded && !loading ? (');
+    expect(screen).toContain('testID="vault-retry"');
+    const retry = screen.indexOf('testID="vault-retry"');
+    expect(retry).toBeGreaterThan(0);
+    expect(retry).toBeLessThan(screen.indexOf("{t('vault_intro')}"));
+  });
+
   it('greets a first visit with one sentence and one thing to do', () => {
     expect(screen).toContain("{t('vault_intro')}");
     expect(screen).toContain('testID="vault-empty-add"');
@@ -152,7 +165,7 @@ describe('the screen', () => {
     for (const key of ['vault_family_documents', 'vault_search_docs', 'vault_needs_attention', 'vault_all_documents',
       'vault_expires_in', 'vault_expired_ago', 'vault_n_days', 'vault_one_day', 'vault_n_weeks', 'vault_one_week',
       'vault_n_months', 'vault_open', 'vault_tile_renew', 'vault_tile_stored', 'vault_renew_soon', 'vault_open_doc',
-      'vault_add_pill', 'vault_intro', 'vault_first_photo', 'vault_or_file', 'vault_you_choose', 'vault_no_match']) {
+      'vault_add_pill', 'vault_intro', 'vault_first_photo', 'vault_or_file', 'vault_you_choose', 'vault_no_match', 'vault_more_close']) {
       for (const lang of LANGS) {
         expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);
       }
