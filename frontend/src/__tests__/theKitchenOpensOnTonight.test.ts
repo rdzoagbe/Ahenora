@@ -154,6 +154,9 @@ describe('the screen', () => {
     expect(screen).toContain("right={view === 'spend' ? (spendState === 'review' ? null : (");
     const spending = read('src', 'components', 'SpendingView.tsx');
     expect(spending).toContain("onScanning?.(reviewing ? 'review' : scanning ? 'reading' : 'idle');");
+    // Nor is it offered while the page is loading or failed to load: the
+    // review would have nowhere to appear.
+    expect(spending).toContain('const reviewing = Boolean(scan) || loading || (loadFailed && !overview);');
   });
 
   it('draws no emoji for an aisle: a dot and its name', () => {

@@ -522,12 +522,15 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
 
   useEffect(() => {
     if (!scanRef) return undefined;
-    scanRef.current = () => { captureReceipt('camera'); };
+    scanRef.current = () => { if (!loading && !(loadFailed && !overview)) captureReceipt('camera'); };
     return () => { scanRef.current = null; };
-  }, [scanRef, captureReceipt]);
+  }, [scanRef, captureReceipt, loading, loadFailed, overview]);
   // Leaving the tab mid-read must not leave the header's button stuck on
   // "reading": say it has stopped on the way out.
-  const reviewing = Boolean(scan);
+  // "review" also covers the page not being there to show one: while it
+  // loads, or when the load failed, a read receipt would have nowhere to be
+  // checked, saved or cancelled, so the camera is put away then too.
+  const reviewing = Boolean(scan) || loading || (loadFailed && !overview);
   useEffect(() => {
     onScanning?.(reviewing ? 'review' : scanning ? 'reading' : 'idle');
     return () => { onScanning?.('idle'); };
