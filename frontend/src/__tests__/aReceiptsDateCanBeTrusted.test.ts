@@ -17,7 +17,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
-import { OLD_RECEIPT_DAYS, datedLongBefore, dateIsSuspect, daysAgo, parseDay, receiptDayLabel, receiptDayLong } from '../receiptDate';
+import { OLD_RECEIPT_DAYS, datedLongBefore, dateIsSuspect, daysAgo, parseDay, receiptDayLabel, receiptDayLong, todayISO } from '../receiptDate';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
 const read = (...p: string[]) => fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8');
@@ -110,9 +110,29 @@ describe('the screen', () => {
     expect(screen).toContain('testID="exp-date-warn"');
     expect(screen).toContain('testID="exp-date-today"');
     const camera = read('src', 'components', 'CameraCaptureModal.tsx');
-    expect(camera).toContain('receipt.date && !receiptToday && dateIsSuspect(receipt.date, new Date())');
+    expect(camera).toContain('dateIsSuspect(receiptDate || receipt.date, new Date())');
     expect(camera).toContain('testID="cam-receipt-date-today"');
-    expect(camera).toContain('spent_on: receiptToday ? undefined : (receipt.date || undefined),');
+    // "Today" is this phone's today, sent explicitly: left out, the server
+    // would use UTC's, which is another day in the evening west of Greenwich.
+    expect(camera).toContain('onPress={() => setReceiptDate(todayISO())}');
+    expect(camera).toContain('spent_on: receiptDate || receipt.date || undefined,');
+    expect(todayISO(new Date(2026, 10, 30, 20, 0))).toBe('2026-11-30');
+    expect(todayISO(new Date(2026, 0, 5, 0, 30))).toBe('2026-01-05');
+  });
+
+  it('says when the reader corrected the date it read, and offers that date back', () => {
+    expect(screen).toContain('{scan.date_read && when === scan.date ? (');
+    expect(screen).toContain('testID="exp-scan-date-keep"');
+    expect(screen).toContain("onPress={() => setWhen(scan.date_read || '')}");
+    const camera = read('src', 'components', 'CameraCaptureModal.tsx');
+    expect(camera).toContain('{receipt.date_read && !receiptDate ? (');
+    expect(camera).toContain('onPress={() => setReceiptDate(receipt.date_read || null)}');
+    for (const lang of LANGS) {
+      const table = TRANSLATIONS[lang] as Record<string, string>;
+      expect(table.exp_scan_date_adjusted).toContain('{read}');
+      expect(table.exp_scan_date_adjusted).toContain('{used}');
+      expect(table.exp_scan_date_keep).toContain('{read}');
+    }
   });
 
   it('keeps another row open when the one that was saving finishes', () => {
@@ -121,7 +141,7 @@ describe('the screen', () => {
   });
 
   it('says every new thing in all four languages', () => {
-    for (const key of ['exp_scan_old_date', 'exp_use_today', 'exp_edit_date', 'exp_edit_date_hint', 'exp_date_saved', 'exp_date_invalid', 'exp_date_far']) {
+    for (const key of ['exp_scan_old_date', 'exp_use_today', 'exp_edit_date', 'exp_edit_date_hint', 'exp_date_saved', 'exp_date_invalid', 'exp_date_far', 'exp_scan_date_adjusted', 'exp_scan_date_keep']) {
       for (const lang of LANGS) {
         expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);
       }

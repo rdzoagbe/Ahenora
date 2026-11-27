@@ -172,6 +172,23 @@ class TheHeaderFields(unittest.TestCase):
             with self.subTest(date=read):
                 out = validate_receipt_scan(receipt([line()], date=read), today=today)
                 self.assertEqual(out["date"], "2026" + read[4:])
+                # Never silently: what was read comes back beside it, so the
+                # app can say so and offer it back.
+                self.assertEqual(out["date_read"], read)
+
+    def test_a_date_left_alone_has_nothing_to_report(self):
+        import datetime
+        today = datetime.date(2026, 11, 27)
+        for read in ("2026-11-27", "2025-03-14"):
+            with self.subTest(date=read):
+                out = validate_receipt_scan(receipt([line()], date=read), today=today)
+                self.assertEqual((out["date"], out["date_read"]), (read, ""))
+
+    def test_a_swapped_day_and_month_is_reported_too(self):
+        import datetime
+        out = validate_receipt_scan(receipt([line()], date="2026-04-10"),
+                                    today=datetime.date(2026, 10, 4))
+        self.assertEqual((out["date"], out["date_read"]), ("2026-10-04", "2026-04-10"))
 
     def test_a_december_receipt_scanned_in_january_keeps_last_year(self):
         import datetime

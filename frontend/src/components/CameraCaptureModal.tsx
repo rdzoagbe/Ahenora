@@ -24,7 +24,7 @@ import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
 import { whereItWent } from '../shoppingAisles';
 import { logger } from '../logger';
 import { formatMoney } from '../money';
-import { dateIsSuspect, receiptDayLong } from '../receiptDate';
+import { dateIsSuspect, receiptDayLong, todayISO } from '../receiptDate';
 
 interface Draft {
   type: CardType;
@@ -75,9 +75,10 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
   const mealsLocked = subscription?.limits?.meal_planner === false && !subscription?.admin_unlocked;
   // A till receipt, read line by line, on its way to the expenses.
   const [receipt, setReceipt] = useState<CameraReceipt | null>(null);
-  // "Use today's date" on a receipt whose date looks wrong: this is the
-  // one-tap door, so the question has to be asked here too.
-  const [receiptToday, setReceiptToday] = useState(false);
+  // The date chosen instead of the one proposed (today, or the date as read
+  // when the reader corrected it): this is the one-tap door, so the
+  // questions the review asks have to be asked here too.
+  const [receiptDate, setReceiptDate] = useState<string | null>(null);
   // What was just done, said back before the sheet closes.
   const [doneText, setDoneText] = useState('');
 
@@ -168,7 +169,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         // A helper cannot see the household's money, so a receipt they
         // photograph stays a document — it never becomes an expense.
         setReceipt(result.receipt);
-        setReceiptToday(false);
+        setReceiptDate(null);
         setPhase('receipt');
       } else if (result.kind === 'shopping' && result.shopping_items?.length) {
         // A shopping list goes on the shopping list. It used to become one
@@ -279,7 +280,9 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         description: shop,
         amount: receipt.total,
         category: 'Groceries',
-        spent_on: receiptToday ? undefined : (receipt.date || undefined),
+        // Always a date from this phone's calendar when one was chosen: left
+        // out, the server uses its own today (UTC).
+        spent_on: receiptDate || receipt.date || undefined,
         items: receipt.items
           .filter((i) => !i.unsure)
           .map((i) => ({ name: i.name, qty: i.qty, unit: i.unit, line_total: i.line_total })),
@@ -450,7 +453,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                 {t('cam_looks_like_receipt')}
               </Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]} numberOfLines={2}>
-                {[receipt.shop, receiptToday ? new Date().toLocaleDateString(localeFor(lang)) : receipt.date ? new Date(receipt.date).toLocaleDateString(localeFor(lang)) : '']
+                {[receipt.shop, (receiptDate || receipt.date) ? receiptDayLong(receiptDate || receipt.date, localeFor(lang)) : '']
                   .filter(Boolean).join(' · ')}
               </Text>
               <View style={[styles.facts, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
@@ -469,12 +472,22 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                 </Text>
                 {/* A date far from today is said out loud, year and all,
                     before it is saved: it decides the month this counts in. */}
-                {receipt.date && !receiptToday && dateIsSuspect(receipt.date, new Date()) ? (
+                {receipt.date_read && !receiptDate ? (
+                  <>
+                    <Text testID="cam-receipt-date-adjusted" style={[styles.factText, { color: theme.colors.text }]}>
+                      {t('exp_scan_date_adjusted', { read: receiptDayLong(receipt.date_read, localeFor(lang)), used: receiptDayLong(receipt.date, localeFor(lang)) })}
+                    </Text>
+                    <PressScale testID="cam-receipt-date-keep" accessibilityRole="button" onPress={() => setReceiptDate(receipt.date_read || null)} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+                      <Text style={[styles.factText, { color: theme.colors.primary, fontFamily: 'Figtree_800ExtraBold' }]}>{t('exp_scan_date_keep', { read: receiptDayLong(receipt.date_read, localeFor(lang)) })}</Text>
+                    </PressScale>
+                  </>
+                ) : null}
+                {(receiptDate || receipt.date) && dateIsSuspect(receiptDate || receipt.date, new Date()) ? (
                   <>
                     <Text testID="cam-receipt-date-warn" style={[styles.factText, { color: theme.colors.text }]}>
-                      {t('exp_scan_old_date', { date: receiptDayLong(receipt.date, localeFor(lang)) })}
+                      {t('exp_scan_old_date', { date: receiptDayLong(receiptDate || receipt.date, localeFor(lang)) })}
                     </Text>
-                    <PressScale testID="cam-receipt-date-today" accessibilityRole="button" onPress={() => setReceiptToday(true)} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+                    <PressScale testID="cam-receipt-date-today" accessibilityRole="button" onPress={() => setReceiptDate(todayISO())} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
                       <Text style={[styles.factText, { color: theme.colors.primary, fontFamily: 'Figtree_800ExtraBold' }]}>{t('exp_use_today')}</Text>
                     </PressScale>
                   </>

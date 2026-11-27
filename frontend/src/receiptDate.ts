@@ -9,6 +9,14 @@
  * when it is not this one, and a saved date can be corrected.
  */
 
+/** Today on this phone's calendar, YYYY-MM-DD. Sent explicitly: left out,
+ *  the server would use ITS today (UTC), which is tomorrow in the evening
+ *  west of Greenwich and yesterday in the small hours east of it. */
+export function todayISO(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /** How old a receipt's date may be before the review asks "is that right?". */
 export const OLD_RECEIPT_DAYS = 45;
 

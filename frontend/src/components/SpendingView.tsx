@@ -1055,6 +1055,19 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
                 maxLength={10}
               />
               {!scan.date ? <Text style={styles.hint}>{t('exp_scan_no_date')}</Text> : null}
+              {/* The reader corrected the date it read: say so, and offer
+                  what was on the paper back. A guess that cannot be seen
+                  cannot be refused. */}
+              {scan.date_read && when === scan.date ? (
+                <View testID="exp-scan-date-adjusted" style={styles.dateWarn} accessibilityLiveRegion="polite">
+                  <Text style={styles.dateWarnText}>
+                    {t('exp_scan_date_adjusted', { read: receiptDayLong(scan.date_read, locale), used: receiptDayLong(scan.date, locale) })}
+                  </Text>
+                  <PressScale testID="exp-scan-date-keep" accessibilityRole="button" onPress={() => setWhen(scan.date_read || '')} style={styles.dateWarnBtn}>
+                    <Text style={styles.dateWarnBtnText}>{t('exp_scan_date_keep', { read: receiptDayLong(scan.date_read, locale) })}</Text>
+                  </PressScale>
+                </View>
+              ) : null}
               {/* A date far from today is said out loud before it is saved,
                   year and all, with the one-tap way back to today. */}
               {dateIsSuspect(when, new Date()) ? (

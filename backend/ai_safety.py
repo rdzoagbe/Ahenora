@@ -1633,15 +1633,23 @@ def read_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) ->
     # and quietly move a monthly total. An unreadable date comes back empty so
     # the app can ask, which is the one thing a guess cannot do.
     raw_date = str(parsed.get("date") or "").strip()[:10]
+    # What was read, kept beside what is proposed whenever the two differ. A
+    # repaired date is a guess about the paper, and a guess that cannot be
+    # seen cannot be refused: the app says "the receipt reads X, we used Y"
+    # and offers X back.
+    date_read = ""
     try:
-        date = _receipt_this_year(
-            _receipt_day_first(_datetime.date.fromisoformat(raw_date), today), today).isoformat()
+        as_read = _datetime.date.fromisoformat(raw_date)
+        date = _receipt_this_year(_receipt_day_first(as_read, today), today).isoformat()
+        if date != as_read.isoformat():
+            date_read = as_read.isoformat()
     except ValueError:
         date = ""
 
     return {
         "shop": shop,
         "date": date,
+        "date_read": date_read,
         "total": total,
         "lines_total": lines_total,
         # True when the lines add up to the printed total, within a cent per
