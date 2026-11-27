@@ -1522,6 +1522,9 @@ export interface ScannedReceipt {
   shop: string;
   /** Empty when the date could not be read — the app asks rather than guessing. */
   date: string;
+  /** The date as read off the paper, when the reader corrected it (a swapped
+   *  day and month, a misread year). Empty or absent when it changed nothing. */
+  date_read?: string;
   /** null when no total could be read (the top of a long receipt). */
   total: number | null;
   lines_total: number;
@@ -3235,6 +3238,9 @@ export const api = {
     items?: { name: string; qty: number | null; unit: string; line_total: number }[];
   }) =>
     request<Expense>('/expenses', { method: 'POST', body: data }),
+  /** Correct the day a receipt is from (YYYY-MM-DD). Its lines move with it. */
+  setExpenseDate: (expenseId: string, spentOn: string) =>
+    request<Expense>(`/expenses/${expenseId}/date?spent_on=${encodeURIComponent(spentOn)}`, { method: 'PATCH' }),
   deleteExpense: (expenseId: string) =>
     request<{ ok: boolean; trash_id?: string }>(`/expenses/${expenseId}`, { method: 'DELETE' }),
   // Shared-expense settle-up between the two parents.

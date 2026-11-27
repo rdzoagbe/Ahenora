@@ -18748,6 +18748,48 @@ async def add_expense(payload: ExpenseIn, user=Depends(require_full_member)):
     return public_expense(doc)
 
 
+def strict_spent_on(value: str, now: datetime) -> Optional[datetime]:
+    """A YYYY-MM-DD somebody typed to CORRECT a receipt's date, or None.
+
+    Stricter than parse_spent_on on purpose. That one is for a scan, where a
+    date that cannot be used falls back to today. This one is a person saying
+    "the date is wrong, it was this": answering with today instead would swap
+    one wrong date for another without telling them.
+    """
+    try:
+        parsed = datetime.strptime((value or "").strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if today - timedelta(days=3650) <= parsed <= today + timedelta(days=1):
+        return parsed
+    return None
+
+
+@app.patch("/api/expenses/{expense_id}/date")
+async def set_expense_date(expense_id: str, spent_on: str = Query(""), user=Depends(require_full_member)):
+    """Correct the day a receipt is from.
+
+    A scan can read the date wrong, and a wrong YEAR is the quiet kind: the
+    receipt sits in the list reading "27 Nov" and is counted in a month nobody
+    is looking at, so the month's total is short and nothing says why. Until
+    now the only repair was to delete the receipt and enter it again.
+
+    Its receipt lines move with it: prices are compared by date too.
+    """
+    database = get_db()
+    when = strict_spent_on(spent_on, utcnow())
+    if when is None:
+        raise HTTPException(400, "Invalid date")
+    scope = {"expense_id": expense_id, "family_id": user["family_id"]}
+    result = await database["expenses"].update_one(scope, {"$set": {"spent_on": when}})
+    if result.matched_count == 0:
+        raise HTTPException(404, "Expense not found")
+    await database["expense_items"].update_many(scope, {"$set": {"spent_on": when}})
+    expense = await database["expenses"].find_one(scope, {"_id": 0})
+    return public_expense(expense)
+
+
 @app.delete("/api/expenses/{expense_id}")
 async def delete_expense(expense_id: str, user=Depends(require_full_member)):
     database = get_db()

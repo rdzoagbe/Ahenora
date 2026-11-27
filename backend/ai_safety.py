@@ -1490,6 +1490,35 @@ def _receipt_day_first(read: "_datetime.date", today: "Optional[_datetime.date]"
     return read
 
 
+def _receipt_this_year(read: "_datetime.date", today: "Optional[_datetime.date]" = None) -> "_datetime.date":
+    """Undo a misread year on a receipt date.
+
+    Roland, 2026-11-27: a Carrefour receipt from that day was listed as "27
+    Nov" and missing from November's total, EUR 98.81 short. The same idea as
+    the day/month swap above: a receipt is scanned on or soon after the day it
+    was printed. So when the date as read is not from the past two weeks, and
+    the same day and month in this year (or in last year, for a December
+    receipt scanned in January) is, that is the one on the paper. A genuinely
+    old receipt is left alone: its day and month would have to land in the
+    last fortnight by coincidence.
+    """
+    today = today or _datetime.date.today()
+    def plausible(d):
+        return _datetime.timedelta(days=-1) <= (today - d) <= _datetime.timedelta(days=14)
+    if plausible(read):
+        return read
+    for year in (today.year, today.year - 1):
+        if year == read.year:
+            continue
+        try:
+            moved = read.replace(year=year)
+        except ValueError:  # 29 February
+            continue
+        if plausible(moved):
+            return moved
+    return read
+
+
 def read_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) -> dict:
     """Check a scanned receipt before it is shown for review.
 
@@ -1604,14 +1633,23 @@ def read_receipt_scan(parsed: dict, today: "Optional[_datetime.date]" = None) ->
     # and quietly move a monthly total. An unreadable date comes back empty so
     # the app can ask, which is the one thing a guess cannot do.
     raw_date = str(parsed.get("date") or "").strip()[:10]
+    # What was read, kept beside what is proposed whenever the two differ. A
+    # repaired date is a guess about the paper, and a guess that cannot be
+    # seen cannot be refused: the app says "the receipt reads X, we used Y"
+    # and offers X back.
+    date_read = ""
     try:
-        date = _receipt_day_first(_datetime.date.fromisoformat(raw_date), today).isoformat()
+        as_read = _datetime.date.fromisoformat(raw_date)
+        date = _receipt_this_year(_receipt_day_first(as_read, today), today).isoformat()
+        if date != as_read.isoformat():
+            date_read = as_read.isoformat()
     except ValueError:
         date = ""
 
     return {
         "shop": shop,
         "date": date,
+        "date_read": date_read,
         "total": total,
         "lines_total": lines_total,
         # True when the lines add up to the printed total, within a cent per

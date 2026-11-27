@@ -220,3 +220,59 @@ class Overview(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
+class AWrongDateCanBeCorrected(unittest.TestCase):
+    """Roland, 2026-11-27: a receipt from that day sat in the list as "Nov 27"
+    and was missing from November's total. The only way to produce that is a
+    date saved with the wrong year: the list shows no year, the total counts
+    it in a month nobody is looking at. The date has to be correctable."""
+
+    def setUp(self):
+        self.db = FakeDatabase()
+        self._get_db = server.get_db
+        server.get_db = lambda: self.db
+        self.today = server.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        self.last_year = self.today.replace(year=self.today.year - 1, day=min(self.today.day, 28))
+        asyncio.run(self.db["expenses"].insert_one({
+            "expense_id": "e_wrong", "family_id": "fam1", "description": "Carrefour",
+            "amount": 98.81, "category": "Groceries", "merchant": "Carrefour",
+            "spent_on": self.last_year, "created_at": self.today,
+            "paid_by_name": "Roland", "paid_by_user_id": "u_r"}))
+        asyncio.run(self.db["expense_items"].insert_one({
+            "line_id": "l1", "expense_id": "e_wrong", "family_id": "fam1",
+            "name": "Lait", "spent_on": self.last_year}))
+
+    def tearDown(self):
+        server.get_db = self._get_db
+
+    def _this_month(self):
+        return asyncio.run(server.expense_overview(user=PARENT, months=6, category=None))["months"][-1]
+
+    def test_the_wrong_year_is_what_drops_it_from_the_month(self):
+        self.assertEqual(self._this_month()["count"], 0)
+
+    def test_correcting_the_date_puts_it_back_and_moves_its_lines(self):
+        fixed = asyncio.run(server.set_expense_date(
+            "e_wrong", spent_on=self.today.strftime("%Y-%m-%d"), user=PARENT))
+        self.assertEqual(fixed["spent_on"], self.today.strftime("%Y-%m-%d"))
+        month = self._this_month()
+        self.assertEqual((month["count"], month["total"]), (1, 98.81))
+        line = asyncio.run(self.db["expense_items"].find_one({"line_id": "l1"}))
+        self.assertEqual(line["spent_on"].year, self.today.year)
+
+    def test_a_date_that_is_not_one_is_refused_not_replaced_by_today(self):
+        for bad in ["", "27/11/2026", "2026-13-40", "tomorrow", "2999-01-01"]:
+            with self.assertRaises(server.HTTPException) as ctx:
+                asyncio.run(server.set_expense_date("e_wrong", spent_on=bad, user=PARENT))
+            self.assertEqual(ctx.exception.status_code, 400, bad)
+        still = asyncio.run(self.db["expenses"].find_one({"expense_id": "e_wrong"}))
+        self.assertEqual(still["spent_on"].year, self.last_year.year)
+
+    def test_another_family_cannot_move_it(self):
+        other = {**PARENT, "family_id": "fam2"}
+        with self.assertRaises(server.HTTPException) as ctx:
+            asyncio.run(server.set_expense_date(
+                "e_wrong", spent_on=self.today.strftime("%Y-%m-%d"), user=other))
+        self.assertEqual(ctx.exception.status_code, 404)

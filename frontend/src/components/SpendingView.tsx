@@ -11,6 +11,7 @@ import ErrorState from './ErrorState';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { formatDecimal, formatMoney, formatNumber } from '../money';
+import { datedLongBefore, dateIsSuspect, parseDay, receiptDayLabel, receiptDayLong } from '../receiptDate';
 import { priceLabel } from '../shopPrices';
 import { api, Expense, ExpenseOverview, MerchantRow, ScannedReceipt,
   SettlementInfo, ShoppingItem } from '../api';
@@ -132,6 +133,10 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
   const [amount, setAmount] = useState('');
   const [when, setWhen] = useState(todayISO());
   const [saving, setSaving] = useState(false);
+  // The receipt whose date is being corrected, and what is typed for it.
+  const [dateFor, setDateFor] = useState<string | null>(null);
+  const [dateDraft, setDateDraft] = useState('');
+  const [dateSaving, setDateSaving] = useState(false);
   const [splitOn, setSplitOn] = useState(false);
   const [settlement, setSettlement] = useState<SettlementInfo | null>(null);
   const [settling, setSettling] = useState(false);
@@ -452,6 +457,31 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
     }
   }, [t]);
 
+  const saveDate = useCallback(async () => {
+    if (!dateFor) return;
+    if (!parseDay(dateDraft)) {
+      Alert.alert(t('exp_date_invalid'));
+      return;
+    }
+    setDateSaving(true);
+    try {
+      const saved = dateFor;
+      await api.setExpenseDate(saved, dateDraft.trim());
+      // Only if it is still the one open: another row may have been tapped
+      // while this one was saving.
+      setDateFor((cur) => (cur === saved ? null : cur));
+      await load();
+      showToast(t('exp_date_saved'), 'success');
+    } catch (e: any) {
+      logger.warn('receipt date change failed', e);
+      // The server refuses a date after tomorrow or over ten years back.
+      if (/invalid date/i.test(String(e?.message || ''))) Alert.alert(t('exp_date_invalid'));
+      else Alert.alert(t('exp_save_failed'), e?.message || '');
+    } finally {
+      setDateSaving(false);
+    }
+  }, [dateFor, dateDraft, load, showToast, t]);
+
   const remove = useCallback(async (id: string) => {
     try {
       const res = await api.deleteExpense(id);
@@ -486,8 +516,9 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
   const shopsLabel = (n: number) =>
     n === 1 ? t('exp_shops_one') : t('exp_shops_other', { n });
 
-  const dayLabel = (iso: string) =>
-    new Date(`${iso}T00:00:00`).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+  // With its year when that is not this one: "27 Nov" on a receipt read as
+  // 2025 looked like today's shop, and was counted in no month on the page.
+  const dayLabel = (iso: string) => receiptDayLabel(iso, locale, new Date());
 
   const comparison = overview?.comparison;
   // The average month, over the FINISHED months that have receipts: the month
@@ -847,11 +878,31 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
               {recent.length === 0 ? (
                 <Text style={styles.empty}>{t('exp_empty')}</Text>
               ) : recent.slice(0, receiptsShown).map((e, i) => (
-                <View key={e.expense_id} style={[styles.row, i > 0 && styles.rowDivider]}>
-                  <View style={{ flex: 1 }}>
+                <View key={e.expense_id} style={i > 0 && styles.rowDivider}>
+                <View style={styles.row}>
+                  {/* Tap the receipt to correct its date: a scan can read it
+                      wrong, and the month it is counted in follows the date. */}
+                  <PressScale
+                    testID={`exp-row-${e.expense_id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${e.merchant || e.description}, ${dayLabel(e.spent_on)}${datedLongBefore(e.spent_on, e.created_at) ? `, ${t('exp_date_far')}` : ''}. ${t('exp_edit_date')}`}
+                    onPress={() => {
+                      setDateFor(dateFor === e.expense_id ? null : e.expense_id);
+                      setDateDraft((e.spent_on || '').slice(0, 10));
+                    }}
+                    style={{ flex: 1, minHeight: 44, justifyContent: 'center' }}
+                  >
                     <Text style={styles.shopName} numberOfLines={1}>{e.merchant || e.description}</Text>
-                    <Text style={styles.shopSub}>{dayLabel(e.spent_on)} · {e.paid_by_name}{e.split ? ` · ${t('exp_split_tag')}` : ''}</Text>
-                  </View>
+                    <Text
+                      // Orange when the date is long before the day it was added:
+                      // an October receipt added in October is not a question,
+                      // one dated a year before it was scanned is. Never for a
+                      // date slightly ahead: the server keeps days in UTC.
+                      style={[styles.shopSub, datedLongBefore(e.spent_on, e.created_at) && { color: ui.orangeText }]}
+                    >
+                      {dayLabel(e.spent_on)} · {e.paid_by_name}{e.split ? ` · ${t('exp_split_tag')}` : ''}
+                    </Text>
+                  </PressScale>
                   <Text style={styles.rowAmount}>{money(e.amount)}</Text>
                   <PressScale
                     accessibilityRole="button"
@@ -862,6 +913,38 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
                   >
                     <Trash2 color={ui.muted} size={15} />
                   </PressScale>
+                </View>
+                {dateFor === e.expense_id ? (
+                  <View style={styles.dateEdit}>
+                    <Text style={styles.hint}>{t('exp_edit_date_hint')}</Text>
+                    <View style={styles.row}>
+                      <TextInput
+                        testID="exp-row-date"
+                        style={[styles.input, { flex: 1 }]}
+                        value={dateDraft}
+                        onChangeText={setDateDraft}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={ui.muted}
+                        accessibilityLabel={t('exp_edit_date')}
+                        maxLength={10}
+                        autoCorrect={false}
+                        autoFocus
+                        keyboardType="numbers-and-punctuation"
+                        returnKeyType="done"
+                        onSubmitEditing={saveDate}
+                      />
+                      <PressScale
+                        testID="exp-row-date-save"
+                        accessibilityRole="button"
+                        onPress={saveDate}
+                        disabled={dateSaving}
+                        style={[styles.dateSave, dateSaving && styles.dim]}
+                      >
+                        <Text style={styles.primaryText}>{dateSaving ? t('exp_saving') : t('exp_save')}</Text>
+                      </PressScale>
+                    </View>
+                  </View>
+                ) : null}
                 </View>
               ))}
               {recent.length > receiptsShown ? (
@@ -972,6 +1055,29 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
                 maxLength={10}
               />
               {!scan.date ? <Text style={styles.hint}>{t('exp_scan_no_date')}</Text> : null}
+              {/* The reader corrected the date it read: say so, and offer
+                  what was on the paper back. A guess that cannot be seen
+                  cannot be refused. */}
+              {scan.date_read && when === scan.date ? (
+                <View testID="exp-scan-date-adjusted" style={styles.dateWarn} accessibilityLiveRegion="polite">
+                  <Text style={styles.dateWarnText}>
+                    {t('exp_scan_date_adjusted', { read: receiptDayLong(scan.date_read, locale), used: receiptDayLong(scan.date, locale) })}
+                  </Text>
+                  <PressScale testID="exp-scan-date-keep" accessibilityRole="button" onPress={() => setWhen(scan.date_read || '')} style={styles.dateWarnBtn}>
+                    <Text style={styles.dateWarnBtnText}>{t('exp_scan_date_keep', { read: receiptDayLong(scan.date_read, locale) })}</Text>
+                  </PressScale>
+                </View>
+              ) : null}
+              {/* A date far from today is said out loud before it is saved,
+                  year and all, with the one-tap way back to today. */}
+              {dateIsSuspect(when, new Date()) ? (
+                <View testID="exp-scan-date-warn" style={styles.dateWarn} accessibilityLiveRegion="polite">
+                  <Text style={styles.dateWarnText}>{t('exp_scan_old_date', { date: receiptDayLong(when, locale) })}</Text>
+                  <PressScale testID="exp-scan-date-today" accessibilityRole="button" onPress={() => setWhen(todayISO())} style={styles.dateWarnBtn}>
+                    <Text style={styles.dateWarnBtnText}>{t('exp_use_today')}</Text>
+                  </PressScale>
+                </View>
+              ) : null}
 
               {scan.items.map((item, i) => (
                 <PressScale
@@ -1100,6 +1206,14 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
                 maxLength={10}
               />
               <Text style={styles.hint}>{t('exp_date_hint')}</Text>
+              {dateIsSuspect(when, new Date()) ? (
+                <View testID="exp-date-warn" style={styles.dateWarn} accessibilityLiveRegion="polite">
+                  <Text style={styles.dateWarnText}>{t('exp_scan_old_date', { date: receiptDayLong(when, locale) })}</Text>
+                  <PressScale testID="exp-date-today" accessibilityRole="button" onPress={() => setWhen(todayISO())} style={styles.dateWarnBtn}>
+                    <Text style={styles.dateWarnBtnText}>{t('exp_use_today')}</Text>
+                  </PressScale>
+                </View>
+              ) : null}
               {/* Split with the co-parent — only offered when there are two of
                   them, and off unless deliberately turned on. */}
               {settlement?.enabled ? (
@@ -1230,6 +1344,12 @@ const createStyles = (ui: UIColors) => StyleSheet.create({
     fontFamily: 'Figtree_500Medium', fontSize: 15, color: ui.text,
   },
   hint: { fontFamily: 'Figtree_500Medium', fontSize: 11.5, color: ui.muted, marginTop: -4 },
+  dateEdit: { gap: 8, paddingBottom: 10 },
+  dateSave: { minHeight: 44, paddingHorizontal: 16, borderRadius: 12, backgroundColor: ui.orangeDeep, alignItems: 'center', justifyContent: 'center' },
+  dateWarn: { gap: 8, padding: 12, borderRadius: 12, backgroundColor: ui.orangeSoft },
+  dateWarnText: { fontFamily: 'Figtree_700Bold', fontSize: 13.5, lineHeight: 19, color: ui.text },
+  dateWarnBtn: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' },
+  dateWarnBtnText: { fontFamily: 'Figtree_800ExtraBold', fontSize: 13.5, color: ui.orangeText },
 
   primary: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
