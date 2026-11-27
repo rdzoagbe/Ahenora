@@ -1,0 +1,113 @@
+/**
+ * A receipt's date can be trusted, or corrected.
+ *
+ * Roland, 2026-11-27: a Carrefour receipt from that day sat first in the
+ * list as "Nov 27" and was missing from November's total (€225.28 where the
+ * four receipts added up to €324.09). The total counts a receipt in the
+ * month of its date; the list showed anything added lately, with no year.
+ * A date read with the wrong year is in the list and in no month on the
+ * page. This pins:
+ *
+ *  - what a date is, and when one deserves a second look;
+ *  - a row shows its year when that is not this one;
+ *  - the review says a far-off date out loud, with the way back to today;
+ *  - a saved date can be corrected, from the row, without deleting it.
+ */
+import fs from 'fs';
+import path from 'path';
+
+import { TRANSLATIONS } from '../i18n';
+import { OLD_RECEIPT_DAYS, dateIsSuspect, daysAgo, parseDay, receiptDayLabel, receiptDayLong } from '../receiptDate';
+
+const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
+const read = (...p: string[]) => fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8');
+const screen = read('src', 'components', 'SpendingView.tsx');
+const today = new Date(2026, 10, 27, 18, 7); // 27 November 2026, 18:07
+
+describe('a date', () => {
+  it('is a real calendar day written YYYY-MM-DD, and nothing else', () => {
+    expect(parseDay('2026-11-27')?.getDate()).toBe(27);
+    expect(parseDay(' 2026-11-27 ')?.getMonth()).toBe(10);
+    for (const bad of ['', '27/11/2026', '2026-11', '2026-02-31', '2026-13-01', 'tomorrow', null, undefined]) {
+      expect([bad, parseDay(bad)]).toEqual([bad, null]);
+    }
+  });
+
+  it('is counted in whole days, whatever the hour', () => {
+    expect(daysAgo(new Date(2026, 10, 27, 0, 1), today)).toBe(0);
+    expect(daysAgo(new Date(2026, 10, 26, 23, 59), today)).toBe(1);
+    expect(daysAgo(new Date(2025, 10, 27), today)).toBe(365);
+  });
+});
+
+describe('a date that deserves a second look', () => {
+  it('is one far in the past, or after today', () => {
+    expect(OLD_RECEIPT_DAYS).toBe(45);
+    expect(dateIsSuspect('2025-11-27', today)).toBe(true); // the wrong year
+    expect(dateIsSuspect('2026-11-28', today)).toBe(true); // tomorrow
+    expect(dateIsSuspect('2026-10-12', today)).toBe(true); // 46 days
+  });
+
+  it('is not today, last week, or last month', () => {
+    expect(dateIsSuspect('2026-11-27', today)).toBe(false);
+    expect(dateIsSuspect('2026-11-20', today)).toBe(false);
+    expect(dateIsSuspect('2026-10-13', today)).toBe(false); // 45 days
+  });
+
+  it('is not a date still being typed', () => {
+    expect(dateIsSuspect('2026-1', today)).toBe(false);
+    expect(dateIsSuspect('', today)).toBe(false);
+  });
+});
+
+describe('how a date is written', () => {
+  it('shows the year on a row only when it is not this one', () => {
+    expect(receiptDayLabel('2026-11-27', 'en-GB', today)).toBe('27 Nov');
+    expect(receiptDayLabel('2025-11-27', 'en-GB', today)).toBe('27 Nov 2025');
+    expect(receiptDayLabel('2025-11-27', 'fr-FR', today)).toContain('2025');
+  });
+
+  it('is in full on the review', () => {
+    expect(receiptDayLong('2025-11-27', 'en-GB')).toBe('27 November 2025');
+    expect(receiptDayLong('not a date', 'en-GB')).toBe('not a date');
+  });
+});
+
+describe('the screen', () => {
+  it('writes a row with its year when that is not this one', () => {
+    expect(screen).toContain('const dayLabel = (iso: string) => receiptDayLabel(iso, locale, new Date());');
+  });
+
+  it('says a far-off date out loud on the review, with the way back to today', () => {
+    expect(screen).toContain('{dateIsSuspect(when, new Date()) ? (');
+    expect(screen).toContain('testID="exp-scan-date-warn"');
+    expect(screen).toContain("t('exp_scan_old_date', { date: receiptDayLong(when, locale) })");
+    expect(screen).toContain('testID="exp-scan-date-today"');
+    expect(screen).toContain('onPress={() => setWhen(todayISO())}');
+  });
+
+  it('lets a saved date be corrected from its row, and refuses what is not a date', () => {
+    expect(screen).toContain('testID={`exp-row-${e.expense_id}`}');
+    expect(screen).toContain('testID="exp-row-date"');
+    expect(screen).toContain('testID="exp-row-date-save"');
+    expect(screen).toContain('await api.setExpenseDate(dateFor, dateDraft.trim());');
+    expect(screen).toContain('if (!parseDay(dateDraft)) {');
+    const api = read('src', 'api.ts');
+    expect(api).toContain("request<Expense>(`/expenses/${expenseId}/date?spent_on=${encodeURIComponent(spentOn)}`, { method: 'PATCH' })");
+  });
+
+  it('marks a row whose date is far from the day it was added', () => {
+    expect(screen).toContain("dateIsSuspect((e.spent_on || '').slice(0, 10), new Date(e.created_at))");
+  });
+
+  it('says every new thing in all four languages', () => {
+    for (const key of ['exp_scan_old_date', 'exp_use_today', 'exp_edit_date', 'exp_edit_date_hint', 'exp_date_saved', 'exp_date_invalid']) {
+      for (const lang of LANGS) {
+        expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);
+      }
+    }
+    for (const lang of LANGS) {
+      expect((TRANSLATIONS[lang] as Record<string, string>).exp_scan_old_date).toContain('{date}');
+    }
+  });
+});

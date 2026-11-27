@@ -3235,6 +3235,9 @@ export const api = {
     items?: { name: string; qty: number | null; unit: string; line_total: number }[];
   }) =>
     request<Expense>('/expenses', { method: 'POST', body: data }),
+  /** Correct the day a receipt is from (YYYY-MM-DD). Its lines move with it. */
+  setExpenseDate: (expenseId: string, spentOn: string) =>
+    request<Expense>(`/expenses/${expenseId}/date?spent_on=${encodeURIComponent(spentOn)}`, { method: 'PATCH' }),
   deleteExpense: (expenseId: string) =>
     request<{ ok: boolean; trash_id?: string }>(`/expenses/${expenseId}`, { method: 'DELETE' }),
   // Shared-expense settle-up between the two parents.
