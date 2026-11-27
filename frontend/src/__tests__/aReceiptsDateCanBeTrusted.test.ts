@@ -17,7 +17,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { TRANSLATIONS } from '../i18n';
-import { OLD_RECEIPT_DAYS, dateIsSuspect, daysAgo, parseDay, receiptDayLabel, receiptDayLong } from '../receiptDate';
+import { OLD_RECEIPT_DAYS, datedLongBefore, dateIsSuspect, daysAgo, parseDay, receiptDayLabel, receiptDayLong } from '../receiptDate';
 
 const LANGS = Object.keys(TRANSLATIONS) as (keyof typeof TRANSLATIONS)[];
 const read = (...p: string[]) => fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8');
@@ -90,18 +90,38 @@ describe('the screen', () => {
     expect(screen).toContain('testID={`exp-row-${e.expense_id}`}');
     expect(screen).toContain('testID="exp-row-date"');
     expect(screen).toContain('testID="exp-row-date-save"');
-    expect(screen).toContain('await api.setExpenseDate(dateFor, dateDraft.trim());');
+    expect(screen).toContain('await api.setExpenseDate(saved, dateDraft.trim());');
     expect(screen).toContain('if (!parseDay(dateDraft)) {');
     const api = read('src', 'api.ts');
     expect(api).toContain("request<Expense>(`/expenses/${expenseId}/date?spent_on=${encodeURIComponent(spentOn)}`, { method: 'PATCH' })");
   });
 
-  it('marks a row whose date is far from the day it was added', () => {
-    expect(screen).toContain("dateIsSuspect((e.spent_on || '').slice(0, 10), new Date(e.created_at))");
+  it('marks a row dated long before the day it was added, and says so to a screen reader', () => {
+    expect(screen).toContain('datedLongBefore(e.spent_on, e.created_at) && { color: ui.orangeText }');
+    expect(screen).toContain("datedLongBefore(e.spent_on, e.created_at) ? `, ${t('exp_date_far')}` : ''");
+    expect(datedLongBefore('2025-11-27', '2026-11-27T17:07:00+00:00')).toBe(true);
+    expect(datedLongBefore('2026-11-09', '2026-11-27T17:07:00+00:00')).toBe(false);
+    // A day ahead of when it was added is UTC for a family west of it.
+    expect(datedLongBefore('2026-11-28', '2026-11-27T23:30:00-08:00')).toBe(false);
+    expect(datedLongBefore('', '2026-11-27T17:07:00+00:00')).toBe(false);
+  });
+
+  it('asks the same question on the typed form and on the one-tap camera', () => {
+    expect(screen).toContain('testID="exp-date-warn"');
+    expect(screen).toContain('testID="exp-date-today"');
+    const camera = read('src', 'components', 'CameraCaptureModal.tsx');
+    expect(camera).toContain('receipt.date && !receiptToday && dateIsSuspect(receipt.date, new Date())');
+    expect(camera).toContain('testID="cam-receipt-date-today"');
+    expect(camera).toContain('spent_on: receiptToday ? undefined : (receipt.date || undefined),');
+  });
+
+  it('keeps another row open when the one that was saving finishes', () => {
+    expect(screen).toContain('setDateFor((cur) => (cur === saved ? null : cur));');
+    expect(screen).toContain('onSubmitEditing={saveDate}');
   });
 
   it('says every new thing in all four languages', () => {
-    for (const key of ['exp_scan_old_date', 'exp_use_today', 'exp_edit_date', 'exp_edit_date_hint', 'exp_date_saved', 'exp_date_invalid']) {
+    for (const key of ['exp_scan_old_date', 'exp_use_today', 'exp_edit_date', 'exp_edit_date_hint', 'exp_date_saved', 'exp_date_invalid', 'exp_date_far']) {
       for (const lang of LANGS) {
         expect([lang, key, typeof (TRANSLATIONS[lang] as Record<string, unknown>)[key]]).toEqual([lang, key, 'string']);
       }

@@ -41,6 +41,19 @@ export function dateIsSuspect(iso: string | null | undefined, today: Date): bool
   return ago > OLD_RECEIPT_DAYS || ago < 0;
 }
 
+/**
+ * Whether a saved receipt is dated long before the day it was added: the
+ * mark of a misread date. Only that way round. A date a day AHEAD of when it
+ * was added is the server keeping days in UTC for a family west of it, not a
+ * mistake.
+ */
+export function datedLongBefore(spentOn: string | null | undefined, createdAt: string | null | undefined): boolean {
+  const day = parseDay((spentOn || '').slice(0, 10));
+  const added = createdAt ? new Date(createdAt) : null;
+  if (!day || !added || Number.isNaN(added.getTime())) return false;
+  return daysAgo(day, added) > OLD_RECEIPT_DAYS;
+}
+
 /** "27 Nov", and "27 Nov 2025" when the year is not this one. */
 export function receiptDayLabel(iso: string, locale: string, today: Date): string {
   const day = parseDay((iso || '').slice(0, 10)) || new Date(`${iso}T00:00:00`);

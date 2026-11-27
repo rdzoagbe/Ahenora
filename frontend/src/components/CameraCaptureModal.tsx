@@ -24,6 +24,7 @@ import { categoriseShoppingItem, shoppingLabel } from '../shoppingCategories';
 import { whereItWent } from '../shoppingAisles';
 import { logger } from '../logger';
 import { formatMoney } from '../money';
+import { dateIsSuspect, receiptDayLong } from '../receiptDate';
 
 interface Draft {
   type: CardType;
@@ -74,6 +75,9 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
   const mealsLocked = subscription?.limits?.meal_planner === false && !subscription?.admin_unlocked;
   // A till receipt, read line by line, on its way to the expenses.
   const [receipt, setReceipt] = useState<CameraReceipt | null>(null);
+  // "Use today's date" on a receipt whose date looks wrong: this is the
+  // one-tap door, so the question has to be asked here too.
+  const [receiptToday, setReceiptToday] = useState(false);
   // What was just done, said back before the sheet closes.
   const [doneText, setDoneText] = useState('');
 
@@ -164,6 +168,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         // A helper cannot see the household's money, so a receipt they
         // photograph stays a document — it never becomes an expense.
         setReceipt(result.receipt);
+        setReceiptToday(false);
         setPhase('receipt');
       } else if (result.kind === 'shopping' && result.shopping_items?.length) {
         // A shopping list goes on the shopping list. It used to become one
@@ -274,7 +279,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
         description: shop,
         amount: receipt.total,
         category: 'Groceries',
-        spent_on: receipt.date || undefined,
+        spent_on: receiptToday ? undefined : (receipt.date || undefined),
         items: receipt.items
           .filter((i) => !i.unsure)
           .map((i) => ({ name: i.name, qty: i.qty, unit: i.unit, line_total: i.line_total })),
@@ -445,7 +450,7 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                 {t('cam_looks_like_receipt')}
               </Text>
               <Text style={[styles.sub, { color: theme.colors.textMuted }]} numberOfLines={2}>
-                {[receipt.shop, receipt.date ? new Date(receipt.date).toLocaleDateString(localeFor(lang)) : '']
+                {[receipt.shop, receiptToday ? new Date().toLocaleDateString(localeFor(lang)) : receipt.date ? new Date(receipt.date).toLocaleDateString(localeFor(lang)) : '']
                   .filter(Boolean).join(' · ')}
               </Text>
               <View style={[styles.facts, { borderColor: theme.colors.cardBorder, backgroundColor: theme.colors.bgSoft }]}>
@@ -462,6 +467,18 @@ export function CameraCaptureModal({ visible, onClose, onDraft }: Props) {
                 <Text style={[styles.factText, { color: theme.colors.textMuted }]}>
                   {t('cam_receipt_lines', { count: String(receipt.items.filter((i) => !i.unsure).length) })}
                 </Text>
+                {/* A date far from today is said out loud, year and all,
+                    before it is saved: it decides the month this counts in. */}
+                {receipt.date && !receiptToday && dateIsSuspect(receipt.date, new Date()) ? (
+                  <>
+                    <Text testID="cam-receipt-date-warn" style={[styles.factText, { color: theme.colors.text }]}>
+                      {t('exp_scan_old_date', { date: receiptDayLong(receipt.date, localeFor(lang)) })}
+                    </Text>
+                    <PressScale testID="cam-receipt-date-today" accessibilityRole="button" onPress={() => setReceiptToday(true)} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+                      <Text style={[styles.factText, { color: theme.colors.primary, fontFamily: 'Figtree_800ExtraBold' }]}>{t('exp_use_today')}</Text>
+                    </PressScale>
+                  </>
+                ) : null}
               </View>
 
               {err ? <Text style={[styles.errText, { color: theme.colors.danger }]}>{err}</Text> : null}

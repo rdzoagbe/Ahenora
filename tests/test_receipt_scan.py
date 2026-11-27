@@ -139,8 +139,10 @@ class WhatMustNeverBeAccepted(unittest.TestCase):
 @unittest.skipUnless(HAVE_DEPS, "backend dependencies not installed")
 class TheHeaderFields(unittest.TestCase):
     def test_a_readable_shop_and_date_come_through(self):
+        import datetime
         out = validate_receipt_scan(receipt([line()], shop="Carrefour Market",
-                                            date="2026-08-20"))
+                                            date="2026-08-20"),
+                                    today=datetime.date(2026, 8, 23))
         self.assertEqual(out["shop"], "Carrefour Market")
         self.assertEqual(out["date"], "2026-08-20")
 
@@ -159,6 +161,37 @@ class TheHeaderFields(unittest.TestCase):
         today = datetime.date(2026, 10, 4)
         out = validate_receipt_scan(receipt([line()], date="2026-04-10"), today=today)
         self.assertEqual(out["date"], "2026-10-04")
+
+    def test_a_misread_year_is_put_back(self):
+        """Roland, 2026-11-27: a Carrefour receipt from that day was listed as
+        "27 Nov" and missing from November's total, 98.81 short. The list
+        showed no year; the total counted it in a month nobody was looking at."""
+        import datetime
+        today = datetime.date(2026, 11, 27)
+        for read in ("2025-11-27", "2016-11-27", "2027-11-27", "2025-11-20"):
+            with self.subTest(date=read):
+                out = validate_receipt_scan(receipt([line()], date=read), today=today)
+                self.assertEqual(out["date"], "2026" + read[4:])
+
+    def test_a_december_receipt_scanned_in_january_keeps_last_year(self):
+        import datetime
+        today = datetime.date(2027, 1, 3)
+        # Read with this year's number on it: 30 December 2027 has not happened.
+        out = validate_receipt_scan(receipt([line()], date="2027-12-30"), today=today)
+        self.assertEqual(out["date"], "2026-12-30")
+        # And read right, it is left alone.
+        out = validate_receipt_scan(receipt([line()], date="2026-12-30"), today=today)
+        self.assertEqual(out["date"], "2026-12-30")
+
+    def test_a_genuinely_old_receipt_keeps_its_year(self):
+        """Only a day and month from the last fortnight is moved. A receipt
+        from last spring, scanned from a pile, stays where it was printed."""
+        import datetime
+        today = datetime.date(2026, 11, 27)
+        for read in ("2025-03-14", "2026-06-02", "2025-12-25", "2024-02-29"):
+            with self.subTest(date=read):
+                out = validate_receipt_scan(receipt([line()], date=read), today=today)
+                self.assertEqual(out["date"], read)
 
     def test_a_date_that_already_makes_sense_is_left_alone(self):
         import datetime

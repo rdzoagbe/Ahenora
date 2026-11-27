@@ -11,7 +11,7 @@ import ErrorState from './ErrorState';
 import { useUI, UIColors } from './Kit';
 import { useStore } from '../store';
 import { formatDecimal, formatMoney, formatNumber } from '../money';
-import { dateIsSuspect, parseDay, receiptDayLabel, receiptDayLong } from '../receiptDate';
+import { datedLongBefore, dateIsSuspect, parseDay, receiptDayLabel, receiptDayLong } from '../receiptDate';
 import { priceLabel } from '../shopPrices';
 import { api, Expense, ExpenseOverview, MerchantRow, ScannedReceipt,
   SettlementInfo, ShoppingItem } from '../api';
@@ -465,13 +465,18 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
     }
     setDateSaving(true);
     try {
-      await api.setExpenseDate(dateFor, dateDraft.trim());
-      setDateFor(null);
+      const saved = dateFor;
+      await api.setExpenseDate(saved, dateDraft.trim());
+      // Only if it is still the one open: another row may have been tapped
+      // while this one was saving.
+      setDateFor((cur) => (cur === saved ? null : cur));
       await load();
       showToast(t('exp_date_saved'), 'success');
     } catch (e: any) {
       logger.warn('receipt date change failed', e);
-      Alert.alert(t('exp_save_failed'), e?.message || '');
+      // The server refuses a date after tomorrow or over ten years back.
+      if (/invalid date/i.test(String(e?.message || ''))) Alert.alert(t('exp_date_invalid'));
+      else Alert.alert(t('exp_save_failed'), e?.message || '');
     } finally {
       setDateSaving(false);
     }
@@ -880,7 +885,7 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
                   <PressScale
                     testID={`exp-row-${e.expense_id}`}
                     accessibilityRole="button"
-                    accessibilityLabel={`${e.merchant || e.description}, ${dayLabel(e.spent_on)}. ${t('exp_edit_date')}`}
+                    accessibilityLabel={`${e.merchant || e.description}, ${dayLabel(e.spent_on)}${datedLongBefore(e.spent_on, e.created_at) ? `, ${t('exp_date_far')}` : ''}. ${t('exp_edit_date')}`}
                     onPress={() => {
                       setDateFor(dateFor === e.expense_id ? null : e.expense_id);
                       setDateDraft((e.spent_on || '').slice(0, 10));
@@ -889,10 +894,11 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
                   >
                     <Text style={styles.shopName} numberOfLines={1}>{e.merchant || e.description}</Text>
                     <Text
-                      // Orange when the date is far from the day it was added: an
-                      // October receipt added in October is not a question, one
-                      // dated a year before it was scanned is.
-                      style={[styles.shopSub, dateIsSuspect((e.spent_on || '').slice(0, 10), new Date(e.created_at)) && { color: ui.orangeText }]}
+                      // Orange when the date is long before the day it was added:
+                      // an October receipt added in October is not a question,
+                      // one dated a year before it was scanned is. Never for a
+                      // date slightly ahead: the server keeps days in UTC.
+                      style={[styles.shopSub, datedLongBefore(e.spent_on, e.created_at) && { color: ui.orangeText }]}
                     >
                       {dayLabel(e.spent_on)} · {e.paid_by_name}{e.split ? ` · ${t('exp_split_tag')}` : ''}
                     </Text>
@@ -922,6 +928,10 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
                         accessibilityLabel={t('exp_edit_date')}
                         maxLength={10}
                         autoCorrect={false}
+                        autoFocus
+                        keyboardType="numbers-and-punctuation"
+                        returnKeyType="done"
+                        onSubmitEditing={saveDate}
                       />
                       <PressScale
                         testID="exp-row-date-save"
@@ -1183,6 +1193,14 @@ export function SpendingView({ embedded = false, showToast: hostToast, scanRef, 
                 maxLength={10}
               />
               <Text style={styles.hint}>{t('exp_date_hint')}</Text>
+              {dateIsSuspect(when, new Date()) ? (
+                <View testID="exp-date-warn" style={styles.dateWarn} accessibilityLiveRegion="polite">
+                  <Text style={styles.dateWarnText}>{t('exp_scan_old_date', { date: receiptDayLong(when, locale) })}</Text>
+                  <PressScale testID="exp-date-today" accessibilityRole="button" onPress={() => setWhen(todayISO())} style={styles.dateWarnBtn}>
+                    <Text style={styles.dateWarnBtnText}>{t('exp_use_today')}</Text>
+                  </PressScale>
+                </View>
+              ) : null}
               {/* Split with the co-parent — only offered when there are two of
                   them, and off unless deliberately turned on. */}
               {settlement?.enabled ? (
