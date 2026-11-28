@@ -38,10 +38,12 @@ import { SECTION_ART } from '../src/sectionArt';
  */
 export default function KidScreen() {
   const ui = useUI();
-  const { t, refreshUser, clearKidResume } = useStore();
+  const { t, refreshUser, kidResume, clearKidResume } = useStore();
   // Arrived: the restart-in-a-child's-hands flag has done its job. Cleared
-  // here, not where it sends people, so nothing bounces them on to Home.
-  useEffect(() => { clearKidResume(); }, [clearKidResume]);
+  // here, not where it sends people, so nothing bounces them on to Home; and
+  // whenever it turns true, not only on arrival: reloaded straight onto this
+  // screen, the flag is raised after it is already up.
+  useEffect(() => { if (kidResume) clearKidResume(); }, [kidResume, clearKidResume]);
   // Back in the parent's hands: load the parent's account afresh. When the
   // app was restarted in a child's hands it was never loaded this run, and
   // the plan (what is unlocked) would be missing.

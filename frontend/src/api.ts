@@ -305,6 +305,17 @@ export function resetOfflineState(): void {
 }
 
 /**
+ * Leave no readable copy of the household on the phone: the in-memory cache,
+ * the offline snapshots (which a later account could otherwise be served
+ * with no signal) and the queued writes. What every forced sign-out does.
+ */
+export async function forgetHouseholdOnDevice(): Promise<void> {
+  cache.clear();
+  await clearSnapshots().catch(() => undefined);
+  resetOfflineState();
+}
+
+/**
  * Who a given token belongs to, asked without touching the saved sign-in.
  * For starting up while the phone is handed to a child: the saved token is
  * the child's, and the parent's waits beside it.

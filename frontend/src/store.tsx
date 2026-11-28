@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, Platform, useColorScheme } from 'react-native';
-import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError, isTokenUnreadable, kidMode, noteSignOut, reportLastSignOut, userForToken } from './api';
+import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError, isTokenUnreadable, kidMode, noteSignOut, reportLastSignOut, userForToken, forgetHouseholdOnDevice } from './api';
 
 // How long startup goes on asking a locked phone for the saved sign-in before
 // it stops asking on a timer (it still asks again when the app is opened).
@@ -256,6 +256,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           noteSignOut('parent_session_gone', '/auth/me');
           await kidMode.abandon();
           await tokenStore.clear();
+          // This path does not go through request(), so its 401 cleanup does
+          // not run: do it here. The next account on this phone must not be
+          // shown this household's lists when it loses signal.
+          await forgetHouseholdOnDevice();
           setUser(null);
           setSubscription(null);
           return;

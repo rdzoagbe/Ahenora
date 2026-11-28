@@ -144,6 +144,8 @@ describe('a phone handed to a child', () => {
     // get the parent's app by closing and reopening it.
     const resume = store.slice(store.indexOf('const parentToken = await kidMode.storedParentToken();'), store.indexOf('let u: User;'));
     expect(resume).not.toContain('kidMode.leave');
+    // A parent session that is gone leaves no copy of the household behind.
+    expect(resume).toContain('await forgetHouseholdOnDevice();');
     expect(resume).not.toContain('tokenStore.set');
     const index = fs.readFileSync(path.join(__dirname, '..', '..', 'app', 'index.tsx'), 'utf8');
     expect(index).toContain("if (kidResume) { router.replace('/kid'); return; }");
@@ -152,7 +154,10 @@ describe('a phone handed to a child', () => {
     // Home (caught in a real browser, 2026-11-28).
     expect(index).not.toContain('clearKidResume');
     const kid = fs.readFileSync(path.join(__dirname, '..', '..', 'app', 'kid.tsx'), 'utf8');
-    expect(kid).toContain('useEffect(() => { clearKidResume(); }, [clearKidResume]);');
+    // ...and whenever it turns true: reloaded straight onto /kid, the flag is
+    // raised after the screen is up, and left raised it sent a parent back
+    // to /kid after the PIN.
+    expect(kid).toContain('useEffect(() => { if (kidResume) clearKidResume(); }, [kidResume, clearKidResume]);');
     const tabs = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', '_layout.tsx'), 'utf8');
     expect(tabs).toContain('if (!loading && user && kidResume) {');
   });
