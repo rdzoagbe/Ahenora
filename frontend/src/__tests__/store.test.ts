@@ -36,13 +36,15 @@ jest.mock('react-native', () => ({
   useColorScheme: jest.fn().mockReturnValue('light'),
 }));
 
-import { tokenStore, User } from '../api';
+import { forgetTokenInMemory, tokenStore, User } from '../api';
 
 // ---------- tokenStore tests (used by the store's setUserFromAuth / logout) ----------
 
 describe('tokenStore', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Each test starts as a freshly opened app: nothing remembered yet.
+    forgetTokenInMemory();
   });
 
   it('get returns null when no token is stored', async () => {

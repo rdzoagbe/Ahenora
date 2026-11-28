@@ -40,7 +40,7 @@ const BG_SOURCE = require('../assets/images/signin-bg.jpg');
 export default function Landing() {
   const router = useRouter();
   const handledResponseRef = useRef(false);
-  const { user, loading, t, lang, setUserFromAuth, theme } = useStore();
+  const { user, loading, t, lang, setUserFromAuth, theme, kidResume } = useStore();
 
   const [showLang, setShowLang] = useState(false);
   const [showEmailAuth, setShowEmailAuth] = useState(false);
@@ -136,6 +136,10 @@ export default function Landing() {
     if (!loading && user) {
       // A teen account gets the restricted teen view, never the full app.
       if (user.is_teen) { router.replace('/teen'); return; }
+      // Closed in a child's hands, reopened: it is still the child's screen.
+      // (The child's screen clears the flag once it is up: cleared here, this
+      // effect would run again and send them on to the parent's Home.)
+      if (kidResume) { router.replace('/kid'); return; }
       // Somebody sent here from Plans to sign in goes back to Plans, not Home
       // (pricing.tsx writes it; this is the only reader).
       let back: string | null = null;
@@ -147,7 +151,7 @@ export default function Landing() {
       }
       router.replace((back && back.startsWith('/') ? back : '/feed') as never);
     }
-  }, [loading, user, router]);
+  }, [loading, user, router, kidResume]);
 
   useEffect(() => {
     const loadInvite = async (token: string | null) => {

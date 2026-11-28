@@ -280,7 +280,7 @@ function PhoneTabBar({ state, navigation, style }: {
 let onboardingRedirectedFor: string | null = null;
 
 export default function TabLayout() {
-  const { theme, user, loading, quickAddOpen, closeQuickAdd } = useStore();
+  const { theme, user, loading, quickAddOpen, closeQuickAdd, kidResume } = useStore();
   const { isWide, sidebarW } = useBreakpoint();
   const router = useRouter();
 
@@ -293,7 +293,12 @@ export default function TabLayout() {
     if (!loading && user?.is_teen) {
       router.replace('/teen');
     }
-  }, [loading, user, router]);
+    // Nor a child, when the app was closed in their hands and reopened on a
+    // tab (a notification, a saved link): the parent's Home is behind the PIN.
+    if (!loading && user && kidResume) {
+      router.replace('/kid');
+    }
+  }, [loading, user, router, kidResume]);
 
   // First-run onboarding: only for a brand-new account (flag explicitly false),
   // and only once per app session. Missing/true flag never redirects, so
