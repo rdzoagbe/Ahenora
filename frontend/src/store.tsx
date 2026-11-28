@@ -9,7 +9,12 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, Platform, useColorScheme } from 'react-native';
-import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError } from './api';
+import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError, isTokenUnreadable } from './api';
+
+// How long startup goes on asking a locked phone for the saved sign-in before
+// it stops asking on a timer (it still asks again when the app is opened).
+const TOKEN_WAIT_TRIES = 20;
+const TOKEN_WAIT_MS = 1000;
 import { clearSnapshots } from './offline';
 import { Lang, SUPPORTED_LANGS, translate, detectDeviceLang } from './i18n';
 import { useClientValue } from './hooks/useClientValue';
@@ -203,9 +208,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // How many times in a row the saved sign-in could not be read (a locked
+  // iPhone). Counted so the wait is bounded; reset by any read that answers.
+  const tokenWaits = useRef(0);
+  const tokenRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // refreshUser, reachable from its own retry timer and from the app-opened
+  // listener without either of them going stale.
+  const refreshUserRef = useRef<() => void>(() => undefined);
+
   const refreshUser = useCallback(async () => {
+    // Whether this run is still waiting on the keychain: then `loading` stays
+    // up, so a signed-in family is not shown the landing page meanwhile.
+    let waiting = false;
     try {
       const token = await tokenStore.get();
+      tokenWaits.current = 0;
 
       if (!token) {
         setUser(null);
@@ -241,6 +258,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       });
     } catch (error: any) {
       logger.warn('refreshUser failed:', error);
+      // The keychain would not answer: the phone is locked, or still
+      // unlocking. That is not "signed out". Nothing is cleared and nobody is
+      // shown the door; ask again shortly, and again when the app is opened.
+      if (isTokenUnreadable(error)) {
+        tokenWaits.current += 1;
+        if (tokenWaits.current <= TOKEN_WAIT_TRIES) {
+          waiting = true;
+          if (tokenRetry.current) clearTimeout(tokenRetry.current);
+          tokenRetry.current = setTimeout(() => { refreshUserRef.current(); }, TOKEN_WAIT_MS);
+        }
+        return;
+      }
       // Only sign out on a real 401 (invalid/expired session). A transient
       // network failure or a cold backend must NOT wipe the token — otherwise
       // a returning user gets logged out by a momentary blip and has to sign
@@ -251,8 +280,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setSubscription(null);
       }
     } finally {
-      setLoading(false);
+      if (!waiting) setLoading(false);
     }
+  }, []);
+  useEffect(() => { refreshUserRef.current = refreshUser; }, [refreshUser]);
+
+  // Opening the app is the moment the phone is unlocked: if the sign-in could
+  // not be read before, read it now.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && tokenWaits.current > 0) {
+        tokenWaits.current = 0;
+        refreshUserRef.current();
+      }
+    });
+    return () => {
+      sub.remove();
+      if (tokenRetry.current) clearTimeout(tokenRetry.current);
+    };
   }, []);
 
   const setLang = useCallback(

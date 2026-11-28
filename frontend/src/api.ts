@@ -41,30 +41,86 @@ if (!backendUsable && RAW_BACKEND !== PROD_BACKEND) {
 
 const TOKEN_KEY = 'coo_session_token';
 
+/**
+ * The keychain would not answer. NOT the same as "nobody is signed in".
+ *
+ * An iPhone refuses to hand over a keychain item while it is locked (the
+ * default protection, which this app keeps). The app can be running then: woken
+ * by a notification, or opened from one before the phone has finished
+ * unlocking. Reading the token at that moment fails.
+ *
+ * That failure used to be reported as "no token". The app then sent its next
+ * request without one, the server answered 401, and a 401 deletes the stored
+ * token: a family was signed out for good because their phone was locked for
+ * a second. iPhone users reported being logged out often (2026-11-28).
+ */
+export class TokenUnreadableError extends Error {
+  constructor() {
+    super('The saved sign-in could not be read yet');
+    this.name = 'TokenUnreadableError';
+  }
+}
+
+export function isTokenUnreadable(error: unknown): boolean {
+  return (error as { name?: string } | null)?.name === 'TokenUnreadableError';
+}
+
+const TOKEN_READ_TRIES = 3;
+const TOKEN_READ_WAIT_MS = 150;
+// The token as last read or written, kept for the life of the process. Once
+// it has been read, a locked phone cannot make the app forget who is signed
+// in. `undefined` is "not read yet"; `null` is "read, and there is none".
+let memoryToken: string | null | undefined;
+
+/** Tests only: forget the in-memory copy, as a freshly started app has. */
+export function forgetTokenInMemory(): void {
+  memoryToken = undefined;
+}
+
 export const tokenStore = {
   async get(): Promise<string | null> {
-    try {
-      const secureToken = await SecureStore.getItemAsync(TOKEN_KEY);
-      if (secureToken) return secureToken;
-
-      // One-time migration for users who signed in before SecureStore was enabled.
-      const legacyToken = await AsyncStorage.getItem(TOKEN_KEY);
-      if (legacyToken) {
-        await SecureStore.setItemAsync(TOKEN_KEY, legacyToken);
-        await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
-        return legacyToken;
-      }
-      return null;
-    } catch {
-      // Development/web fallback only. Native builds should use SecureStore.
+    if (memoryToken !== undefined) return memoryToken;
+    let failure: unknown;
+    for (let attempt = 0; attempt < TOKEN_READ_TRIES; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, TOKEN_READ_WAIT_MS));
       try {
-        return await AsyncStorage.getItem(TOKEN_KEY);
+        const secureToken = await SecureStore.getItemAsync(TOKEN_KEY);
+        if (secureToken) {
+          memoryToken = secureToken;
+          return secureToken;
+        }
+
+        // One-time migration for users who signed in before SecureStore was enabled.
+        const legacyToken = await AsyncStorage.getItem(TOKEN_KEY);
+        if (legacyToken) {
+          await SecureStore.setItemAsync(TOKEN_KEY, legacyToken);
+          await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
+          memoryToken = legacyToken;
+          return legacyToken;
+        }
+        memoryToken = null;
+        return null;
+      } catch (error) {
+        failure = error;
+        // The web has no keychain: its token lives in AsyncStorage, and a
+        // failure here is simply "use that".
+        if (Platform.OS === 'web') break;
+      }
+    }
+    if (Platform.OS === 'web') {
+      try {
+        memoryToken = await AsyncStorage.getItem(TOKEN_KEY);
+        return memoryToken;
       } catch {
         return null;
       }
     }
+    // A phone or tablet whose keychain did not answer. Say so; never "none".
+    void failure;
+    throw new TokenUnreadableError();
   },
   async set(token: string) {
+    memoryToken = token;
     try {
       await SecureStore.setItemAsync(TOKEN_KEY, token);
       await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
@@ -76,6 +132,7 @@ export const tokenStore = {
     }
   },
   async clear() {
+    memoryToken = null;
     await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => undefined);
     await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
   },
@@ -529,7 +586,10 @@ async function request<T = unknown>(
       const isCredentialCheck =
         CREDENTIAL_PATHS.some((p) => path.startsWith(p)) &&
         !SESSION_IS_GONE_PATHS.some((p) => path.startsWith(p));
-      if (res.status === 401 && !isCredentialCheck) {
+      // Only a request that CARRIED a token can be told that token is dead.
+      // A 401 to a request sent without one says nothing about the saved
+      // sign-in, and must not delete it.
+      if (res.status === 401 && !isCredentialCheck && token) {
         await tokenStore.clear().catch(() => undefined);
         cache.clear();
         // A revoked session must not leave a readable copy of the household
