@@ -65,6 +65,32 @@ export function isTokenUnreadable(error: unknown): boolean {
   return (error as { name?: string } | null)?.name === 'TokenUnreadableError';
 }
 
+// Why the app last signed somebody out against their will, kept on the phone
+// (a reason and a path, never a token or a name) and sent with the next
+// sign-in. A forced sign-out cannot report itself: by definition it has no
+// valid session left to report with. Without this, "people get logged out"
+// is a guess about which path did it.
+const SIGNOUT_NOTE_KEY = 'coo_last_signout';
+export type SignOutReason = 'session_refused' | 'parent_session_gone' | 'token_not_saved';
+
+export function noteSignOut(reason: SignOutReason, path: string): void {
+  AsyncStorage.setItem(SIGNOUT_NOTE_KEY, JSON.stringify({
+    reason, path: path.split('?')[0], at: new Date().toISOString(), platform: Platform.OS,
+  })).catch(() => undefined);
+}
+
+/** After a sign-in: say why the last session ended, once, then forget it. */
+export async function reportLastSignOut(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(SIGNOUT_NOTE_KEY);
+    if (!raw) return;
+    await AsyncStorage.removeItem(SIGNOUT_NOTE_KEY);
+    const note = JSON.parse(raw) as { reason?: string; path?: string; at?: string };
+    reportClientError('/session/ended', 'GET', undefined,
+      `signed out: ${note.reason || 'unknown'} on ${note.path || '-'} at ${note.at || '-'}`);
+  } catch { /* telemetry must never cost a sign-in */ }
+}
+
 const TOKEN_READ_TRIES = 3;
 const TOKEN_READ_WAIT_MS = 150;
 // The token as last read or written, kept for the life of the process. Once
@@ -79,7 +105,10 @@ export function forgetTokenInMemory(): void {
 
 export const tokenStore = {
   async get(): Promise<string | null> {
-    if (memoryToken !== undefined) return memoryToken;
+    // Remembered on a phone only. Browser tabs share one storage: a tab
+    // holding an old token in memory would get a 401 and delete the token
+    // another tab had just signed in with. The web has no keychain to lock.
+    if (Platform.OS !== 'web' && memoryToken !== undefined) return memoryToken;
     let failure: unknown;
     for (let attempt = 0; attempt < TOKEN_READ_TRIES; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, TOKEN_READ_WAIT_MS));
@@ -93,8 +122,12 @@ export const tokenStore = {
         // One-time migration for users who signed in before SecureStore was enabled.
         const legacyToken = await AsyncStorage.getItem(TOKEN_KEY);
         if (legacyToken) {
-          await SecureStore.setItemAsync(TOKEN_KEY, legacyToken);
-          await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
+          // The token was read; moving it is a bonus. A move that fails
+          // leaves it where it was, for the next launch to try again.
+          try {
+            await SecureStore.setItemAsync(TOKEN_KEY, legacyToken);
+            await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
+          } catch { /* still signed in, from the old place */ }
           memoryToken = legacyToken;
           return legacyToken;
         }
@@ -119,16 +152,23 @@ export const tokenStore = {
     void failure;
     throw new TokenUnreadableError();
   },
-  async set(token: string) {
+  /** Resolves to whether the token was really written. On a phone a failed
+   *  write still leaves this run signed in (from memory), but the next
+   *  launch will not be: the caller is told, so it can be recorded. */
+  async set(token: string): Promise<boolean> {
     memoryToken = token;
     try {
       await SecureStore.setItemAsync(TOKEN_KEY, token);
       await AsyncStorage.removeItem(TOKEN_KEY).catch(() => undefined);
+      return true;
     } catch {
       if (Platform.OS === 'web') {
         await AsyncStorage.setItem(TOKEN_KEY, token);
+        return true;
       }
       // On native, SecureStore failure is unrecoverable — do not fall back to plaintext storage.
+      noteSignOut('token_not_saved', '');
+      return false;
     }
   },
   async clear() {
@@ -168,6 +208,11 @@ export const kidMode = {
   },
   async isActive(): Promise<boolean> {
     return (await kidMode.storedParentToken()) !== null;
+  },
+  /** The parent's own session is gone: there is nobody to hand back to. */
+  async abandon(): Promise<void> {
+    await SecureStore.deleteItemAsync(PARENT_TOKEN_KEY).catch(() => undefined);
+    await AsyncStorage.removeItem(PARENT_TOKEN_KEY).catch(() => undefined);
   },
   /** Hand the device back. The PIN check has already happened on the server. */
   async leave(): Promise<boolean> {
@@ -257,6 +302,23 @@ refreshOfflineState();
 /** Sign-out wipes the disk copies, so the banner must not keep describing them. */
 export function resetOfflineState(): void {
   patchOfflineState({ fromCache: false, pending: 0 });
+}
+
+/**
+ * Who a given token belongs to, asked without touching the saved sign-in.
+ * For starting up while the phone is handed to a child: the saved token is
+ * the child's, and the parent's waits beside it.
+ */
+export async function userForToken(token: string): Promise<User> {
+  const res = await fetch(`${BASE}/api/auth/me`, {
+    headers: { 'Content-Type': 'application/json', 'X-Client-Platform': Platform.OS, Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const error = new Error(`auth/me ${res.status}`) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
+  return (await res.json()) as User;
 }
 
 // The store registers a handler so an expired session (401) mid-session can
@@ -589,7 +651,16 @@ async function request<T = unknown>(
       // Only a request that CARRIED a token can be told that token is dead.
       // A 401 to a request sent without one says nothing about the saved
       // sign-in, and must not delete it.
-      if (res.status === 401 && !isCredentialCheck && token) {
+      // And not while the phone is handed to a child. The token then is the
+      // child's, which every parent-only door refuses with a 401 (the chat
+      // count asked on returning to the app, for one). That refusal is about
+      // the child's pass, not the parent's session: signing the household out
+      // over it dropped the parent on the sign-in page when they took the
+      // phone back. The kid screen owns that session's end (kidMode.leave).
+      const handedToChild = res.status === 401 && !isCredentialCheck && Boolean(token)
+        && await kidMode.isActive().catch(() => false);
+      if (res.status === 401 && !isCredentialCheck && token && !handedToChild) {
+        noteSignOut('session_refused', path);
         await tokenStore.clear().catch(() => undefined);
         cache.clear();
         // A revoked session must not leave a readable copy of the household

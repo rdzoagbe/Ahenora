@@ -63,7 +63,7 @@ describe('what signing out clears', () => {
     // A revoked session must not leave a readable household behind, including
     // the remembered identity that would let a cold offline launch walk in.
     const branch = API.slice(
-      API.indexOf('if (res.status === 401 && !isCredentialCheck && token)'),
+      API.indexOf('if (res.status === 401 && !isCredentialCheck && token && !handedToChild)'),
       API.indexOf('if (res.status === 402)'));
     expect(branch).toContain('tokenStore.clear()');
     expect(branch).toContain('clearSnapshots()');

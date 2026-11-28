@@ -38,7 +38,14 @@ import { SECTION_ART } from '../src/sectionArt';
  */
 export default function KidScreen() {
   const ui = useUI();
-  const { t } = useStore();
+  const { t, refreshUser, clearKidResume } = useStore();
+  // Arrived: the restart-in-a-child's-hands flag has done its job. Cleared
+  // here, not where it sends people, so nothing bounces them on to Home.
+  useEffect(() => { clearKidResume(); }, [clearKidResume]);
+  // Back in the parent's hands: load the parent's account afresh. When the
+  // app was restarted in a child's hands it was never loaded this run, and
+  // the plan (what is unlocked) would be missing.
+  const backToParent = () => { refreshUser().catch(() => undefined); };
   const router = useRouter();
   const keyboard = useKeyboardHeight();
   const styles = createStyles(ui);
@@ -84,7 +91,7 @@ export default function KidScreen() {
       logger.warn('kid home failed', e);
       // The session expired or was revoked — a device left in kid mode
       // overnight lands back at the picker rather than on a broken screen.
-      if (await kidMode.leave()) router.replace('/(tabs)/feed');
+      if (await kidMode.leave()) { backToParent(); router.replace('/(tabs)/feed'); }
     }
   }, [router]);
 
@@ -154,6 +161,7 @@ export default function KidScreen() {
       return;
     }
     await kidMode.leave();
+    backToParent();
     closeExit();
     router.replace('/(tabs)/feed');
   };
@@ -172,6 +180,7 @@ export default function KidScreen() {
       return;
     }
     await kidMode.leave();
+    backToParent();
     closeExit();
     // The PIN was cleared server-side; the hand-over sheet will ask for a new
     // one before the device can go back to a child.

@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, Platform, useColorScheme } from 'react-native';
-import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError, isTokenUnreadable } from './api';
+import { api, User, tokenStore, Subscription, resetOfflineState, setUnauthorizedHandler, warmupBackend, isTeenModeError, isTokenUnreadable, kidMode, noteSignOut, reportLastSignOut, userForToken } from './api';
 
 // How long startup goes on asking a locked phone for the saved sign-in before
 // it stops asking on a timer (it still asks again when the app is opened).
@@ -43,6 +43,9 @@ interface StoreState {
   setLang: (l: Lang) => Promise<void>;
   setAppearance: (mode: AppearanceMode) => Promise<void>;
   refreshUser: () => Promise<void>;
+  /** Started while handed to a child: open the child's screen, once. */
+  kidResume: boolean;
+  clearKidResume: () => void;
   refreshSubscription: () => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: (data: { password?: string; confirm?: boolean }) => Promise<void>;
@@ -210,6 +213,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // How many times in a row the saved sign-in could not be read (a locked
   // iPhone). Counted so the wait is bounded; reset by any read that answers.
+  // True once at startup when the app was closed in a child's hands: the
+  // first screen then is the child's, not the parent's Home.
+  const [kidResume, setKidResume] = useState(false);
+  const clearKidResume = useCallback(() => setKidResume(false), []);
   const tokenWaits = useRef(0);
   const tokenRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
   // refreshUser, reachable from its own retry timer and from the app-opened
@@ -228,6 +235,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setSubscription(null);
         return;
+      }
+
+      // Started while the phone is handed to a child: the saved token is the
+      // child's, which /auth/me refuses, and the parent's waits beside it.
+      // That used to end on the sign-in page with the parent's session
+      // stranded. The household is still the parent's; the screen to open is
+      // the child's, and stays the child's until the PIN hands it back.
+      const parentToken = await kidMode.storedParentToken();
+      if (parentToken) {
+        try {
+          const parent = await userForToken(parentToken);
+          setUser(parent);
+          if (SUPPORTED_LANGS.includes(parent.language as Lang)) setLangState(parent.language as Lang);
+          setKidResume(true);
+          return;
+        } catch (e: any) {
+          if (e?.status !== 401) throw e;
+          // The parent's own session is gone. Nothing to hand back to.
+          noteSignOut('parent_session_gone', '/auth/me');
+          await kidMode.abandon();
+          await tokenStore.clear();
+          setUser(null);
+          setSubscription(null);
+          return;
+        }
       }
 
       let u: User;
@@ -291,6 +323,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active' && tokenWaits.current > 0) {
         tokenWaits.current = 0;
+        // One ask, not two: the timer's turn is taken.
+        if (tokenRetry.current) { clearTimeout(tokenRetry.current); tokenRetry.current = null; }
         refreshUserRef.current();
       }
     });
@@ -394,10 +428,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [user, refreshUnreadChats]);
 
   const setUserFromAuth = useCallback(async (u: User, token: string, method?: 'google' | 'email' | 'apple') => {
-    await tokenStore.set(token);
-
-    const savedToken = await tokenStore.get();
-    logger.info('Session token saved:', savedToken ? 'yes' : 'no');
+    const saved = await tokenStore.set(token);
+    logger.info('Session token saved:', saved ? 'yes' : 'no');
+    // Why the last session ended, if it was not this person's choice.
+    reportLastSignOut().catch(() => undefined);
 
     // Remember who signed in (email + method, never the token) so the next
     // visit greets them with "Welcome back" instead of a cold account screen.
@@ -480,6 +514,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setLang,
         setAppearance,
         refreshUser,
+        kidResume,
+        clearKidResume,
         refreshSubscription,
         logout,
         deleteAccount,

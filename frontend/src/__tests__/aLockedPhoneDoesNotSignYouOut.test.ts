@@ -102,11 +102,93 @@ describe('a request made while the phone is locked', () => {
   });
 
   it('a real 401, to a request that carried the token, still signs out', async () => {
-    mockSecure.getItemAsync.mockResolvedValue('tok_dead');
+    mockSecure.getItemAsync.mockImplementation(
+      async (key: string) => (key === 'coo_parent_token' ? null : 'tok_dead'));
     (global.fetch as jest.Mock).mockResolvedValue(respond(401, { detail: 'Session expired' }));
     await api.listCards().catch(() => undefined);
     expect(mockSecure.deleteItemAsync).toHaveBeenCalledWith('coo_session_token');
     await expect(tokenStore.get()).resolves.toBeNull();
+  });
+});
+
+describe('a phone handed to a child', () => {
+  // The second cause the review found, and the likelier one. In kid mode the
+  // saved token is the child's. Coming back to the app asks for the chat
+  // count; that door refuses a child's token with a 401; and a 401 signed
+  // the whole household out. The parent took the phone back to a sign-in page.
+  const parentWaits = () => mockSecure.getItemAsync.mockImplementation(
+    async (key: string) => (key === 'coo_parent_token' ? 'tok_parent' : 'tok_child'));
+
+  it('a parent-only door refusing the child does not sign the household out', async () => {
+    parentWaits();
+    (global.fetch as jest.Mock).mockResolvedValue(respond(401, { detail: 'Invalid or expired session' }));
+    await api.chatThreads().catch(() => undefined);
+    expect(mockSecure.deleteItemAsync).not.toHaveBeenCalled();
+    await expect(tokenStore.get()).resolves.toBe('tok_child');
+  });
+
+  it('with nobody in kid mode, the same refusal still signs out', async () => {
+    mockSecure.getItemAsync.mockImplementation(
+      async (key: string) => (key === 'coo_parent_token' ? null : 'tok_dead'));
+    (global.fetch as jest.Mock).mockResolvedValue(respond(401, { detail: 'Invalid or expired session' }));
+    await api.chatThreads().catch(() => undefined);
+    expect(mockSecure.deleteItemAsync).toHaveBeenCalledWith('coo_session_token');
+  });
+
+  it('restarted in a child’s hands, the app opens the child’s screen as the parent’s household', () => {
+    const store = fs.readFileSync(path.join(__dirname, '..', 'store.tsx'), 'utf8');
+    expect(store).toContain('const parentToken = await kidMode.storedParentToken();');
+    expect(store).toContain('const parent = await userForToken(parentToken);');
+    expect(store).toContain('setKidResume(true);');
+    // The parent's token is asked about, never swapped in: a child must not
+    // get the parent's app by closing and reopening it.
+    const resume = store.slice(store.indexOf('const parentToken = await kidMode.storedParentToken();'), store.indexOf('let u: User;'));
+    expect(resume).not.toContain('kidMode.leave');
+    expect(resume).not.toContain('tokenStore.set');
+    const index = fs.readFileSync(path.join(__dirname, '..', '..', 'app', 'index.tsx'), 'utf8');
+    expect(index).toContain("if (kidResume) { router.replace('/kid'); return; }");
+    // The flag is cleared by the child's screen once it is up. Cleared where
+    // it redirects, the same effect ran again and sent them to the parent's
+    // Home (caught in a real browser, 2026-11-28).
+    expect(index).not.toContain('clearKidResume');
+    const kid = fs.readFileSync(path.join(__dirname, '..', '..', 'app', 'kid.tsx'), 'utf8');
+    expect(kid).toContain('useEffect(() => { clearKidResume(); }, [clearKidResume]);');
+    const tabs = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '(tabs)', '_layout.tsx'), 'utf8');
+    expect(tabs).toContain('if (!loading && user && kidResume) {');
+  });
+
+  it('handing the phone back loads the parent’s account afresh', () => {
+    const kid = fs.readFileSync(path.join(__dirname, '..', '..', 'app', 'kid.tsx'), 'utf8');
+    expect((kid.match(/backToParent\(\);/g) || []).length).toBe(3);
+  });
+});
+
+describe('why a session ended', () => {
+  it('is written down when the app signs somebody out, and nothing personal with it', async () => {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    AsyncStorage.setItem.mockClear();
+    mockSecure.getItemAsync.mockImplementation(
+      async (key: string) => (key === 'coo_parent_token' ? null : 'tok_dead'));
+    (global.fetch as jest.Mock).mockResolvedValue(respond(401, { detail: 'Session expired' }));
+    await api.listCards().catch(() => undefined);
+    const note = AsyncStorage.setItem.mock.calls.find((c: string[]) => c[0] === 'coo_last_signout');
+    expect(note).toBeTruthy();
+    const body = JSON.parse(note[1]);
+    expect(body.reason).toBe('session_refused');
+    expect(body.path).toBe('/cards');
+    expect(JSON.stringify(body)).not.toContain('tok_dead');
+  });
+
+  it('is sent with the next sign-in', () => {
+    const store = fs.readFileSync(path.join(__dirname, '..', 'store.tsx'), 'utf8');
+    expect(store).toContain('reportLastSignOut().catch(() => undefined);');
+  });
+});
+
+describe('a browser', () => {
+  it('re-reads its storage every time: another tab may have signed in again', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'api.ts'), 'utf8');
+    expect(src).toContain("if (Platform.OS !== 'web' && memoryToken !== undefined) return memoryToken;");
   });
 });
 
